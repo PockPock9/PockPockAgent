@@ -28,6 +28,17 @@ export type Step = {
   label: string
   status: 'running' | 'done' | 'failed' | 'blocked' | 'stopped'
   detail?: string
+  startedAt?: number // ms since epoch, recorded by the app when the step's event arrived
+  endedAt?: number
+}
+
+/** When each phase of an assistant turn happened (ms since epoch). See lib/timing.ts. */
+export type Timing = {
+  startedAt: number
+  firstOutputAt?: number // first token, step, plan or approval
+  planReadyAt?: number // PockPock Agent: the plan card appeared
+  planDecidedAt?: number // ...and was approved, declined or stopped
+  endedAt?: number
 }
 
 export type Approval = {
@@ -40,6 +51,8 @@ export type Approval = {
   actionHash?: string
   status: 'pending' | 'busy' | 'approved' | 'rejected' | 'expired'
   error?: string
+  requestedAt?: number
+  resolvedAt?: number
 }
 
 export type PlanCard = {
@@ -83,6 +96,7 @@ export type Message = {
   taskId?: string
   workspacePath?: string
   notice?: string
+  timing?: Timing
 }
 
 export type Session = {
