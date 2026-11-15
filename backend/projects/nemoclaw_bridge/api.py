@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from .bridge import MAX_MESSAGE_CHARS, NemoClawBridge, NemoClawError
 
 HEARTBEAT_SECONDS = 10
-logger = logging.getLogger("frog-ai.nemoclaw")
+logger = logging.getLogger("pockpock.nemoclaw")
 
 
 class NemoClawChatPayload(BaseModel):

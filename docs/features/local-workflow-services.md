@@ -10,9 +10,9 @@ Planning, validation, run/event persistence, and isolated browser automation run
 | Validator | `backend/projects/validator/app.py` | 8772 | `POST /validate`, `GET /health` |
 | Run store | `backend/projects/run_store/app.py` | 8773 | Run creation/status, ordered event append/replay, payload-bound approval decisions, cancellation request and stale-run recovery, `GET /health` |
 | Browser automation | `backend/projects/browser_automation/app.py` | 8774 | Isolated run-scoped Chromium with authenticated create/navigate/state-bound actions/evidence/close/cancel, `GET /health` |
-| Gateway | `backend/scripts/frog_ai_server.py` | 8766 | Public UI API and transport; invokes the in-process agent core |
+| Gateway | `backend/scripts/pockpock_server.py` | 8766 | Public UI API and transport; invokes the in-process agent core |
 
-All internal services bind to loopback and require `X-PockPock-Internal-Token` for non-health routes. The cross-platform launcher generates or reuses the token, sets service URLs in the gateway environment, and writes logs under the per-user `FrogAI` data directory: `%LOCALAPPDATA%\FrogAI` on Windows, `~/Library/Application Support/FrogAI` on macOS, or `${XDG_DATA_HOME:-~/.local/share}/FrogAI` on Linux. Do not expose internal service ports on the LAN.
+All internal services bind to loopback and require `X-PockPock-Internal-Token` for non-health routes. The cross-platform launcher generates or reuses the token, sets service URLs in the gateway environment, and writes logs under the per-user `PockPock` data directory: `%LOCALAPPDATA%\PockPock` on Windows, `~/Library/Application Support/PockPock` on macOS, or `${XDG_DATA_HOME:-~/.local/share}/PockPock` on Linux. Do not expose internal service ports on the LAN.
 
 ## Request flow
 

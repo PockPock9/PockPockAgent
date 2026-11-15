@@ -2,7 +2,7 @@
 
 ## Status
 
-**Partially implemented.** Frog AI supports isolated browsing and recipes through Playwright/Chromium, with Lightpanda 1.0.4 as an opt-in CDP backend limited to one active context at a time. The first AUT-02 slice (a Chrome extension and Native Messaging pairing handshake) was removed on 2026-11-15 together with the web frontend and is in git history; operating the user's real browser and PC is currently done by the OpenClaw engine under its permission modes. AUT-01 defines the proposed permissions and platform boundaries for the remaining local interaction tools: a user-connected Chrome session, native desktop interaction, bounded command/file workflows, and user-managed schedules. These other additions remain planned.
+**Partially implemented.** PockPock supports isolated browsing and recipes through Playwright/Chromium, with Lightpanda 1.0.4 as an opt-in CDP backend limited to one active context at a time. The first AUT-02 slice (a Chrome extension and Native Messaging pairing handshake) was removed on 2026-11-15 together with the web frontend and is in git history; operating the user's real browser and PC is currently done by the OpenClaw engine under its permission modes. AUT-01 defines the proposed permissions and platform boundaries for the remaining local interaction tools: a user-connected Chrome session, native desktop interaction, bounded command/file workflows, and user-managed schedules. These other additions remain planned.
 
 ## AUT-01 design baseline
 

@@ -78,7 +78,7 @@ On start the app checks every service and, unless **Start services when the app 
 |---|---|---|---|
 | Ollama | `ollama serve` | ending the process and the Ollama tray app | `GET :11434/api/version` |
 | Planner, Validator, Run store, Browser automation | `python -m uvicorn app:app` in the service folder | ending the process tree | `GET /health` returns its name |
-| PockPock gateway | `python -u backend/scripts/frog_ai_server.py` | ending the process tree | `GET :8766/api/health` |
+| PockPock gateway | `python -u backend/scripts/pockpock_server.py` | ending the process tree | `GET :8766/api/health` |
 | OpenClaw gateway | `node openclaw.mjs gateway start` | `node openclaw.mjs gateway stop` | port 18810 open |
 | NemoClaw sandbox | Docker Desktop and Ollama, then `nemoclaw pockpock start` in WSL; if that fails or the port stays closed, `nemoclaw pockpock recover`; then `nemoclaw pockpock connect --probe-only` to re-establish inference | `nemoclaw pockpock stop` | port 18789 open |
 
@@ -88,7 +88,7 @@ OpenClaw is run through Node with its JavaScript entry point, so it does not dep
 
 When the app closes it stops only the services it started (OpenClaw and NemoClaw with their stop commands, the rest by ending their processes), within 20 seconds. **Stop services when the app closes** turns this off. **Open PockPock Agent when I sign in** registers the app as a Windows login item.
 
-Logs: the Python services and Ollama (when started by the app) write to `%LOCALAPPDATA%\FrogAI\logs` (Mac: `~/Library/Application Support/FrogAI/logs`); an Ollama started elsewhere logs to `%LOCALAPPDATA%\Ollama\server.log` (Mac: `~/.ollama/logs/server.log`); OpenClaw to `openclaw-<date>.log` in `%TEMP%\openclaw` (Mac: `/tmp/openclaw`). The Services page shows the last 200 lines of each.
+Logs: the Python services and Ollama (when started by the app) write to `%LOCALAPPDATA%\PockPock\logs` (Mac: `~/Library/Application Support/PockPock/logs`); an Ollama started elsewhere logs to `%LOCALAPPDATA%\Ollama\server.log` (Mac: `~/.ollama/logs/server.log`); OpenClaw to `openclaw-<date>.log` in `%TEMP%\openclaw` (Mac: `/tmp/openclaw`). The Services page shows the last 200 lines of each.
 
 ## How it works
 
@@ -141,10 +141,12 @@ The renderer polls `/api/state` every 4 seconds and OpenClaw status and the skil
 | Settings (open folder, mode, permissions, models, panel layout, startup options) | `%APPDATA%\PockPock Agent\settings.json` |
 | Setup progress | `%APPDATA%\PockPock Agent\setup.json` |
 | Installed Python environment | `%LOCALAPPDATA%\PockPock\runtime\venv` (Mac: `~/Library/Application Support/PockPock/runtime/venv`) (installed app only; a source checkout uses `.venv`) |
-| Service token and logs | `%LOCALAPPDATA%\FrogAI` (Mac: `~/Library/Application Support/FrogAI`) |
+| Service token and logs | `%LOCALAPPDATA%\PockPock` (Mac: `~/Library/Application Support/PockPock`) |
 | Agent results, skills, MCP servers, memory | Owned by the backend, OpenClaw and NemoClaw as documented on their pages |
 
 Uninstalling keeps all of this.
+
+The backend data folder was called `FrogAI` before 2026-11-15. On start, the app (and `pockpock.py start`) moves anything in the old folder into `PockPock` that is not there yet, without overwriting, and removes the old folder once it is empty.
 
 ## Security
 

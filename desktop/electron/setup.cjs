@@ -220,7 +220,7 @@ class Setup {
     this.step(C, 'venv', 'Python environment', 'done', paths.venvRoot())
     this.step(C, 'packages', 'Backend packages', 'running')
     const backend = paths.backendRoot()
-    const requirements = [path.join(backend, 'scripts', 'requirements-frog-ai.txt'), ...fs.readdirSync(path.join(backend, 'projects')).map((name) => path.join(backend, 'projects', name, 'requirements.txt')).filter((file) => fs.existsSync(file))]
+    const requirements = [path.join(backend, 'scripts', 'requirements-pockpock.txt'), ...fs.readdirSync(path.join(backend, 'projects')).map((name) => path.join(backend, 'projects', name, 'requirements.txt')).filter((file) => fs.existsSync(file))]
     await this.must(paths.venvPython(), ['-m', 'pip', 'install', '--disable-pip-version-check', '--upgrade', 'pip'], 'Updating pip')
     await this.must(paths.venvPython(), ['-m', 'pip', 'install', '--disable-pip-version-check', ...requirements.flatMap((file) => ['-r', file])], 'Installing backend packages')
     this.step(C, 'packages', 'Backend packages', 'done')

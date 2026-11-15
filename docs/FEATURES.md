@@ -32,5 +32,5 @@ This index points to detailed feature contracts. Every new feature or change to 
 
 ## Other product areas
 
-- Chat, model selection and the Smart Router are implemented in the gateway (`backend/scripts/frog_ai_server.py`, `smart_router.py`) and documented in [README.md](../README.md#smart-router). Prompt-free routing telemetry is stored by `backend/scripts/telemetry_store.py` and shown on the desktop app's **Activity** page.
+- Chat, model selection and the Smart Router are implemented in the gateway (`backend/scripts/pockpock_server.py`, `smart_router.py`) and documented in [README.md](../README.md#smart-router). Prompt-free routing telemetry is stored by `backend/scripts/telemetry_store.py` and shown on the desktop app's **Activity** page.
 - The web dashboard, the Open WebUI pipe, the Signal Room dashboard, the Chrome companion scaffold and the YourBrand demo were removed on 2026-11-15; they remain in git history (commit `364820f`).

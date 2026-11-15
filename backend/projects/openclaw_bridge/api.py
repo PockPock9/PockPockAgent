@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from .bridge import MAX_MESSAGE_CHARS, OpenClawBridge, OpenClawError
 
 HEARTBEAT_SECONDS = 10.0
-logger = logging.getLogger("frog-ai.openclaw")
+logger = logging.getLogger("pockpock.openclaw")
 
 
 class OpenClawChatPayload(BaseModel):

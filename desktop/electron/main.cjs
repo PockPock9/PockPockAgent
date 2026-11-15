@@ -9,6 +9,8 @@ const paths = require('./paths.cjs')
 
 // An app opened from Finder or the Dock gets a minimal PATH; add the folders PockPock's tools live in.
 paths.fixPath()
+// The data folder was named FrogAI before 2026-11-15; move it before any service writes to the new one.
+paths.migrateLegacyData()
 const { startServer } = require('./server.cjs')
 const workspace = require('./workspace.cjs')
 const { Terminals } = require('./terminal.cjs')

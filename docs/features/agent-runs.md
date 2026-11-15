@@ -17,7 +17,7 @@ Run records may also express a parent/child delegation relationship. Child metad
 ## Components and data flow
 
 - `desktop/src/lib/engines.ts` runs the plan → approve → run sequence and maps run events to the message; `desktop/src/components/MessageView.tsx` renders the plan card, approvals and results.
-- `backend/scripts/frog_ai_server.py` owns HTTP/SSE endpoints and local-request policy. `backend/projects/agent_core/executor.py` owns approved-run execution and coordination; `AgentCoreServices` makes the gateway's current run state and adapters explicit at the boundary.
+- `backend/scripts/pockpock_server.py` owns HTTP/SSE endpoints and local-request policy. `backend/projects/agent_core/executor.py` owns approved-run execution and coordination; `AgentCoreServices` makes the gateway's current run state and adapters explicit at the boundary.
 - `backend/scripts/agent_run_store.py` is the gateway-side repository client and task journal projection. `backend/projects/run_store/app.py` owns the HTTP service boundary and durable SQLite operations.
 - `backend/projects/agent_tools/` owns the agent tool catalog, workspace-scoped file operations, and research/artifact tools.
 - Model choice (`backend/projects/planner/routing.py`): the model picked in the app is kept if it supports tools and has enough context; otherwise the configured fallback; otherwise the fastest measured tool-capable model of at least 3B parameters (`MIN_AGENT_BILLIONS`). Smaller models, such as the Smart Router's 1.5B classifier, are used only when nothing larger is enabled. The gateway supplies `parameter_billions` from Ollama's `/api/show`.

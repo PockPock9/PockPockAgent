@@ -74,7 +74,7 @@ Desktop app: ChatPane / ExtensionCard / Skills and MCP pages
   │ POST /api/extensions/inspect {url}          → proposal (nothing installed)
   │ POST /api/extensions/install {proposal_id}  → skills copied, or MCP server tested and saved
   ▼
-frog_ai_server.py (same-PC check, rate limits)
+pockpock_server.py (same-PC check, rate limits)
   ▼
 agent_extensions/service.py
   ├─ sources.py            parse link, download zip from codeload.github.com, find skills / MCP setup

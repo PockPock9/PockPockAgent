@@ -15,7 +15,7 @@ from projects.agent_tools.research_contracts import (
 from projects.agent_tools.research_exports import create_research_export
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
-import frog_ai_server as gateway
+import pockpock_server as gateway
 
 
 class ResearchExportTests(unittest.TestCase):

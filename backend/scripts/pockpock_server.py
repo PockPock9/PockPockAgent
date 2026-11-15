@@ -138,7 +138,7 @@ from projects.openclaw_bridge.bridge import OpenClawBridge, OpenClawConfig
 
 from smart_router import Pipe
 
-logger = logging.getLogger("frog-ai")
+logger = logging.getLogger("pockpock")
 OLLAMA_URL = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
 MODEL_CLIENT = OllamaChatCompletionAdapter(OLLAMA_URL)
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
@@ -638,7 +638,7 @@ async def ollama_port_open(host: str, port: int) -> bool:
 
 
 def ollama_start_log() -> Path:
-    log_root = app_data_dir("FrogAI") / "logs"
+    log_root = app_data_dir("PockPock") / "logs"
     try:
         log_root.mkdir(parents=True, exist_ok=True)
     except OSError as err:
@@ -1988,7 +1988,7 @@ async def upload_files(files: list[UploadFile] = File(...)):
             except ImportError as err:
                 raise HTTPException(
                     status_code=503,
-                    detail="Document reader dependencies are missing; run scripts/setup_frog_ai.ps1",
+                    detail="Document reader dependencies are missing; run Setup in PockPock Agent",
                 ) from err
             result.append({
                 "name": filename,
@@ -2622,4 +2622,4 @@ async def chat(payload: ChatPayload):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(api, host="127.0.0.1", port=int(os.environ.get("FROG_AI_PORT", "8766")))
+    uvicorn.run(api, host="127.0.0.1", port=int(os.environ.get("POCKPOCK_PORT", "8766")))

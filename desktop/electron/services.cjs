@@ -173,7 +173,7 @@ class ServiceManager {
       POCKPOCK_VALIDATOR_URL: 'http://127.0.0.1:8772',
       POCKPOCK_RUN_STORE_URL: 'http://127.0.0.1:8773',
       POCKPOCK_BROWSER_AUTOMATION_URL: 'http://127.0.0.1:8774',
-      FROG_AI_PORT: '8766',
+      POCKPOCK_PORT: '8766',
     })
   }
 
@@ -248,7 +248,7 @@ class ServiceManager {
     if (definition.project) {
       this.spawnLogged(definition.id, python, ['-m', 'uvicorn', 'app:app', '--host', '127.0.0.1', '--port', String(definition.port)], { cwd: path.join(paths.backendRoot(), 'projects', definition.project), env })
     } else if (definition.id === 'gateway') {
-      this.spawnLogged('gateway', python, ['-u', path.join(paths.backendRoot(), 'scripts', 'frog_ai_server.py')], { cwd: path.dirname(paths.backendRoot()), env })
+      this.spawnLogged('gateway', python, ['-u', path.join(paths.backendRoot(), 'scripts', 'pockpock_server.py')], { cwd: path.dirname(paths.backendRoot()), env })
     } else if (definition.id === 'ollama') {
       // NemoClaw and long agent turns need more context than Ollama's default 4K.
       this.spawnLogged('ollama', paths.ollamaExe(), ['serve'], { env: paths.cleanEnv({ OLLAMA_CONTEXT_LENGTH: process.env.OLLAMA_CONTEXT_LENGTH || '32768' }) })

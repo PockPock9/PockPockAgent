@@ -15,7 +15,7 @@ def database_path() -> Path:
     configured = os.environ.get("POCKPOCK_BROWSER_RECIPE_DB")
     if configured:
         return Path(configured).expanduser().resolve()
-    return app_data_dir("FrogAI") / "browser-recipes.sqlite3"
+    return app_data_dir("PockPock") / "browser-recipes.sqlite3"
 
 
 def connect() -> sqlite3.Connection:

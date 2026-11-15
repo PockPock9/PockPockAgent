@@ -50,7 +50,7 @@ from projects.run_store.delegation_scheduler import (
     stable_delegate_run_id,
 )
 
-logger = logging.getLogger("frog-ai")
+logger = logging.getLogger("pockpock")
 
 
 @dataclass(frozen=True)

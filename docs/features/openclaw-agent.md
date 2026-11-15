@@ -113,7 +113,7 @@ Each PockPock conversation maps to one OpenClaw session (`pockpock-<conversation
 
 ```text
 PockPock Agent desktop app (OpenClaw mode)
-  -> POST /api/openclaw/chat {session_id, message, permission_mode, model?}   (frog_ai_server.py, same-PC check)
+  -> POST /api/openclaw/chat {session_id, message, permission_mode, model?}   (pockpock_server.py, same-PC check)
   -> projects/openclaw_bridge/api.py -> OpenClawBridge.start_turn
        writes ~/.openclaw/pockpock/permissions.json  {session key: mode}
        spawns: node gateway_turn.mjs          (start request sent on stdin)
@@ -135,7 +135,7 @@ PockPock Agent desktop app (OpenClaw mode)
 | `backend/projects/openclaw_bridge/plugin/pockpock-permissions.ts` | OpenClaw plugin that enforces the three modes on every tool call and exposes `pockpock.permissions.status` |
 | `backend/projects/openclaw_bridge/install_plugin.py` | Copies the plugin into `~/.openclaw/policies/`, enables it, and reloads or restarts the gateway |
 | `backend/projects/openclaw_bridge/test_bridge.py`, `plugin/test_policy.mjs` | Unit tests (no OpenClaw needed) |
-| `backend/scripts/frog_ai_server.py` | Builds the bridge from environment configuration, mounts the router with the same-PC check, adds rate limits |
+| `backend/scripts/pockpock_server.py` | Builds the bridge from environment configuration, mounts the router with the same-PC check, adds rate limits |
 | `desktop/src/components/ChatPane.tsx`, `desktop/src/lib/engines.ts`, `desktop/src/components/MessageView.tsx` | Mode and permission pickers, status, send path, activity steps, approval cards |
 
 OpenClaw's own session permission mode is set to `full` for PockPock sessions, and the plugin applies the PockPock mode instead. OpenClaw's built-in approval modes were not used because, on native Windows, they refuse any command that does not start with a resolvable program file, which rules out PowerShell cmdlets such as `Remove-Item` even when wrapped in `powershell -Command`.

@@ -10,8 +10,8 @@ from starlette.requests import Request
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 
-from frog_ai_server import AgentRunTermination, _await_agent_operation
-import frog_ai_server as gateway
+from pockpock_server import AgentRunTermination, _await_agent_operation
+import pockpock_server as gateway
 import agent_run_store
 
 

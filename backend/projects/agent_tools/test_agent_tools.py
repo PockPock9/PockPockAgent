@@ -35,7 +35,7 @@ from projects.agent_tools import (
     search_public_site,
     website_ssl_context,
 )
-from frog_ai_server import is_workspace_edit_request, require_local_agent_request
+from pockpock_server import is_workspace_edit_request, require_local_agent_request
 
 
 

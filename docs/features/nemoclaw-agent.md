@@ -37,7 +37,7 @@ Switching an existing conversation into NemoClaw mode does not copy earlier Chat
 
 ```text
 PockPock Agent desktop app (NemoClaw mode)
-  -> POST /api/nemoclaw/chat {session_id, message}         (frog_ai_server.py, same-PC check)
+  -> POST /api/nemoclaw/chat {session_id, message}         (pockpock_server.py, same-PC check)
   -> projects/nemoclaw_bridge/api.py  -> NemoClawBridge.run_turn (worker thread)
   -> wsl.exe [-d <distro>] --exec /bin/bash -c <fixed script>
        env NC_SANDBOX, NC_AGENT, NC_SESSION, NC_TIMEOUT, NC_MESSAGE forwarded via WSLENV
@@ -51,7 +51,7 @@ PockPock Agent desktop app (NemoClaw mode)
 | `backend/projects/nemoclaw_bridge/bridge.py` | Configuration, input validation, WSL command and environment construction, process execution with timeout and cancellation, JSON/status parsing, single active turn, status cache |
 | `backend/projects/nemoclaw_bridge/api.py` | `/api/nemoclaw/status` and `/api/nemoclaw/chat` routes, SSE framing, heartbeat events, disconnect cancellation |
 | `backend/projects/nemoclaw_bridge/test_bridge.py` | Unit tests using a fake runner (no WSL needed) |
-| `backend/scripts/frog_ai_server.py` | Builds the bridge from environment configuration, mounts the router with the gateway's same-PC request check, adds rate limits |
+| `backend/scripts/pockpock_server.py` | Builds the bridge from environment configuration, mounts the router with the gateway's same-PC request check, adds rate limits |
 | `desktop/src/components/ChatPane.tsx`, `desktop/src/lib/engines.ts` | Mode picker, readiness check, NemoClaw send path, error and truncation notices |
 
 ## API contract

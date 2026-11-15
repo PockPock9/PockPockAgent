@@ -13,7 +13,7 @@ import agent_run_store
 from projects.agent_tools.research_contracts import make_source_record
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
-import frog_ai_server as gateway
+import pockpock_server as gateway
 
 
 @contextmanager

@@ -43,7 +43,7 @@ def venv_python_path(root: Path = REPOSITORY_ROOT, platform_name: str | None = N
 
 def requirements_files(root: Path = REPOSITORY_ROOT) -> list[Path]:
     backend_root = root / "backend"
-    files = [backend_root / "scripts" / "requirements-frog-ai.txt"]
+    files = [backend_root / "scripts" / "requirements-pockpock.txt"]
     files.extend(sorted((backend_root / "projects").rglob("requirements.txt")))
     missing = [path for path in files if not path.is_file()]
     if missing:
@@ -96,7 +96,7 @@ def setup_environment(root: Path = REPOSITORY_ROOT) -> None:
 
 
 def get_internal_token() -> str:
-    data_directory = app_data_dir("FrogAI")
+    data_directory = app_data_dir("PockPock")
     data_directory.mkdir(parents=True, exist_ok=True)
     token_path = data_directory / "services.token"
     try:
@@ -123,7 +123,7 @@ def service_environment() -> dict[str, str]:
             "POCKPOCK_VALIDATOR_URL": "http://127.0.0.1:8772",
             "POCKPOCK_RUN_STORE_URL": "http://127.0.0.1:8773",
             "POCKPOCK_BROWSER_AUTOMATION_URL": "http://127.0.0.1:8774",
-            "FROG_AI_PORT": "8766",
+            "POCKPOCK_PORT": "8766",
         }
     )
     return environment
@@ -242,8 +242,9 @@ def start_stack(root: Path = REPOSITORY_ROOT, supervise: bool = True) -> None:
         raise RuntimeError(f"Backend dependencies are not installed. Run '{sys.executable} backend/scripts/pockpock.py setup' first.")
     check_python_version(python)
 
+    migrate_legacy_data()  # the data folder was named FrogAI before 2026-11-15
     environment = service_environment()
-    log_directory = app_data_dir("FrogAI") / "logs"
+    log_directory = app_data_dir("PockPock") / "logs"
     projects_root = root / "backend" / "projects"
     log_directory.mkdir(parents=True, exist_ok=True)
     processes: list[ManagedProcess] = []
@@ -261,7 +262,7 @@ def start_stack(root: Path = REPOSITORY_ROOT, supervise: bool = True) -> None:
             )
         start_service(
             "PockPock AI",
-            [str(python), "-u", str(root / "backend" / "scripts" / "frog_ai_server.py")],
+            [str(python), "-u", str(root / "backend" / "scripts" / "pockpock_server.py")],
             root,
             8766,
             environment,

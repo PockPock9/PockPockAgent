@@ -41,9 +41,28 @@ function venvPython() {
   return path.join(venvRoot(), IS_WIN ? 'Scripts\\python.exe' : 'bin/python')
 }
 
-/** Shared with the Python services (pockpock_paths.app_data_dir("FrogAI")). */
+/** Shared with the Python services (pockpock_paths.app_data_dir("PockPock")). */
 function dataRoot() {
-  return path.join(LOCAL, 'FrogAI')
+  return path.join(LOCAL, 'PockPock')
+}
+
+/**
+ * Moves data from the folder used before the rename (FrogAI) into dataRoot(), once. Only entries
+ * missing from the new folder are moved; anything that cannot be moved yet (a file held open by a
+ * service from an older version) is retried on the next start. Mirrors pockpock_paths.migrate_legacy_data.
+ */
+function migrateLegacyData() {
+  const legacy = path.join(LOCAL, 'FrogAI')
+  if (!fs.existsSync(legacy)) return []
+  fs.mkdirSync(dataRoot(), { recursive: true })
+  const moved = []
+  for (const name of fs.readdirSync(legacy)) {
+    const target = path.join(dataRoot(), name)
+    if (fs.existsSync(target)) continue
+    try { fs.renameSync(path.join(legacy, name), target); moved.push(name) } catch { /* retried next start */ }
+  }
+  try { fs.rmdirSync(legacy) } catch { /* not empty yet */ }
+  return moved
 }
 
 function logsRoot() {
@@ -179,7 +198,7 @@ function cleanEnv(extra = {}) {
 
 module.exports = {
   IS_WIN, IS_MAC, HOME, LOCAL, exe,
-  repoRoot, backendRoot, runtimeRoot, venvRoot, venvPython, dataRoot, logsRoot,
+  repoRoot, backendRoot, runtimeRoot, venvRoot, venvPython, dataRoot, migrateLegacyData, logsRoot,
   runtimeNodeBin, npmPrefix, npmPrefixBin, toolDirs, fixPath, findExecutable,
   ollamaAppDirs, ollamaExe, ollamaServerLog, nodeExe, npmCmd, openclawCmd, openclawEntry, openclawLog, dockerCli, cleanEnv,
 }

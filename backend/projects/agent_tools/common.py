@@ -96,7 +96,7 @@ _PROJECT_PATCH_TTL = 30 * 60
 
 _PENDING_PROJECT_PATCHES: dict[str, "PendingProjectPatch"] = {}
 
-logger = logging.getLogger("frog-ai-agent-tools")
+logger = logging.getLogger("pockpock-agent-tools")
 
 class AgentToolError(ValueError):
     pass

@@ -105,12 +105,12 @@ Details: [Architecture](docs/ARCHITECTURE.md) and the [feature index](docs/FEATU
 ## For developers
 
 ```text
-Frog ai/
+PockPockAgent/
 ├── desktop/            PockPock Agent (Electron + React + Vite) and its installer
 │   ├── electron/       main process: services, setup, local server, files, terminal
 │   └── src/            the interface
 ├── backend/
-│   ├── scripts/        gateway (frog_ai_server.py), Smart Router, telemetry, pockpock.py, run_tests.py
+│   ├── scripts/        gateway (pockpock_server.py), Smart Router, telemetry, pockpock.py, run_tests.py
 │   └── projects/       planner, validator, run_store, browser_automation, agent_core, agent_tools,
 │                       agent_extensions, openclaw_bridge, nemoclaw_bridge, model_router, local_memory, observability
 ├── docs/               architecture, roadmap, task tracker, feature pages
@@ -163,7 +163,7 @@ Planned work is in the [roadmap](docs/ROADMAP.md) and the [task tracker](docs/TA
 | What | Where |
 |---|---|
 | Desktop chats and settings | `%APPDATA%\PockPock Agent` |
-| Backend data (runs, telemetry without prompts, recipes, memory) and service logs | `%LOCALAPPDATA%\FrogAI` and `%LOCALAPPDATA%\LocalAIObservability` |
+| Backend data (runs, telemetry without prompts, recipes, memory) and service logs | `%LOCALAPPDATA%\PockPock` and `%LOCALAPPDATA%\LocalAIObservability` |
 | Installed Python environment (installer only) | `%LOCALAPPDATA%\PockPock\runtime` |
 | Agent task folders | `%USERPROFILE%\PockPock AI Tasks` |
 | Models | `%USERPROFILE%\.ollama` |
