@@ -2,6 +2,7 @@
 shown by the desktop app. Stores routing decisions and timings, never prompts or replies."""
 
 import json
+from contextlib import closing
 import os
 import sqlite3
 import threading
@@ -19,15 +20,33 @@ DB_PATH = Path(os.environ.get("LOCAL_AI_DASHBOARD_DB", DATA_DIR / "traces.sqlite
 DB_LOCK = threading.Lock()
 
 
-def connect_db():
+_SCHEMA_READY = False
+
+
+def _open():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(DB_PATH, timeout=5)
     connection.row_factory = sqlite3.Row
     return connection
 
 
+def connect_db():
+    """Open the database, creating its tables the first time in this process.
+
+    The gateway also initializes the schema at startup; doing it here as well means code that
+    runs outside that startup (tests, scripts, a fresh install's first request) never meets a
+    missing table.
+    """
+    if not _SCHEMA_READY:
+        initialize_db()
+    return _open()
+
+
 def initialize_db():
-    with connect_db() as connection:
+    global _SCHEMA_READY
+    # closing(): sqlite3 connections used as context managers commit but stay open, which keeps
+    # the file locked on Windows.
+    with closing(_open()) as connection, connection:
         connection.execute("PRAGMA journal_mode=WAL")
         connection.execute(
             """CREATE TABLE IF NOT EXISTS events (
@@ -56,6 +75,7 @@ def initialize_db():
                 value TEXT NOT NULL
             )"""
         )
+    _SCHEMA_READY = True
 
 
 def ollama_json(path):
