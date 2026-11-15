@@ -6,19 +6,30 @@ PockPock AI is a local AI workspace for Windows. Its desktop app, **PockPock Age
 
 ## Install
 
-1. Download and run **`PockPock-Agent-Setup-<version>.exe`**. It installs for the current user without administrator rights, creates Desktop and Start-menu shortcuts, and opens the app.
-2. The app opens on **Setup**. Choose what to install and press **Install**:
+PockPock runs on **Windows 10/11 (64-bit)** and **macOS 12 or later** (Apple silicon or Intel).
+
+1. Download the installer for your computer:
+   - **Windows:** `PockPock-Agent-Setup-<version>.exe`. Run it. It installs for the current user without administrator rights, creates Desktop and Start-menu shortcuts, and opens the app.
+   - **Mac:** `PockPock-Agent-<version>-mac-arm64.dmg` (Apple silicon: M1 or newer) or `...-mac-x64.dmg` (Intel). Open it and drag **PockPock Agent** to **Applications**. The app is not notarized by Apple yet, so the first time: open it, press **Done** when macOS says it cannot verify the developer, then go to **System Settings → Privacy & Security**, press **Open Anyway** next to PockPock Agent, and confirm. Later launches open normally.
+2. The app opens on **Setup**. Choose what to install and press **Install**. Setup installs every prerequisite itself, so nothing needs to be installed beforehand:
 
 | Component | What it adds | Download |
 |---|---|---|
-| PockPock backend (always) | Python 3.12, the PockPock services, an isolated browser for agent web tasks | about 600 MB |
+| PockPock backend (always) | Python 3.12 (Windows: from python.org or winget; Mac: through uv, into PockPock's own folder), the PockPock services, an isolated browser for agent web tasks | about 600–700 MB |
 | Ollama and models | Ollama plus `qwen3.5:9b` (default model) and `qwen2.5:1.5b` (Smart Router classifier) | about 8 GB |
 | OpenClaw engine | Node.js (if needed), OpenClaw, the PockPock permission plugin, and a list of OpenClaw skills you can untick | about 400 MB |
-| NemoClaw engine | WSL with Ubuntu, Docker Desktop, and a NemoClaw sandbox | about 8 GB |
+| NemoClaw engine | Windows: WSL with Ubuntu, Docker Desktop and a NemoClaw sandbox. Mac (Apple silicon only): Apple's Command Line Tools, Docker Desktop and a NemoClaw sandbox | about 8 GB |
 
-Setup skips anything already installed, so running it again repairs a broken install. NemoClaw needs administrator approval, may need a Windows restart, and asks you to create an Ubuntu username once; setup resumes where it stopped when you reopen the app.
+3. When the installs finish, setup **starts every service and checks it**: each service must answer its health check, Ollama must produce a short test reply, and the PockPock API must respond. Only then does it say "PockPock is ready". If a check fails, setup names the service; open **Services** to read its log and press **Try again**.
 
-**Requirements:** Windows 10 or 11 (64-bit), 16 GB RAM (32 GB recommended), an NVIDIA GPU with 8 GB or more of video memory for good speed (CPU-only works but is slow), and 20 GB free disk space (30 GB with NemoClaw). An internet connection is needed during setup only.
+Setup skips anything already installed, so running it again repairs a broken install. What it may ask you for:
+
+- **Windows:** NemoClaw needs administrator approval, may need a Windows restart, and asks you to create an Ubuntu username once.
+- **Mac:** nothing for the backend, Ollama or OpenClaw (they install into your user folders without a password). NemoClaw asks for your password once (to install Docker Desktop) and may ask you to install Apple's Command Line Tools.
+
+Setup resumes where it stopped when you reopen the app or press **Continue setup**.
+
+**Requirements:** 16 GB RAM (32 GB recommended) and 20 GB free disk space (30 GB with NemoClaw). For speed: on Windows an NVIDIA GPU with 8 GB or more of video memory (CPU-only works but is slow); on a Mac, Apple silicon (Intel Macs run models on the CPU, slowly). NemoClaw on a Mac needs Apple silicon; NVIDIA lists macOS support as "tested with limitations". An internet connection is needed during setup only.
 
 ---
 
@@ -107,14 +118,21 @@ Frog ai/
 └── AGENTS.md           rules for anyone (human or AI) changing this repository
 ```
 
-Run from source (Windows, Python 3.12 and Node.js 24):
+Run from source (Python 3.12 and Node.js 24):
 
 ```powershell
+# Windows
 py -3.12 backend\scripts\pockpock.py setup   # creates .venv, installs packages and Chromium
 cd desktop
 npm install
 npm run build
 npm run app                                    # starts the app; it starts the services
+```
+
+```bash
+# macOS
+python3.12 backend/scripts/pockpock.py setup
+cd desktop && npm install && npm run build && npm run app
 ```
 
 `npm run dev` runs the interface with hot reload. Without the desktop app, `py -3.12 backend\scripts\pockpock.py start` runs the backend services in the foreground (Ctrl+C stops them).
@@ -126,7 +144,13 @@ Checks:
 cd desktop; npm run typecheck; npm run build
 ```
 
-Build the installer with `npm run dist` in `desktop/`; it writes `desktop/release/PockPock-Agent-Setup-<version>.exe`. The installer is not code-signed, so Windows SmartScreen warns on first run.
+Build the installers in `desktop/`:
+
+- `npm run dist:win` (on Windows) writes `release/PockPock-Agent-Setup-<version>.exe`.
+- `npm run dist:mac` (on a Mac) writes `release/PockPock-Agent-<version>-mac-arm64.dmg` and `-mac-x64.dmg`, plus `.zip` copies. macOS apps can only be built on a Mac.
+- Without a Mac, run the **Desktop installers** workflow (`.github/workflows/desktop-release.yml`) from the GitHub Actions tab, or push a tag such as `v0.2.0`; it builds both installers on GitHub's Windows and macOS machines and attaches them to the run.
+
+Neither installer is code-signed. Windows SmartScreen warns on first run; the Mac app is signed ad hoc (so it runs on Apple silicon) but not notarized, so the first launch needs **Open Anyway** (see Install). Signing with an Apple Developer ID and a Windows code-signing certificate removes both warnings.
 
 Other tools can use the models directly through Ollama's OpenAI-compatible endpoint, `http://localhost:11434/v1` (Cursor, VS Code Continue, LangChain, n8n and others).
 
@@ -155,6 +179,9 @@ Uninstalling the app keeps this data; delete the folders to remove it.
 | "PockPock is not set up yet" | **Settings** → **Run setup**. |
 | Chat or PockPock Agent does not answer | Check **Services** (Ollama and the gateway must run) and that the Smart Router is on in **Settings**. |
 | OpenClaw is offline | **Services** → OpenClaw gateway → **Start**. Start it from the app or PowerShell, never from Git Bash. |
+| Mac: "PockPock Agent cannot be opened" or "cannot verify the developer" | The app is not notarized yet. **System Settings → Privacy & Security → Open Anyway**, once. |
+| Mac: "is damaged and can't be opened" | The download was altered or only partly copied. Download the `.dmg` again and drag the app to Applications. |
+| Mac: NemoClaw is not offered | It needs Apple silicon. Intel Macs can use Chat, PockPock Agent and OpenClaw. |
 | A large model is very slow | Expected when it does not fit in video memory; use it for hard tasks and start a new chat for it. |
 
 More: [desktop app](docs/features/desktop-app.md), [OpenClaw](docs/features/openclaw-agent.md), [NemoClaw](docs/features/nemoclaw-agent.md), [skills and MCP](docs/features/agent-extensions.md).

@@ -2,16 +2,26 @@
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Box, Check, ChevronDown, ChevronRight, CircleDashed, Cpu, LoaderCircle, Puzzle, RotateCcw, Server, Terminal, X } from 'lucide-react'
 import { bridge } from '../lib/types'
+import { computer, isMac } from '../lib/platform'
 import type { SetupComponent, SetupEvent, SetupStatus } from '../lib/types'
 
 type Step = Extract<SetupEvent, { type: 'step' }>
 
-const COMPONENTS: Array<{ id: SetupComponent; title: string; icon: React.ReactNode; detail: string; size: string; locked?: boolean; warning?: string }> = [
-  { id: 'core', title: 'PockPock backend', icon: <Server size={16} />, detail: 'Python 3.12, the PockPock services and an isolated browser for agent web tasks.', size: 'about 600 MB', locked: true },
-  { id: 'ollama', title: 'Ollama and models', icon: <Cpu size={16} />, detail: 'Runs AI models on this PC. Downloads qwen3.5:9b (the default model) and qwen2.5:1.5b (used to route requests).', size: 'about 8 GB' },
-  { id: 'openclaw', title: 'OpenClaw engine', icon: <Terminal size={16} />, detail: 'An agent that works directly on this PC, with skills, MCP servers and the Ask first / Auto-approve / Full access permissions. Installs Node.js if needed.', size: 'about 400 MB' },
-  { id: 'nemoclaw', title: 'NemoClaw engine', icon: <Box size={16} />, detail: 'OpenClaw inside a sandbox, so it cannot touch this PC. Installs WSL with Ubuntu and Docker Desktop.', size: 'about 8 GB', warning: 'Windows asks for administrator permission, may need a restart, and Ubuntu asks you to create a username once. Takes 20 to 40 minutes.' },
-]
+type ComponentInfo = { id: SetupComponent; title: string; icon: React.ReactNode; detail: string; size: string; locked?: boolean; warning?: string }
+
+const COMPONENTS: ComponentInfo[] = isMac
+  ? [
+      { id: 'core', title: 'PockPock backend', icon: <Server size={16} />, detail: 'Python 3.12 (installed into PockPock’s own folder, no password needed), the PockPock services and an isolated browser for agent web tasks.', size: 'about 700 MB', locked: true },
+      { id: 'ollama', title: 'Ollama and models', icon: <Cpu size={16} />, detail: 'Runs AI models on this Mac. Installs Ollama in Applications and downloads qwen3.5:9b (the default model) and qwen2.5:1.5b (used to route requests).', size: 'about 8 GB' },
+      { id: 'openclaw', title: 'OpenClaw engine', icon: <Terminal size={16} />, detail: 'An agent that works directly on this Mac, with skills, MCP servers and the Ask first / Auto-approve / Full access permissions. Installs Node.js into PockPock’s folder if needed.', size: 'about 400 MB' },
+      { id: 'nemoclaw', title: 'NemoClaw engine', icon: <Box size={16} />, detail: 'OpenClaw inside a Docker sandbox, so it cannot touch this Mac. Installs Docker Desktop and Apple’s Command Line Tools if missing.', size: 'about 8 GB', warning: 'macOS asks for your password once (to install Docker Desktop) and may ask to install the Command Line Tools. Takes 20 to 40 minutes.' },
+    ]
+  : [
+      { id: 'core', title: 'PockPock backend', icon: <Server size={16} />, detail: 'Python 3.12, the PockPock services and an isolated browser for agent web tasks.', size: 'about 600 MB', locked: true },
+      { id: 'ollama', title: 'Ollama and models', icon: <Cpu size={16} />, detail: 'Runs AI models on this PC. Downloads qwen3.5:9b (the default model) and qwen2.5:1.5b (used to route requests).', size: 'about 8 GB' },
+      { id: 'openclaw', title: 'OpenClaw engine', icon: <Terminal size={16} />, detail: 'An agent that works directly on this PC, with skills, MCP servers and the Ask first / Auto-approve / Full access permissions. Installs Node.js if needed.', size: 'about 400 MB' },
+      { id: 'nemoclaw', title: 'NemoClaw engine', icon: <Box size={16} />, detail: 'OpenClaw inside a sandbox, so it cannot touch this PC. Installs WSL with Ubuntu and Docker Desktop.', size: 'about 8 GB', warning: 'Windows asks for administrator permission, may need a restart, and Ubuntu asks you to create a username once. Takes 20 to 40 minutes.' },
+    ]
 
 export function SetupPage({ onDone }: { onDone: () => void }) {
   const desktop = bridge()
@@ -35,7 +45,7 @@ export function SetupPage({ onDone }: { onDone: () => void }) {
         setDisabledSkills(new Set(current.pending.disabledSkills))
       } else {
         // Leave out components that are already installed.
-        setChosen(new Set((['core', 'ollama', 'openclaw', 'nemoclaw'] as SetupComponent[]).filter((id) => id === 'core' || !current[id].installed || (id === 'ollama' && Object.values(current.ollama.models).some((ok) => !ok)))))
+        setChosen(new Set((['core', 'ollama', 'openclaw', 'nemoclaw'] as SetupComponent[]).filter((id) => id === 'core' || (id === 'nemoclaw' && !current.nemoclaw.supported ? false : !current[id].installed) || (id === 'ollama' && Object.values(current.ollama.models).some((ok) => !ok)))))
       }
     })
     return desktop.setup.onEvent((event) => {
@@ -58,6 +68,7 @@ export function SetupPage({ onDone }: { onDone: () => void }) {
     setPhase('running')
     void desktop?.setup.start({ components: [...chosen], disabledSkills: [...disabledSkills] })
   }
+  const unsupported = (id: SetupComponent) => id === 'nemoclaw' && status !== null && !status.nemoclaw.supported
   const installed = (id: SetupComponent) => Boolean(status?.[id].installed) && !(id === 'ollama' && status && Object.values(status.ollama.models).some((ok) => !ok))
 
   if (!desktop) return <div className="page"><div className="page__inner"><p className="note">Setup runs in the desktop app.</p></div></div>
@@ -66,22 +77,23 @@ export function SetupPage({ onDone }: { onDone: () => void }) {
       <div className="page__inner">
         <header className="page__head">
           <div><span className="eyebrow">Setup</span><h1>{status?.needsSetup ? 'Set up PockPock' : 'Install or repair components'}</h1>
-            <p>Choose what to install, then PockPock installs and configures everything in one go. Anything already on this PC is kept and skipped.</p></div>
+            <p>Choose what to install, then PockPock installs and configures everything in one go. Anything already on this {computer} is kept and skipped. At the end every service is started and checked.</p></div>
         </header>
         {!status && <p className="note"><LoaderCircle size={13} className="spin" /> Checking this PC…</p>}
         {status && phase === 'choose' && (
           <>
             {status.pending && <div className="banner" role="status"><span>The last setup stopped before it finished{status.lastRun?.message ? `: ${status.lastRun.message}` : '.'} Press Install to continue.</span></div>}
-            {!status.winget && <div className="banner" role="status"><span>The Windows package manager (winget) is not available, so installers are downloaded directly instead.</span></div>}
+            {status.platform === 'win32' && !status.winget && <div className="banner" role="status"><span>The Windows package manager (winget) is not available, so installers are downloaded directly instead.</span></div>}
             <ul className="setup-components">
               {COMPONENTS.map((component) => (
-                <li key={component.id} className={`setup-component${chosen.has(component.id) ? ' is-chosen' : ''}`}>
+                <li key={component.id} className={`setup-component${chosen.has(component.id) ? ' is-chosen' : ''}${unsupported(component.id) ? ' is-unsupported' : ''}`}>
                   <label>
-                    <input type="checkbox" checked={chosen.has(component.id)} disabled={component.locked} onChange={(event) => setChosen((current) => { const next = new Set(current); if (event.target.checked) next.add(component.id); else next.delete(component.id); return next })} />
+                    <input type="checkbox" checked={chosen.has(component.id)} disabled={component.locked || unsupported(component.id)} onChange={(event) => setChosen((current) => { const next = new Set(current); if (event.target.checked) next.add(component.id); else next.delete(component.id); return next })} />
                     <span className="setup-component__icon">{component.icon}</span>
                     <span className="setup-component__text">
                       <strong>{component.title} {installed(component.id) && <small className="badge badge--ok">Installed</small>}</strong>
                       <span>{component.detail}</span>
+                      {unsupported(component.id) && <em><AlertTriangle size={12} /> {status.nemoclaw.reason}</em>}
                       <small>{installed(component.id) ? 'Checked and repaired if needed' : `Download: ${component.size}`}</small>
                       {component.warning && chosen.has(component.id) && !installed(component.id) && <em><AlertTriangle size={12} /> {component.warning}</em>}
                     </span>
@@ -131,7 +143,7 @@ export function SetupPage({ onDone }: { onDone: () => void }) {
             </ol>
             {outcome && (
               <div className={`banner${outcome.outcome === 'done' ? '' : ' banner--error'}`} role="status">
-                <span>{outcome.outcome === 'done' ? 'Everything is installed and running.' : outcome.message || 'Setup did not finish.'}</span>
+                <span>{outcome.outcome === 'done' ? 'Everything is installed, running and checked. PockPock is ready.' : outcome.message || 'Setup did not finish.'}</span>
               </div>
             )}
             <div className="card__actions">

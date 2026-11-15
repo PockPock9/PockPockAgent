@@ -1,8 +1,8 @@
 # NemoClaw agent mode
 
-NemoClaw mode lets the PockPock Agent desktop app talk to a sandboxed [NVIDIA NemoClaw](https://github.com/NVIDIA/NemoClaw) agent (OpenClaw harness inside an OpenShell sandbox) running in WSL on the same PC. It is a third response mode next to **Chat** and **Agent**. PockPock does not install, onboard, or manage NemoClaw; it only sends turns to an existing sandbox and shows the reply.
+NemoClaw mode lets the PockPock Agent desktop app talk to a sandboxed [NVIDIA NemoClaw](https://github.com/NVIDIA/NemoClaw) agent (OpenClaw harness inside an OpenShell sandbox) running on the same computer: inside WSL on Windows, natively with Docker on a Mac with Apple silicon. It is a third response mode next to **Chat** and **Agent**. PockPock does not install, onboard, or manage NemoClaw; it only sends turns to an existing sandbox and shows the reply.
 
-In the composer it is the **NemoClaw** entry of the mode picker. Setup installs WSL with Ubuntu, Docker Desktop and NemoClaw and onboards a `pockpock` sandbox against Ollama; the **Services** page starts and stops the sandbox (starting Docker Desktop first).
+In the composer it is the **NemoClaw** entry of the mode picker. Setup installs the prerequisites (Windows: WSL with Ubuntu and Docker Desktop; Mac: Xcode Command Line Tools and Docker Desktop), installs NemoClaw and onboards a `pockpock` sandbox against Ollama; the **Services** page starts and stops the sandbox (starting Docker Desktop first).
 
 ## When to use it
 
@@ -16,8 +16,8 @@ NemoClaw mode has no PockPock plan approval or permission modes. The sandbox is 
 
 ## Prerequisites
 
-- WSL 2 with a distribution where NemoClaw is installed and a sandbox has been onboarded (default sandbox name `pockpock`).
-- Docker Desktop running with WSL integration enabled for that distribution.
+- Windows: WSL 2 with a distribution where NemoClaw is installed and a sandbox has been onboarded (default sandbox name `pockpock`). Mac: Apple silicon, NemoClaw installed natively (NVIDIA lists macOS as "tested with limitations"), Xcode Command Line Tools, and the same onboarded sandbox.
+- Docker Desktop running (on Windows with WSL integration enabled for that distribution; on a Mac, Colima also works).
 - Ollama running on Windows (NemoClaw uses it through Docker Desktop's `host.docker.internal` route). The OpenClaw system prompt needs roughly 14K tokens, so set the Windows user environment variable `OLLAMA_CONTEXT_LENGTH` to `32768` and restart Ollama; with Ollama's 4,096-token default, replies are truncated and the session forgets earlier turns.
 - `nemoclaw <sandbox> status` in WSL reports `Phase: Ready` and `Inference: healthy`.
 

@@ -28,7 +28,7 @@ This index points to detailed feature contracts. Every new feature or change to 
 
 ## Desktop app and setup
 
-- [PockPock Agent desktop app](features/desktop-app.md): interface, installer, first-run setup, services, data and security.
+- [PockPock Agent desktop app](features/desktop-app.md): interface, Windows and macOS installers, first-run setup with a final service check, services, data and security.
 
 ## Other product areas
 

@@ -155,24 +155,27 @@ export type Settings = {
   services?: { autoStart?: boolean; stopOnQuit?: boolean; nemoclaw?: boolean }
 }
 
-export type AppInfo = { version: string; electron: string; repoRoot: string; backendRoot: string; python: string; packaged: boolean; backendUrl: string; terminal: boolean; backend: BackendPhase; loginItem: boolean }
+export type AppInfo = { version: string; electron: string; platform: string; arch: string; repoRoot: string; backendRoot: string; python: string; packaged: boolean; backendUrl: string; terminal: boolean; backend: BackendPhase; loginItem: boolean }
 
 export type SetupComponent = 'core' | 'ollama' | 'openclaw' | 'nemoclaw'
 export type SetupStatus = {
+  platform: string
+  arch: string
   core: { installed: boolean }
   ollama: { installed: boolean; running: boolean; models: Record<string, boolean> }
   openclaw: { installed: boolean; cli: boolean; node: boolean }
-  nemoclaw: { installed: boolean; wsl: boolean; docker: boolean }
+  nemoclaw: { installed: boolean; supported: boolean; reason: string; docker: boolean }
   winget: boolean
   skills: Array<{ key: string; name: string; description: string }>
   pending: { components: SetupComponent[]; disabledSkills: string[] } | null
   lastRun: { result?: string; message?: string } | null
+  verified: { at: string; ok: boolean; problems: string[] } | null
   needsSetup: boolean
 }
 export type SetupEvent =
   | { type: 'started'; components: SetupComponent[] }
   | { type: 'log'; line: string }
-  | { type: 'step'; component: SetupComponent; id: string; label: string; status: 'running' | 'done' | 'waiting' | 'failed'; detail?: string; progress?: number }
+  | { type: 'step'; component: SetupComponent | 'verify'; id: string; label: string; status: 'running' | 'done' | 'waiting' | 'failed'; detail?: string; progress?: number }
   | { type: 'finished'; outcome: 'done' | 'failed' | 'cancelled' | 'restart' | 'action'; message: string }
 
 /** The preload bridge. Absent when the renderer runs in a plain browser (tests, Vite preview). */

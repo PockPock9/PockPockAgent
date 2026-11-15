@@ -6,6 +6,7 @@ import '@xterm/xterm/css/xterm.css'
 import { RotateCcw, X } from 'lucide-react'
 import { bridge } from '../lib/types'
 import { IconButton } from './ui'
+import { mod } from '../lib/platform'
 
 export function TerminalPanel({ workspace, onClose }: { workspace?: string; onClose: () => void }) {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -61,7 +62,7 @@ export function TerminalPanel({ workspace, onClose }: { workspace?: string; onCl
         <span className="panel-head__title">Terminal <small>{label}</small></span>
         <span className="panel-head__actions">
           <IconButton label="Restart terminal" onClick={() => setGeneration((value) => value + 1)}><RotateCcw size={13} /></IconButton>
-          <IconButton label="Close panel (Ctrl+J)" onClick={onClose}><X size={14} /></IconButton>
+          <IconButton label={`Close panel (${mod}J)`} onClick={onClose}><X size={14} /></IconButton>
         </span>
       </div>
       {!desktop ? <p className="terminal__note">The terminal is available in the desktop app.</p>

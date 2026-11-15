@@ -597,6 +597,11 @@ def ollama_executable() -> Path:
             candidates.append(str(Path(local_app_data) / "Programs" / "Ollama" / "ollama.exe"))
         if program_files:
             candidates.append(str(Path(program_files) / "Ollama" / "ollama.exe"))
+    elif sys.platform == "darwin":
+        # Ollama.app keeps its command-line server inside the bundle.
+        for apps in (Path("/Applications"), Path.home() / "Applications"):
+            candidates.append(str(apps / "Ollama.app" / "Contents" / "Resources" / "ollama"))
+        candidates += ["/opt/homebrew/bin/ollama", "/usr/local/bin/ollama"]
 
     for candidate in candidates:
         if candidate and Path(candidate).is_file():
@@ -700,7 +705,9 @@ async def tool_capable_models() -> tuple[list[str], set[str]]:
                     return name, None
                 info = details.get("model_info", {})
                 context_window = next((value for key, value in info.items() if str(key).endswith(".context_length") and isinstance(value, int)), None) if isinstance(info, dict) else None
-                return name, {"name": name, "capabilities": capabilities, "context_window": context_window}
+                size = str((details.get("details") or {}).get("parameter_size") or "")
+                billions = float(size[:-1]) if size[-1:].upper() == "B" and size[:-1].replace(".", "", 1).isdigit() else None
+                return name, {"name": name, "capabilities": capabilities, "context_window": context_window, "parameter_billions": billions}
 
             results = await asyncio.gather(*(supports_tools(name) for name in candidates))
     except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as err:
@@ -1224,7 +1231,8 @@ async def plan_agent_task(payload: AgentPlanPayload, request: Request):
         ]
         default_model = next((name for name in coder_choices if name in capable_names), default_model)
     try:
-        timeout = aiohttp.ClientTimeout(total=365)
+        # The planner makes a plan call and a critic call; each may take up to 300 s on a large model.
+        timeout = aiohttp.ClientTimeout(total=660)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(f"{planner_url}/plan", json={
                 "task": task,

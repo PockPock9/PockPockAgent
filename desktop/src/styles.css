@@ -436,3 +436,8 @@ button.context-chip:hover { color: var(--text); background: var(--bg-raise); }
 .progress { display: block; height: 4px; margin-top: 4px; overflow: hidden; border-radius: 2px; background: var(--bg-active); }
 .progress span { display: block; height: 100%; background: var(--accent); transition: width .3s ease; }
 .setup-log { max-height: 300px; margin: 0; padding: 10px 12px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; background: #0a0d11; color: #c9d2de; font-size: 11.5px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* macOS: the window buttons sit at the top left (hiddenInset title bar) and there is no overlay on the right. */
+html[data-platform='mac'] .titlebar { padding: 0 8px 0 78px; }
+.setup-component.is-unsupported { opacity: 0.6; }
+.setup-component.is-unsupported label { cursor: not-allowed; }

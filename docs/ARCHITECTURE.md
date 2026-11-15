@@ -61,8 +61,8 @@ The desktop app's main process serves the built interface and forwards `/api` to
 | Module | Responsibility | Boundary |
 | --- | --- | --- |
 | `desktop/electron/main.cjs`, `preload.cjs` | Window, single instance, IPC surface, login item, quit behaviour | Every IPC handler rejects callers other than the app's own origin; the renderer is sandboxed with no Node.js access |
-| `desktop/electron/services.cjs`, `paths.cjs` | Start, stop, restart and health-check Ollama, the four backend services, the gateway, the OpenClaw gateway and the NemoClaw sandbox; logs; locating Python, the backend and tools | Services the app started are stopped when it quits (configurable); services already running are adopted. Python services run from the repository `.venv` in development and `%LOCALAPPDATA%\PockPock\runtime\venv` when installed |
-| `desktop/electron/setup.cjs` | First-run and repair setup: Python 3.12 and backend packages, Ollama and default models, Node.js and OpenClaw (onboarding, tuning, permission plugin, skills choice), WSL, Docker Desktop and NemoClaw | Skips installed components; uses winget when available, otherwise direct downloads; saves a pending plan so setup resumes after a Windows restart |
+| `desktop/electron/services.cjs`, `platform.cjs`, `paths.cjs` | Start, stop, restart and health-check Ollama, the four backend services, the gateway, the OpenClaw gateway and the NemoClaw sandbox; logs; locating Python, the backend and tools on Windows and macOS; process control per system (taskkill/netstat on Windows, process groups/lsof on macOS); NemoClaw's shell (WSL or bash) and Docker | Services the app started are stopped when it quits (configurable); services already running are adopted. Python services run from the repository `.venv` in development and from `runtime/venv` under the per-user app-data folder when installed. On macOS the app adds its tool folders to PATH, because apps opened from Finder get a minimal PATH |
+| `desktop/electron/setup.cjs`, `setup-win.cjs`, `setup-mac.cjs` | First-run and repair setup: Python 3.12 and backend packages, Ollama and default models, Node.js and OpenClaw (onboarding, tuning, permission plugin, skills choice), NemoClaw with its prerequisites, then a final check that starts every service and confirms it answers and that a model replies | Shared steps in `setup.cjs`; installers per system in `setup-win.cjs` (winget, else direct downloads; WSL) and `setup-mac.cjs` (uv, Ollama.app, Node.js archive and Docker Desktop image, all checksum-verified where the publisher provides a checksum). Skips installed components; saves a pending plan so setup resumes after a restart or a user step |
 | `desktop/electron/server.cjs` | Serves `desktop/dist` on 127.0.0.1:8790 (or a free port) and forwards `/api/*` to the gateway, streaming unbuffered | Gives the page one loopback origin so the gateway's same-PC check passes; drops forwarding headers |
 | `desktop/electron/workspace.cjs`, `terminal.cjs` | Files panel listing/reading confined to the open folder; pseudo-terminal sessions | Paths resolving outside the open folder are refused; terminal runs with the user's permissions |
 | `desktop/src/` | React interface: chats, the four engines, plan review, approvals, research sources, changed files, Skills, MCP servers, Models, Memory, Research, Browser recipes, Activity, Services, Setup, Settings | Uses only the gateway HTTP API and the preload bridge. See [desktop app](features/desktop-app.md) |
@@ -102,6 +102,10 @@ Decision: service supervision moved from `pockpock.py` into the desktop app's ma
 
 Decision: setup runs inside the app after a small per-user installer, rather than in the installer itself. Downloads of several gigabytes, administrator prompts, a possible Windows restart, and per-component progress are easier to show and resume in the app; the installer stays small and needs no administrator rights.
 
+Decision: on macOS, setup installs Python (through uv), Node.js and OpenClaw into PockPock's own runtime folder instead of requiring Homebrew. This needs no administrator password and leaves the user's own Python and Node.js untouched; the cost is a second copy of each when the user already has one, so setup reuses a suitable existing Python 3.12 or Node.js 22+ first. Docker Desktop is the only step that asks for a password, through macOS's own prompt. The macOS app is signed ad hoc, because Apple silicon will not run unsigned code; it is not notarized, so Gatekeeper asks the user to allow it once. A Developer ID and notarization would remove that step.
+
+Decision: setup ends by starting and checking every service rather than trusting each installer's exit code. An install can succeed while the service still fails (a missing native library, a blocked port, a model that cannot load), and the user should learn that in setup, with the failing service named, not on their first message.
+
 ### Local service processes
 
 | Process | Port | Health check | Started by |
@@ -116,7 +120,7 @@ Decision: setup runs inside the app after a small per-user installer, rather tha
 | OpenClaw gateway | 18810 | port open | Desktop app service manager (`openclaw gateway start`), or its login item |
 | NemoClaw sandbox dashboard | 18789 | port open | Desktop app service manager (`nemoclaw pockpock start`, after Docker Desktop) |
 
-The internal token and logs use the per-user `FrogAI` data directory: `%LOCALAPPDATA%\FrogAI` on Windows, `~/Library/Application Support/FrogAI` on macOS, or `${XDG_DATA_HOME:-~/.local/share}/FrogAI` on Linux. Internal ports bind only to `127.0.0.1`. The desktop app and installer are Windows-only; the backend and its tests also run on macOS and Linux through `pockpock.py`.
+The internal token and logs use the per-user `FrogAI` data directory: `%LOCALAPPDATA%\FrogAI` on Windows, `~/Library/Application Support/FrogAI` on macOS, or `${XDG_DATA_HOME:-~/.local/share}/FrogAI` on Linux. Internal ports bind only to `127.0.0.1`. The desktop app and its installers support Windows and macOS (Apple silicon and Intel; NemoClaw on Apple silicon only); the backend and its tests also run on Linux through `pockpock.py`.
 
 ## Request flows
 

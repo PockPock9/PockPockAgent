@@ -1,5 +1,6 @@
 // Integrated terminal sessions backed by a pseudo-terminal, streamed to the renderer over IPC.
 const fs = require('node:fs')
+const os = require('node:os')
 const path = require('node:path')
 
 let pty = null
@@ -10,7 +11,8 @@ try {
 }
 
 function shell() {
-  if (process.platform !== 'win32') return { file: process.env.SHELL || '/bin/bash', args: [] }
+  // A login shell on macOS and Linux, so the user's profile (PATH, Homebrew) applies.
+  if (process.platform !== 'win32') return { file: process.env.SHELL || (process.platform === 'darwin' ? '/bin/zsh' : '/bin/bash'), args: ['-l'] }
   const pwsh = path.join(process.env.ProgramFiles || 'C:\\Program Files', 'PowerShell', '7', 'pwsh.exe')
   return fs.existsSync(pwsh) ? { file: pwsh, args: ['-NoLogo'] } : { file: 'powershell.exe', args: ['-NoLogo'] }
 }
@@ -36,7 +38,7 @@ class Terminals {
       name: 'xterm-256color',
       cols: Math.max(20, Math.min(cols || 100, 500)),
       rows: Math.max(5, Math.min(rows || 24, 200)),
-      cwd: cwd && fs.existsSync(cwd) ? cwd : process.env.USERPROFILE || process.cwd(),
+      cwd: cwd && fs.existsSync(cwd) ? cwd : os.homedir(),
       env,
       useConpty: true,
     })

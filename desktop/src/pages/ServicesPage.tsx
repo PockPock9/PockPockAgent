@@ -5,6 +5,7 @@ import { Dot } from '../components/ui'
 import type { Status } from '../lib/status'
 import { bridge } from '../lib/types'
 import type { ServiceState, Settings } from '../lib/types'
+import { isMac } from '../lib/platform'
 
 const TONE: Record<ServiceState['status'], 'ok' | 'warn' | 'off' | 'busy'> = {
   running: 'ok', starting: 'busy', stopping: 'busy', checking: 'busy', stopped: 'off', unavailable: 'off', error: 'warn',
@@ -113,7 +114,7 @@ export function ServicesPage({ status, settings, patchSettings, loginItem, setLo
             <Toggle checked={serviceSettings.stopOnQuit !== false} label="Stop services when the app closes" onChange={(next) => patchSettings({ services: { ...serviceSettings, stopOnQuit: next } })} />
           </li>
           <li className="row">
-            <div className="row__text"><strong>Open PockPock Agent when I sign in</strong><span>Starts the app (and its services) after you sign in to Windows.</span></div>
+            <div className="row__text"><strong>Open PockPock Agent when I sign in</strong><span>Starts the app (and its services) after you sign in{isMac ? ' to your Mac' : ' to Windows'}.</span></div>
             <Toggle checked={loginItem} label="Open PockPock Agent when I sign in" onChange={setLoginItem} />
           </li>
         </ul>

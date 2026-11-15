@@ -10,6 +10,7 @@ import { ExtensionCard, inspectLink, linkFromMessage } from './ExtensionCard'
 import type { Proposal } from './ExtensionCard'
 import { EngineIcon, MessageView } from './MessageView'
 import { Dot, MenuItem, Popover } from './ui'
+import { computer, isMac } from '../lib/platform'
 
 const CLAW_PERMISSION: Record<ClawPermission, { title: string; detail: string }> = {
   ask: { title: 'Ask first', detail: 'Every action waits for you to allow or deny it.' },
@@ -134,7 +135,12 @@ export function ChatPane(props: Props) {
     if (link && engine !== 'chat' && await preview(link.url, undefined, !link.explicit)) { setDraft(''); return }
     // Right after launch the first status poll may not have returned yet; ask now instead.
     const state = status.state ?? (status.backend.phase === 'ready' ? await status.refreshState() : null)
-    const problem = readinessError(engine, status, settings, state)
+    // A not-ready engine may have come up since the last check (a sandbox loading its model, a
+    // gateway just started), so check again before refusing.
+    let fresh = status
+    if (engine === 'nemoclaw' && !status.nemo?.ready) fresh = { ...status, nemo: await status.refreshNemo(true, true), nemoChecking: false }
+    if (engine === 'openclaw' && !status.claw?.ready) fresh = { ...status, claw: await status.refreshClaw(true) }
+    const problem = readinessError(engine, fresh, settings, state)
     if (problem) { setError(problem); return }
     if ((engine === 'openclaw' || engine === 'nemoclaw') && pendingAttachments.some((file) => file.kind === 'image')) {
       setError(`${ENGINE_LABEL[engine]} accepts text and documents only. Remove the image or switch to Chat.`)
@@ -180,7 +186,7 @@ export function ChatPane(props: Props) {
               <p>{engine === 'chat' ? 'Chat answers directly with the best local model.'
                 : engine === 'agent' ? 'PockPock Agent plans the task, shows you the plan, then runs its tools inside the task folder.'
                   : engine === 'openclaw' ? 'OpenClaw runs on this PC with no sandbox, using your skills and MCP servers. The permission setting controls what it may do without asking.'
-                    : 'NemoClaw runs OpenClaw inside a sandbox in WSL. It cannot touch files or programs on this PC.'}</p>
+                    : `NemoClaw runs OpenClaw inside a sandbox${isMac ? '' : ' in WSL'}. It cannot touch files or programs on this ${computer}.`}</p>
               <div className="welcome__tips">
                 <button type="button" onClick={() => { setDraft('Summarize the files in this folder and suggest what to work on next.'); inputRef.current?.focus() }}><Folder size={14} /> Explore the open folder</button>
                 <button type="button" onClick={() => { setDraft('Research '); inputRef.current?.focus() }}><Sparkles size={14} /> Research a topic</button>
@@ -201,7 +207,7 @@ export function ChatPane(props: Props) {
       <div className="composer-wrap">
         {error && <div className="banner banner--error" role="alert"><span>{error}</span><button type="button" className="icon-button icon-button--small" onClick={() => setError('')} aria-label="Dismiss"><X size={13} /></button></div>}
         <div className="context-chips">
-          <span className="context-chip"><Monitor size={13} /> This PC</span>
+          <span className="context-chip"><Monitor size={13} /> This {computer}</span>
           <button type="button" className="context-chip" onClick={onChooseFolder} title={settings.workspace || 'Open a folder'}><Folder size={13} /> {folderName || 'Open folder'}</button>
           <span className="context-chip"><Dot tone={engineTone} /> {ENGINE_LABEL[engine]}</span>
         </div>
@@ -240,7 +246,7 @@ export function ChatPane(props: Props) {
                   <div className="popover__label">Agent</div>
                   <MenuItem icon={<Bot size={14} />} title="PockPock Agent" detail="Plans first, then runs built-in tools in a task folder." selected={engine === 'agent'} onSelect={() => chooseEngine('agent')} />
                   <MenuItem icon={<Terminal size={14} />} title="OpenClaw" detail={status.claw && !status.claw.available ? status.claw.detail : 'On this PC, no sandbox. Uses your skills and MCP servers.'} selected={engine === 'openclaw'} disabled={Boolean(status.claw && !status.claw.available)} onSelect={() => chooseEngine('openclaw')} />
-                  <MenuItem icon={<Box size={14} />} title="NemoClaw" detail={status.nemo && !status.nemo.available ? status.nemo.detail : 'OpenClaw in a WSL sandbox. Cannot touch this PC.'} selected={engine === 'nemoclaw'} disabled={Boolean(status.nemo && !status.nemo.available)} onSelect={() => chooseEngine('nemoclaw')} />
+                  <MenuItem icon={<Box size={14} />} title="NemoClaw" detail={status.nemo && !status.nemo.available ? status.nemo.detail : `OpenClaw in a ${isMac ? 'Docker' : 'WSL'} sandbox. Cannot touch this ${computer}.`} selected={engine === 'nemoclaw'} disabled={Boolean(status.nemo && !status.nemo.available)} onSelect={() => chooseEngine('nemoclaw')} />
                 </Popover>
               </div>
               {(engine === 'openclaw' || engine === 'agent') && (

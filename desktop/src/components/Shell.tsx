@@ -5,6 +5,7 @@ import { relativeTime } from '../lib/api'
 import type { Status } from '../lib/status'
 import type { Session, Settings } from '../lib/types'
 import { Dot, IconButton } from './ui'
+import { mod } from '../lib/platform'
 
 export type Page = 'chat' | 'skills' | 'mcp' | 'models' | 'memory' | 'research' | 'recipes' | 'activity' | 'services' | 'settings'
 
@@ -17,15 +18,15 @@ export function TitleBar({ settings, onToggle, onChooseFolder }: {
   return (
     <header className="titlebar">
       <div className="titlebar__left">
-        <IconButton label="Toggle sidebar (Ctrl+B)" active={settings.sidebar !== false} onClick={() => onToggle('sidebar')}><PanelLeft size={16} /></IconButton>
+        <IconButton label={`Toggle sidebar (${mod}B)`} active={settings.sidebar !== false} onClick={() => onToggle('sidebar')}><PanelLeft size={16} /></IconButton>
         <span className="brand"><span className="brand__mark">P</span>PockPock <b>Agent</b></span>
       </div>
       <button type="button" className="titlebar__folder" onClick={onChooseFolder} title={settings.workspace || 'Open a folder'}>
         <Folder size={13} /><span>{folder || 'Open a folder'}</span>
       </button>
       <div className="titlebar__right">
-        <IconButton label="Toggle terminal (Ctrl+J)" active={Boolean(settings.terminal)} onClick={() => onToggle('terminal')}><PanelBottom size={16} /></IconButton>
-        <IconButton label="Toggle files (Ctrl+Shift+E)" active={settings.files !== false} onClick={() => onToggle('files')}><PanelRight size={16} /></IconButton>
+        <IconButton label={`Toggle terminal (${mod}J)`} active={Boolean(settings.terminal)} onClick={() => onToggle('terminal')}><PanelBottom size={16} /></IconButton>
+        <IconButton label={`Toggle files (${mod}Shift+E)`} active={settings.files !== false} onClick={() => onToggle('files')}><PanelRight size={16} /></IconButton>
       </div>
     </header>
   )
@@ -82,7 +83,7 @@ export function Sidebar({ overlay, sessions, activeId, page, running, status, on
   return (
     <aside className={`sidebar${overlay ? ' is-overlay' : ''}`} aria-label="Chats and settings">
       <div className="sidebar__top">
-        <button type="button" className="new-chat" onClick={onNew}><MessageSquarePlus size={15} /> New chat <kbd>Ctrl N</kbd></button>
+        <button type="button" className="new-chat" onClick={onNew}><MessageSquarePlus size={15} /> New chat <kbd>{mod}N</kbd></button>
         <label className="search">
           <Search size={13} />
           <input type="search" placeholder="Search chats" value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Search chats" />

@@ -19,6 +19,7 @@ import { useStatus } from './lib/status'
 import { titleFrom, useSessions, useSettings } from './lib/store'
 import { bridge } from './lib/types'
 import type { AppInfo, Attachment, Message } from './lib/types'
+import { hasMod } from './lib/platform'
 
 type Running = { sessionId: string; messageId: string; controller: AbortController }
 
@@ -83,7 +84,7 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (!event.ctrlKey || event.altKey) return
+      if (!hasMod(event) || event.altKey) return
       const key = event.key.toLowerCase()
       if (key === 'n' && !event.shiftKey) { event.preventDefault(); newChat() }
       else if (key === 'b' && !event.shiftKey) { event.preventDefault(); toggle('sidebar') }

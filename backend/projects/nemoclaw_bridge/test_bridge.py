@@ -68,8 +68,11 @@ class ConfigTests(unittest.TestCase):
 
 class CommandTests(unittest.TestCase):
     def test_command_uses_fixed_script_and_optional_distro(self):
-        self.assertEqual(build_command(NemoClawConfig(), TURN_SCRIPT), ["wsl.exe", "--exec", "/bin/bash", "-c", TURN_SCRIPT])
-        self.assertEqual(build_command(NemoClawConfig(distro="Ubuntu-24.04"), STATUS_SCRIPT)[:3], ["wsl.exe", "-d", "Ubuntu-24.04"])
+        self.assertEqual(build_command(NemoClawConfig(), TURN_SCRIPT, "win32"), ["wsl.exe", "--exec", "/bin/bash", "-c", TURN_SCRIPT])
+        self.assertEqual(build_command(NemoClawConfig(distro="Ubuntu-24.04"), STATUS_SCRIPT, "win32")[:3], ["wsl.exe", "-d", "Ubuntu-24.04"])
+
+    def test_macos_runs_the_same_script_in_a_login_shell(self):
+        self.assertEqual(build_command(NemoClawConfig(distro="Ubuntu-24.04"), TURN_SCRIPT, "darwin"), ["/bin/bash", "-lc", TURN_SCRIPT])
 
     def test_environment_forwards_values_and_keeps_existing_wslenv(self):
         env = build_environment({"NC_MESSAGE": "hi"}, {"WSLENV": "FOO/p:NC_MESSAGE/l"})

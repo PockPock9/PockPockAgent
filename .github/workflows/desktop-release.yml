@@ -1,0 +1,63 @@
+name: Desktop installers
+
+# Builds the Windows installer and the macOS disk images. macOS builds need a Mac, so they run on
+# GitHub's macOS runners. Start it from the Actions tab, or push a tag such as v0.2.0.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  windows:
+    name: Windows installer
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run dist:win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pockpock-agent-windows
+          path: desktop/release/*.exe
+          if-no-files-found: error
+
+  macos:
+    name: macOS disk images (Apple silicon and Intel)
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci
+      # npm installs only this runner's (arm64) terminal binary; the Intel build needs its own too.
+      - name: Add the Intel terminal binary
+        run: |
+          version=$(node -p "require('./node_modules/@lydell/node-pty/package.json').version")
+          npm install --no-save --force "@lydell/node-pty-darwin-x64@${version}"
+      - run: npm run typecheck
+      - run: npm run dist:mac
+      - name: Check the app bundle is signed (ad hoc)
+        run: codesign --verify --deep --strict --verbose=2 "release/mac-arm64/PockPock Agent.app"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pockpock-agent-macos
+          path: |
+            desktop/release/*.dmg
+            desktop/release/*.zip
+          if-no-files-found: error

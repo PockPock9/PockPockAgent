@@ -1,7 +1,8 @@
-"""Run single NemoClaw (OpenClaw) agent turns in a WSL sandbox from the Windows gateway.
+"""Run single NemoClaw (OpenClaw) agent turns in its sandbox from the gateway.
 
-The gateway runs on Windows; NemoClaw runs inside a WSL distribution. Each turn is one
-``nemoclaw <sandbox> agent --json`` invocation through ``wsl.exe --exec``. User text never
+On Windows NemoClaw runs inside a WSL distribution and each turn is one
+``nemoclaw <sandbox> agent --json`` invocation through ``wsl.exe --exec``. On macOS (Apple silicon)
+NemoClaw runs natively with Docker, and the same script runs in a ``/bin/bash`` login shell. User text never
 becomes shell text: the bash script is a fixed constant and every variable value travels in an
 environment variable forwarded with ``WSLENV``.
 """
@@ -13,6 +14,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -103,7 +105,10 @@ def validate_message(value: str) -> str:
     return message
 
 
-def build_command(config: NemoClawConfig, script: str) -> list[str]:
+def build_command(config: NemoClawConfig, script: str, platform: str | None = None) -> list[str]:
+    if (platform or sys.platform) != "win32":
+        # A login shell, so the PATH set up by NemoClaw's installer (nvm, ~/.local/bin) applies.
+        return ["/bin/bash", "-lc", script]
     command = ["wsl.exe"]
     if config.distro:
         command += ["-d", config.distro]
@@ -222,7 +227,8 @@ class NemoClawBridge:
             process.kill()
 
     def available(self) -> bool:
-        return self.config.enabled and (self._runner is not None or shutil.which("wsl.exe") is not None)
+        host = "wsl.exe" if sys.platform == "win32" else "bash"
+        return self.config.enabled and (self._runner is not None or shutil.which(host) is not None)
 
     def status(self, force: bool = False, probe: bool = True) -> dict[str, Any]:
         """Report sandbox health.
@@ -235,7 +241,7 @@ class NemoClawBridge:
         if not self.config.enabled:
             return {**base, "available": False, "ready": False, "detail": "NemoClaw integration is turned off."}
         if not self.available():
-            return {**base, "available": False, "ready": False, "detail": "WSL is not installed on this PC."}
+            return {**base, "available": False, "ready": False, "detail": "WSL is not installed on this PC." if sys.platform == "win32" else "NemoClaw is not set up on this computer."}
         with self._status_lock:
             now = self._clock()
             if not force and self._status_cache and now - self._status_cache[0] < STATUS_TTL_SECONDS:
@@ -253,11 +259,11 @@ class NemoClawBridge:
             if parsed.get("ready"):
                 detail = "Ready"
             elif code == -1:
-                detail = "NemoClaw did not respond. Start Docker Desktop and check WSL."
+                detail = "NemoClaw did not respond. Start Docker Desktop" + (" and check WSL." if sys.platform == "win32" else ".")
             elif parsed.get("phase"):
                 detail = f"Sandbox is {parsed['phase']}; inference {'healthy' if parsed.get('inference_healthy') else 'unavailable'}."
             else:
-                detail = f"Sandbox '{self.config.sandbox}' was not found. Run NemoClaw onboarding in WSL."
+                detail = f"Sandbox '{self.config.sandbox}' was not found. Run Setup in PockPock Agent to create it."
             result = {**base, "available": True, "checked": True, **parsed, "detail": detail}
             self._status_cache = (now, result)
             return result
@@ -285,14 +291,14 @@ class NemoClawBridge:
                     self.config.timeout_seconds + 45,
                 )
             except OSError as err:
-                raise NemoClawError("unavailable", "Could not start WSL to reach NemoClaw.", 503) from err
+                raise NemoClawError("unavailable", "Could not start WSL to reach NemoClaw." if sys.platform == "win32" else "Could not start a shell to reach NemoClaw.", 503) from err
             duration_ms = round((self._clock() - started) * 1000)
             if code != 0 and "{" not in stdout:
                 self._status_cache = None
                 raise NemoClawError(
                     "turn_failed",
                     "The NemoClaw agent did not answer. Check `nemoclaw "
-                    f"{self.config.sandbox} status` in WSL and make sure Docker Desktop is running.",
+                    f"{self.config.sandbox} status` and make sure Docker Desktop is running.",
                 )
             return parse_turn_output(stdout, duration_ms)
         finally:

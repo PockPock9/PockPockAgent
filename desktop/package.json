@@ -11,7 +11,9 @@
     "app": "node scripts/launch.cjs",
     "start": "npm run build && node scripts/launch.cjs",
     "typecheck": "tsc -b --noEmit",
-    "dist": "npm run build && electron-builder --win nsis"
+    "dist": "npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder --win nsis",
+    "dist:mac": "npm run build && electron-builder --mac"
   },
   "dependencies": {
     "@lydell/node-pty": "^1.2.0-beta.18"
@@ -87,6 +89,36 @@
       "artifactName": "PockPock-Agent-Setup-${version}.exe",
       "installerIcon": "public/icon.ico",
       "uninstallerIcon": "public/icon.ico"
+    },
+    "afterPack": "scripts/adhoc-sign.cjs",
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "category": "public.app-category.developer-tools",
+      "icon": "public/icon.png",
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "minimumSystemVersion": "12.0",
+      "artifactName": "PockPock-Agent-${version}-mac-${arch}.${ext}"
+    },
+    "dmg": {
+      "title": "PockPock Agent ${version}",
+      "artifactName": "PockPock-Agent-${version}-mac-${arch}.${ext}"
     }
   },
   "allowScripts": {

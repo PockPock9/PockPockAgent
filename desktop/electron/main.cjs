@@ -6,6 +6,9 @@ const path = require('node:path')
 const { ServiceManager } = require('./services.cjs')
 const { Setup } = require('./setup.cjs')
 const paths = require('./paths.cjs')
+
+// An app opened from Finder or the Dock gets a minimal PATH; add the folders PockPock's tools live in.
+paths.fixPath()
 const { startServer } = require('./server.cjs')
 const workspace = require('./workspace.cjs')
 const { Terminals } = require('./terminal.cjs')
@@ -79,6 +82,7 @@ function registerIpc() {
     version: app.getVersion(),
     electron: process.versions.electron,
     platform: process.platform,
+    arch: process.arch,
     repoRoot: paths.repoRoot(),
     backendRoot: paths.backendRoot(),
     python: paths.venvPython(),
@@ -181,8 +185,9 @@ async function createWindow() {
     backgroundColor: '#0d1014',
     title: 'PockPock Agent',
     icon: path.join(__dirname, '..', 'public', process.platform === 'win32' ? 'icon.ico' : 'icon.png'),
-    titleBarStyle: 'hidden',
-    titleBarOverlay: process.platform === 'win32' ? { color: '#0d1014', symbolColor: '#aab4c2', height: 38 } : undefined,
+    titleBarStyle: paths.IS_MAC ? 'hiddenInset' : 'hidden',
+    titleBarOverlay: paths.IS_WIN ? { color: '#0d1014', symbolColor: '#aab4c2', height: 38 } : undefined,
+    trafficLightPosition: paths.IS_MAC ? { x: 14, y: 12 } : undefined,
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -228,12 +233,15 @@ if (!app.requestSingleInstanceLock()) {
   })
   app.whenReady().then(() => {
     if (process.platform === 'win32') app.setAppUserModelId('ai.pockpock.agent')
-    Menu.setApplicationMenu(null)
+    // Windows uses the app's own title bar. macOS needs a menu bar for Cmd+C/V/X/A/Z, Cmd+Q and Cmd+W.
+    Menu.setApplicationMenu(paths.IS_MAC ? Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { label: 'View', submenu: [{ role: 'reload' }, { role: 'toggleDevTools' }, { type: 'separator' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' }, { role: 'togglefullscreen' }] }, { role: 'windowMenu' }]) : null)
     setup = new Setup({ services, userData: app.getPath('userData'), emit: (event) => send('setup:event', event) })
     registerIpc()
     return createWindow()
   })
+  // PockPock supervises services, so closing the window quits the app on macOS too.
   app.on('window-all-closed', () => app.quit())
+  app.on('activate', () => { if (mainWindow) mainWindow.show() })
   app.on('before-quit', (event) => {
     if (quitting) return
     terminals.killAll()
