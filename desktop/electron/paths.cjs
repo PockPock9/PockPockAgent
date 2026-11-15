@@ -41,6 +41,19 @@ function venvPython() {
   return path.join(venvRoot(), IS_WIN ? 'Scripts\\python.exe' : 'bin/python')
 }
 
+/** The interpreter the venv was made from (pyvenv.cfg), or null. On Windows the venv's python.exe
+ * is a launcher that starts this interpreter as a child; see backend/scripts/hidden_launch.py. */
+function basePython() {
+  try {
+    const config = fs.readFileSync(path.join(venvRoot(), 'pyvenv.cfg'), 'utf8')
+    const value = (key) => new RegExp(`^\\s*${key}\\s*=\\s*(.+?)\\s*$`, 'm').exec(config)?.[1]
+    const candidates = [value('executable'), value('home') && path.join(value('home'), IS_WIN ? 'python.exe' : 'python3')]
+    return candidates.find((file) => file && fs.existsSync(file)) || null
+  } catch {
+    return null
+  }
+}
+
 /** Shared with the Python services (pockpock_paths.app_data_dir("PockPock")). */
 function dataRoot() {
   return path.join(LOCAL, 'PockPock')
@@ -198,7 +211,7 @@ function cleanEnv(extra = {}) {
 
 module.exports = {
   IS_WIN, IS_MAC, HOME, LOCAL, exe,
-  repoRoot, backendRoot, runtimeRoot, venvRoot, venvPython, dataRoot, migrateLegacyData, logsRoot,
+  repoRoot, backendRoot, runtimeRoot, venvRoot, venvPython, basePython, dataRoot, migrateLegacyData, logsRoot,
   runtimeNodeBin, npmPrefix, npmPrefixBin, toolDirs, fixPath, findExecutable,
   ollamaAppDirs, ollamaExe, ollamaServerLog, nodeExe, npmCmd, openclawCmd, openclawEntry, openclawLog, dockerCli, cleanEnv,
 }

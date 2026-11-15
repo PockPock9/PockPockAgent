@@ -199,6 +199,25 @@ class ServiceManager {
     const child = spawn(file, args, { ...options, windowsHide: true, detached: true, stdio: ['ignore', log, log] })
     child.unref()
     fs.closeSync(log)
+    return this.track(id, child)
+  }
+
+  /** Windows: starts a Python service through backend/scripts/hidden_launch.py so it and its own
+   * children share one hidden console. Started detached instead, the venv's python.exe (a launcher)
+   * gives the real interpreter a new console, which Windows Terminal shows as a window. The helper
+   * gets no console window because all its stdio is ignored; it writes the service's log itself. */
+  spawnPython(id, args, options) {
+    const base = paths.IS_WIN ? paths.basePython() : null
+    const helper = path.join(paths.backendRoot(), 'scripts', 'hidden_launch.py')
+    if (!base || !fs.existsSync(helper)) return this.spawnLogged(id, paths.venvPython(), args, options)
+    const logPath = this.logFile(id)
+    fs.appendFileSync(logPath, `\n=== ${new Date().toISOString()} started by PockPock Agent ===\n`)
+    const child = spawn(base, ['-I', helper, logPath, '--', paths.venvPython(), ...args], { ...options, windowsHide: true, stdio: 'ignore' })
+    child.unref()
+    return this.track(id, child)
+  }
+
+  track(id, child) {
     this.children.set(id, child)
     child.on('exit', (code) => {
       this.children.delete(id)
@@ -244,11 +263,10 @@ class ServiceManager {
 
   async launch(definition) {
     const env = this.serviceEnv()
-    const python = paths.venvPython()
     if (definition.project) {
-      this.spawnLogged(definition.id, python, ['-m', 'uvicorn', 'app:app', '--host', '127.0.0.1', '--port', String(definition.port)], { cwd: path.join(paths.backendRoot(), 'projects', definition.project), env })
+      this.spawnPython(definition.id, ['-m', 'uvicorn', 'app:app', '--host', '127.0.0.1', '--port', String(definition.port)], { cwd: path.join(paths.backendRoot(), 'projects', definition.project), env })
     } else if (definition.id === 'gateway') {
-      this.spawnLogged('gateway', python, ['-u', path.join(paths.backendRoot(), 'scripts', 'pockpock_server.py')], { cwd: path.dirname(paths.backendRoot()), env })
+      this.spawnPython('gateway', ['-u', path.join(paths.backendRoot(), 'scripts', 'pockpock_server.py')], { cwd: path.dirname(paths.backendRoot()), env })
     } else if (definition.id === 'ollama') {
       // NemoClaw and long agent turns need more context than Ollama's default 4K.
       this.spawnLogged('ollama', paths.ollamaExe(), ['serve'], { cwd: paths.HOME, env: paths.cleanEnv({ OLLAMA_CONTEXT_LENGTH: process.env.OLLAMA_CONTEXT_LENGTH || '32768' }) })

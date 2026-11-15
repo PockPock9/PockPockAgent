@@ -38,7 +38,7 @@ def main() -> int:
         if any(folder.glob("test_*.py")):
             ok &= run(service, ["discover", "-s", ".", "-p", "test_*.py"], folder)
     ok &= run("smart_router", ["scripts.test_smart_router"], BACKEND)
-    ok &= run("pockpock", ["test_pockpock", "test_pockpock_paths"], BACKEND / "scripts")
+    ok &= run("pockpock", ["test_pockpock", "test_pockpock_paths", "test_hidden_launch"], BACKEND / "scripts")
     print("All backend tests passed." if ok else "Some backend tests failed.")
     return 0 if ok else 1
 
