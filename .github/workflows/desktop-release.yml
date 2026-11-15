@@ -24,7 +24,7 @@ jobs:
           cache-dependency-path: desktop/package-lock.json
       - run: npm ci
       - run: npm run typecheck
-      - run: npm run dist:win
+      - run: npm run dist:win -- --publish never # the release job publishes
       - uses: actions/upload-artifact@v7
         with:
           name: pockpock-agent-windows
@@ -51,7 +51,7 @@ jobs:
           version=$(node -p "require('./node_modules/@lydell/node-pty/package.json').version")
           npm install --no-save --force "@lydell/node-pty-darwin-x64@${version}"
       - run: npm run typecheck
-      - run: npm run dist:mac
+      - run: npm run dist:mac -- --publish never # the release job publishes
       - name: Check the app bundle is signed (ad hoc)
         run: codesign --verify --deep --strict --verbose=2 "release/mac-arm64/PockPock Agent.app"
       - uses: actions/upload-artifact@v7
