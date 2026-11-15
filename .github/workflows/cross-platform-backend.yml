@@ -1,0 +1,42 @@
+name: Cross-platform backend checks
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "backend/projects/**"
+      - "backend/scripts/**"
+      - "README.md"
+      - "docs/**"
+      - ".github/workflows/cross-platform-backend.yml"
+  pull_request:
+    paths:
+      - "backend/projects/**"
+      - "backend/scripts/**"
+      - "README.md"
+      - "docs/**"
+      - ".github/workflows/cross-platform-backend.yml"
+
+jobs:
+  backend:
+    name: Python backend (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-latest
+          - macos-latest
+          - ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python backend/scripts/pockpock.py setup
+      - if: runner.os == 'Linux'
+        run: sudo .venv/bin/python -m playwright install-deps chromium
+      - run: python -m unittest discover -s backend/scripts -p "test_pockpock*.py"
+      - run: python -m unittest discover -s projects -p "test_*.py"
+        working-directory: backend
+      - run: python backend/scripts/pockpock.py check

@@ -1,0 +1,20 @@
+# Planner service
+
+Turns an agent request into an execution plan, selects an enabled tool-capable local model, runs a bounded critic review, and returns an execution prompt. Model requests use the provider-neutral `projects.model_router` interface, currently configured with its Ollama adapter; the service exposes an authenticated internal HTTP API.
+
+- Entry point: `app:app`
+- Local port: `8771`
+- Routes: `GET /health`, authenticated `POST /plan`
+- Configuration: `OLLAMA_BASE_URL`, `POCKPOCK_INTERNAL_TOKEN`
+- Model boundary: planner and critic use the shared `ChatCompletionProvider` contract. Text-only JSON requests go through Ollama's native API so the configured context window and JSON mode are preserved.
+- Contract: request and response fields are documented in `app.py`; response `contract_version: 1`, structured `task_brief`, and versioned plan schema live in `contracts.py`. Scalar text returned for a list-valued brief field, structured success-check objects, numeric milestone IDs, tool names mistakenly returned as capabilities, and structured plan-step objects are normalized before validation. The gateway sends available models, workspace, and user-selected permission; planner output cannot elevate permission. `critic.py` reviews the draft against the request, task brief, available capabilities, and verifiable checks. It may request one bounded revision; the revised plan is shown to the user for explicit approval and is never executed automatically. The response includes a `critic_review` summary and findings, which the gateway binds to the one-use plan ticket. Approved plan versions and decisions are persisted as run events by the gateway/run store.
+- Scope and tool selection: preserve the requested deliverables and do not require extra files unless requested. Use `scrape_public_page` for text from one exact URL, `search_public_site` for multi-page research, and browser tools only for explicitly visual or interactive requests. Browser screenshots are saved artifacts; visible text is returned as observation data. Report retrieval limits from tool results rather than inventing them.
+- Routing: the gateway sends only enabled local models whose Ollama profile advertises tool support, plus context-window capacity and average model-call latency from local prompt-free telemetry. `routing.py` preserves a compatible user-selected model, excludes known context-incompatible candidates, and otherwise prefers the configured default or lowest measured latency. Unknown context stays eligible; missing latency is treated as unknown. The fixed evaluation suite uses synthetic task labels and model profiles only.
+- Evaluation contract: `evaluation.py` returns case IDs, selected/expected model names, pass count, and accuracy without returning or persisting task text. Run `python -m unittest projects.planner.test_routing` from `backend`.
+- Delegation planning: planner responses may include an optional bounded `SubtaskPlan` from `contracts.py`. It is validated as a topologically ordered DAG of at most 16 nodes, with known tool names and per-node call/time limits. The gateway binds it to the parent plan approval and records it after approval. The planner proposes work only; it does not launch child runs.
+- Privacy: selection telemetry contains numeric timing and model capability metadata only. Prompt/response text is not used for routing scores or evaluation. Outcome-based routing is not enabled by this contract.
+- Security: bind to `127.0.0.1`; non-health requests require `X-PockPock-Internal-Token`.
+- Failure behavior: invalid planner/critic JSON, an unusable plan, or a malformed revision fails the planning request explicitly; there is no generic plan fallback.
+- Run from this folder with the repository environment: `..\..\.venv\Scripts\python.exe -m uvicorn app:app --host 127.0.0.1 --port 8771`.
+
+Install the service dependencies listed in `requirements.txt` into the shared repository environment. The project currently imports shared internal authentication from `backend/projects/internal_auth.py`.

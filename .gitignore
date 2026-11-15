@@ -1,0 +1,30 @@
+# Python virtual environment and bytecode
+.venv/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+
+# Frontend dependencies and generated builds
+node_modules/
+frontend/app/dist/
+frontend/app/dist-ssr/
+frontend/app/coverage/
+frontend/site/.next/
+frontend/site/out/
+*.tsbuildinfo
+desktop/dist/
+desktop/release/
+
+# Local configuration and runtime output
+.env
+.env.*
+!.env.example
+*.log
+*.sqlite
+*.sqlite3
+*.db
+
+# Editor and operating-system files
+.idea/
+.DS_Store
+Thumbs.db

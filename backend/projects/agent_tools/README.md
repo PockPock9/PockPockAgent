@@ -1,0 +1,36 @@
+# Agent tools project
+
+This project is the home for capabilities that the agent can invoke. New agent tools, their input/output schemas, permission requirements, bounds, and focused tests belong here. Keep the registry and shared context types here; group larger capabilities into modules under this package as they grow.
+
+## Current capabilities
+
+`__init__.py` is a compatibility facade. Implementations are grouped in `workspace.py`, `research.py`, `research_contracts.py`, `research_answers.py`, `research_exports.py`, `browser.py`, and `artifacts.py`; `registry.py` owns model schemas and dispatch; `common.py` owns shared contexts and bounded state; `contracts.py` binds each model-callable tool to input/output schemas, capability, permission, side-effect class, timeout, and byte bounds. At execution, the gateway exposes only tools matching the approved task-brief capabilities; delegated runs are further restricted to their allowed-tool list. `browser.py` calls the isolated `backend/projects/browser_automation/` service and saves screenshot evidence to the run output directory. The gateway consumes the package registry/dispatch interface rather than capability modules directly. `research_exports.py` creates requested cited reports from validated answers and source records. `test_agent_tools.py` covers capability behavior, `test_research_answers.py` covers evidence-bound answer validation/rendering, `test_research_exports.py` covers cited report formats, while `test_contracts.py` and `backend/projects/run_store/test_event_contracts.py` cover contract compatibility.
+
+`research_contracts.py` defines the provider-neutral version 1 records for sources, bounded excerpts, research responses, and provider errors. `named_host_page_record()` adapts the existing `{url, title, text}` fetcher result. Its URL canonicalization provides stable identity and deduplication; it is not a replacement for public-IP, redirect, timeout, content-type, or response-size checks in the fetcher.
+
+`research_answers.py` defines version 1 of the structured final-answer contract. The model uses short per-run source keys, which the gateway resolves to verified source IDs; answers may be bare JSON or a single fenced JSON block. Validation still requires exact retrieved quotes, distinct sources for conflicts, and evidence-backed citations before rendering links and timestamps. It verifies provenance, not semantic entailment; the model remains responsible for judging whether a passage supports a claim.
+
+`research_exports.py` produces Markdown, HTML, Word, Excel, and PowerPoint research reports after gateway validation. It preserves clickable source links, IDs, timestamps, bounded excerpts, conflicts, and limitations; rendered page data is escaped in HTML and guarded against spreadsheet formula execution.
+
+Public research fetches remain disabled until the user enables **Named public websites** in Research settings. The local gateway setting persists across restarts and discloses that requests leave the PC. The current crawler is bounded named-host traversal, not web search, and does not accept provider credentials. Its legacy `pages` result is retained while new runs also emit the typed `research` source result and bounded `evidence` excerpts.
+
+## Add a tool
+
+1. Read the applicable feature doc and [the implementation tracker](../../docs/TASKS.md); claim the highest-priority Ready task before beginning roadmap work.
+2. Add model input and tool output schemas plus registry metadata in `contracts.py`: narrow capability, explicit permission/side-effect classification, and bounded time/bytes.
+3. Implement workspace operations in `workspace.py`, public research in `research.py`, isolated browser service calls in `browser.py`, and task artifacts in `artifacts.py`. Put schemas and dispatch in `registry.py`; keep `__init__.py` as a small compatibility facade. Split a capability into a subpackage when it gains independent lifecycle/configuration needs.
+4. Dispatch only through the registered tool path. The registry validates arguments and outputs; do not add arbitrary shell, unrestricted filesystem, or implicit network access.
+5. Add focused tests for successful use, malformed inputs, permission denial, resource limits, cancellation, and relevant failure cases.
+6. Update the feature docs, README where user behavior changes, architecture ownership, and the tracker status/completion log in the same change.
+
+## Boundaries
+
+- Workspace tools operate only inside the task's selected or generated workspace and enforce relative-path, symlink, and secret-file checks.
+- Public research requires explicit public hostnames and blocks private/reserved destinations and cross-host navigation.
+- Workspace validation behavior, permissions, persistence, and failure states are documented in [Agent tool capabilities](../../docs/features/agent-tools.md).
+- Public-page browsing is available through `browse_public_page`, with state-bound `browser_action` calls for named links, text fields, comboboxes, scrolling, and same-host navigation. Explicit requests to open/show a browser use a visible isolated Chromium window; inspection and research remain headless unless the user asks otherwise. User-supplied hostnames are required, and every run uses the isolated runtime in [`backend/projects/browser_automation/`](../browser_automation/README.md). Default and Auto-review require per-action approval except for fixed scrolling; Full Access skips ordinary approvals, but high-impact links still require approval. Form submission, buttons, passwords, arbitrary selectors, and scripts are unsupported.
+- The package currently runs in the gateway process. Dedicated tool services should be created only when the capability needs process isolation or a stable external contract.
+
+## Verification
+
+Run `.venv\Scripts\python.exe -m unittest projects.agent_tools.test_contracts projects.agent_tools.test_agent_tools projects.agent_tools.test_research projects.agent_tools.test_research_answers projects.agent_tools.test_research_exports projects.agent_tools.test_workspace projects.agent_tools.test_artifacts projects.planner.test_plan_gate projects.run_store.test_event_contracts` from the repository root. For Python changes, also compile the package and callers with the project virtual environment. See [tool contracts](../../docs/features/agent-tool-contracts.md), [research source and evidence contracts](../../docs/features/research-provider-contracts.md), and [workspace validation](../../docs/features/workspace-validation.md).
