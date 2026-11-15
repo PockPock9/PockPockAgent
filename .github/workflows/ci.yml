@@ -1,0 +1,62 @@
+name: CI
+
+# Runs on every pull request and on every push to main. The job names below are the required
+# status checks in the main branch ruleset; rename them there too if they change here.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python backend/scripts/pockpock.py setup
+      - if: runner.os == 'Linux'
+        run: sudo .venv/bin/python -m playwright install-deps chromium
+      - if: runner.os != 'Windows'
+        run: .venv/bin/python backend/scripts/run_tests.py
+      - if: runner.os == 'Windows'
+        run: .venv/Scripts/python.exe backend/scripts/run_tests.py
+      - run: python backend/scripts/pockpock.py check
+
+  desktop:
+    name: Desktop typecheck and build (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - name: Main-process syntax check
+        shell: bash
+        run: for file in electron/*.cjs scripts/*.cjs; do node --check "$file"; done

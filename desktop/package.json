@@ -123,5 +123,11 @@
   },
   "allowScripts": {
     "electron-winstaller": false
-  }
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PockPock9/PockPockAgent.git"
+  },
+  "homepage": "https://github.com/PockPock9/PockPockAgent"
 }

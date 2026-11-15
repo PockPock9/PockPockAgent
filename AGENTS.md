@@ -2,6 +2,11 @@
 
 These rules apply to every human or AI change in this repository.
 
+## Branches and pull requests
+
+- Follow the branch strategy in [`CONTRIBUTING.md`](CONTRIBUTING.md): `main` is protected and always releasable; work on a short-lived `feat/`, `fix/`, `docs/`, `refactor/`, `test/`, `ci/` or `chore/` branch from `main` and merge it with a squash-merged pull request whose title follows Conventional Commits.
+- Never push directly to `main`, force-push it, or rewrite its history. Releases are `v<major>.<minor>.<patch>` tags on `main`, created by maintainers.
+
 ## Roadmap task handoff
 
 - When continuing the agent capability roadmap, read [`docs/TASKS.md`](docs/TASKS.md) and [`docs/ROADMAP.md`](docs/ROADMAP.md) before implementation.

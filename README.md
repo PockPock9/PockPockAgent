@@ -1,6 +1,9 @@
-# PockPock AI
+# PockPock Agent
 
-PockPock AI is a local AI workspace for Windows. Its desktop app, **PockPock Agent**, chats with models running on your own PC and runs agents that plan and carry out tasks: reading and writing files, researching public websites, driving a browser, and, with the OpenClaw engine, operating the PC itself. Everything runs locally through [Ollama](https://ollama.com); prompts and replies are not sent to a cloud service or written to telemetry.
+[![CI](https://github.com/PockPock9/PockPockAgent/actions/workflows/ci.yml/badge.svg)](https://github.com/PockPock9/PockPockAgent/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
+PockPock is a local AI workspace for Windows and macOS. Its desktop app, **PockPock Agent**, chats with models running on your own PC and runs agents that plan and carry out tasks: reading and writing files, researching public websites, driving a browser, and, with the OpenClaw engine, operating the PC itself. Everything runs locally through [Ollama](https://ollama.com); prompts and replies are not sent to a cloud service or written to telemetry.
 
 ---
 
@@ -185,3 +188,13 @@ Uninstalling the app keeps this data; delete the folders to remove it.
 | A large model is very slow | Expected when it does not fit in video memory; use it for hard tasks and start a new chat for it. |
 
 More: [desktop app](docs/features/desktop-app.md), [OpenClaw](docs/features/openclaw-agent.md), [NemoClaw](docs/features/nemoclaw-agent.md), [skills and MCP](docs/features/agent-extensions.md).
+
+---
+
+## Contributing
+
+Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) for the branch strategy (GitHub Flow: short-lived branches, pull requests to `main`, squash merges) and [AGENTS.md](AGENTS.md) for the project rules. Report bugs and request features with the [issue forms](https://github.com/PockPock9/PockPockAgent/issues/new/choose), ask questions in [Discussions](https://github.com/PockPock9/PockPockAgent/discussions), and report security problems privately as described in [SECURITY.md](SECURITY.md). Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md). User documentation is also in the [wiki](https://github.com/PockPock9/PockPockAgent/wiki).
+
+## License
+
+PockPock Agent is licensed under the [Apache License 2.0](LICENSE). See [NOTICE](NOTICE).

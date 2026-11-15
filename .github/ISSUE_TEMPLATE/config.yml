@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/PockPock9/PockPockAgent/discussions
+    about: Ask how to do something or discuss an idea before filing an issue.
+  - name: Report a security vulnerability
+    url: https://github.com/PockPock9/PockPockAgent/security/advisories/new
+    about: Report security problems privately, never in a public issue.
+  - name: Documentation (wiki)
+    url: https://github.com/PockPock9/PockPockAgent/wiki
+    about: Installation, usage, services and troubleshooting.
