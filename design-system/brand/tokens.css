@@ -1,0 +1,9 @@
+/* PockPock brand colors. Brand surfaces only (icon, marketing, docs).
+   The desktop UI keeps its violet --accent from desktop/src/styles.css. */
+:root {
+  --brand-volt: #ffd60a;     /* the bolt */
+  --brand-ink: #14111c;      /* icon tile, text on volt */
+  --brand-feather: #fff4d6;  /* toes, text on ink */
+  --brand-storm: #5b4bf0;    /* secondary */
+  --brand-comb: #ff4b3e;     /* errors and warnings only */
+}
