@@ -23,6 +23,7 @@ from projects.model_router import ChatCompletionRequest, ModelProviderError, Oll
 app = FastAPI(title="PockPock Planner", docs_url=None, redoc_url=None)
 OLLAMA_URL = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
 MODEL_CLIENT = OllamaChatCompletionAdapter(OLLAMA_URL)
+LARGE_MODEL_BILLIONS = 20.0
 
 
 async def _request_model_json(
@@ -41,6 +42,7 @@ async def _request_model_json(
                 temperature=temperature,
                 response_format={"type": "json_object"},
                 context_window=8192,
+                think=False,
             ),
             timeout=timeout,
         )
@@ -57,6 +59,13 @@ async def _request_model_json(
     if not isinstance(parsed, dict):
         raise ValueError(f"{role.capitalize()} model returned an invalid object")
     return parsed
+
+
+def planning_timeout(profiles: list[dict], model: str) -> aiohttp.ClientTimeout:
+    """Give each planner/critic call more time on large models, which run partly on the CPU on 12 GB GPUs."""
+    size = next((item.get("parameter_billions") for item in profiles if item.get("name") == model), None)
+    seconds = 300 if isinstance(size, (int, float)) and size >= LARGE_MODEL_BILLIONS else 120
+    return aiohttp.ClientTimeout(total=seconds, sock_read=seconds - 10)
 
 
 class PlanRequest(BaseModel):
@@ -161,7 +170,7 @@ async def plan(payload: PlanRequest):
         f"Workspace: {payload.workspace_path or 'a new temporary task workspace'}. "
         f"Permission: {payload.permission_mode}. User request: {task}"
     )
-    timeout = aiohttp.ClientTimeout(total=120, sock_read=110)
+    timeout = planning_timeout(payload.model_profiles, selected)
     try:
         parsed = await _request_model_json(selected, [{"role": "user", "content": prompt}], timeout=timeout, role="planner")
         plan_steps = normalized_plan_steps(parsed.get("plan"))

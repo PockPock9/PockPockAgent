@@ -29,6 +29,9 @@ class ChatCompletionRequest:
     response_format: Mapping[str, Any] | None = None
     context_window: int | None = None
     options: Mapping[str, Any] | None = None
+    # Ollama's reasoning switch; None leaves the model default. Structured JSON calls turn it off
+    # because thinking tokens on a large, partly CPU-offloaded model can take minutes.
+    think: bool | None = None
 
     def to_payload(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -187,4 +190,6 @@ class OllamaChatCompletionAdapter:
         }
         if request.response_format and request.response_format.get("type") == "json_object":
             payload["format"] = "json"
+        if request.think is not None:
+            payload["think"] = request.think
         return payload

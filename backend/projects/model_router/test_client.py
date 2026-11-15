@@ -73,6 +73,7 @@ class OllamaChatCompletionAdapterTests(unittest.IsolatedAsyncioTestCase):
                     temperature=0.1,
                     response_format={"type": "json_object"},
                     context_window=8192,
+                    think=False,
                 ),
                 timeout=self.timeout,
             )
@@ -80,6 +81,7 @@ class OllamaChatCompletionAdapterTests(unittest.IsolatedAsyncioTestCase):
         url, payload, timeout = FakeSession.calls[0]
         self.assertEqual(url, "http://127.0.0.1:11434/api/chat")
         self.assertEqual(payload["format"], "json")
+        self.assertIs(payload["think"], False)
         self.assertEqual(payload["options"], {"temperature": 0.1, "num_ctx": 8192})
         self.assertIs(timeout, self.timeout)
         self.assertEqual(result["choices"][0]["message"]["content"], '{"steps": []}')

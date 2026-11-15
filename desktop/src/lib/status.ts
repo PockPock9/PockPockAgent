@@ -37,18 +37,24 @@ export function useStatus(nemoSelected: boolean) {
       return null
     }
   }, [])
-  const refreshClaw = useCallback(async (force = false) => {
-    try { setClaw(await getJson<ClawStatus>(`/api/openclaw/status${force ? '?refresh=1' : ''}`)) } catch { setClaw({ available: false, ready: false, detail: 'The PockPock backend is not reachable.' }) }
+  const refreshClaw = useCallback(async (force = false): Promise<ClawStatus> => {
+    let next: ClawStatus
+    try { next = await getJson<ClawStatus>(`/api/openclaw/status${force ? '?refresh=1' : ''}`) } catch { next = { available: false, ready: false, detail: 'The PockPock backend is not reachable.' } }
+    setClaw(next)
+    return next
   }, [])
-  const refreshNemo = useCallback(async (probe: boolean, force = false) => {
+  const refreshNemo = useCallback(async (probe: boolean, force = false): Promise<NemoStatus> => {
     if (probe) setNemoChecking(true)
+    let next: NemoStatus
     try {
-      setNemo(await getJson<NemoStatus>(`/api/nemoclaw/status${force ? '?refresh=1' : probe ? '' : '?probe=0'}`))
+      next = await getJson<NemoStatus>(`/api/nemoclaw/status${force ? '?refresh=1' : probe ? '' : '?probe=0'}`)
     } catch {
-      setNemo({ available: false, ready: false, detail: 'The PockPock backend is not reachable.' })
+      next = { available: false, ready: false, detail: 'The PockPock backend is not reachable.' }
     } finally {
       if (probe) setNemoChecking(false)
     }
+    setNemo(next)
+    return next
   }, [])
   const refreshCounts = useCallback(async () => {
     try {

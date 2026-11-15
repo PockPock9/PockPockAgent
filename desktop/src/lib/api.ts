@@ -11,7 +11,9 @@ export class ApiError extends Error {
 async function parse<T>(response: Response): Promise<T> {
   const body = await response.json().catch(() => ({})) as T & { detail?: unknown }
   if (!response.ok) {
-    const detail = typeof body.detail === 'string' ? body.detail : Array.isArray(body.detail) ? 'The request was not valid.' : `Request failed (${response.status})`
+    // FastAPI validation errors are a list; name the first invalid field so failures are diagnosable.
+    const first = Array.isArray(body.detail) ? body.detail[0] as { loc?: unknown[]; msg?: string } | undefined : undefined
+    const detail = typeof body.detail === 'string' ? body.detail : first ? `The request was not valid (${(first.loc ?? []).slice(1).join('.') || 'body'}: ${first.msg ?? 'invalid'}).` : `Request failed (${response.status})`
     throw new ApiError(detail, response.status)
   }
   return body

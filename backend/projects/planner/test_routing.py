@@ -36,5 +36,16 @@ class RoutingEvaluationTests(unittest.TestCase):
         self.assertEqual(task_capability("Research API documentation"), "research")
 
 
+class SmallModelRankingTests(unittest.TestCase):
+    def test_tiny_models_are_skipped_when_a_larger_one_is_enabled(self):
+        profiles = [
+            {"name": "qwen2.5:1.5b", "capabilities": ["tools"], "context_window": 32768, "avg_latency_ms": 900, "parameter_billions": 1.5},
+            {"name": "qwen3.5:9b", "capabilities": ["tools"], "context_window": 65536, "avg_latency_ms": 9000, "parameter_billions": 9.7},
+        ]
+        self.assertEqual(choose_candidate(profiles, task="Create a file", preferred=None, fallback="missing")[0], "qwen3.5:9b")
+        self.assertEqual(choose_candidate(profiles[:1], task="Create a file", preferred=None, fallback="missing")[0], "qwen2.5:1.5b")
+        self.assertEqual(choose_candidate(profiles, task="Create a file", preferred="qwen2.5:1.5b", fallback="missing")[0], "qwen2.5:1.5b")
+
+
 if __name__ == "__main__":
     unittest.main()

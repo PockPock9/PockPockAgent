@@ -6,6 +6,8 @@ import math
 import re
 from typing import Any
 
+MIN_AGENT_BILLIONS = 3.0
+
 
 def required_context_tokens(task: str) -> int:
     # Conservative upper bound for task text plus tool and answer room.
@@ -48,7 +50,10 @@ def choose_candidate(
     if fallback_item:
         reason = f"Used the configured fallback because the preferred model was unavailable or lacked required capabilities; task type: {task_capability(task)}."
         return fallback, reason
-    ranked = sorted(eligible, key=lambda item: (item.get("avg_latency_ms") if isinstance(item.get("avg_latency_ms"), (int, float)) else float("inf"), item["name"]))
+    # Very small models (such as the Smart Router's 1.5B classifier) are fast but cannot carry out
+    # agent work reliably, so they are used only when nothing larger is enabled.
+    capable = [item for item in eligible if not (isinstance(item.get("parameter_billions"), (int, float)) and item["parameter_billions"] < MIN_AGENT_BILLIONS)]
+    ranked = sorted(capable or eligible, key=lambda item: (item.get("avg_latency_ms") if isinstance(item.get("avg_latency_ms"), (int, float)) else float("inf"), item["name"]))
     selected = ranked[0]
     latency = selected.get("avg_latency_ms")
     reason = f"Selected the fastest measured compatible local model for a {task_capability(task)} task" + (f" ({round(latency)} ms average call latency)." if isinstance(latency, (int, float)) else "; no latency history is available.")

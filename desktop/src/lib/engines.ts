@@ -21,7 +21,7 @@ export type TurnOptions = {
   workspacePath?: string
 }
 
-type PlanDecision = { approved: boolean; plan: string[]; checks: string[]; planHash?: string }
+type PlanDecision = { approved: boolean; plan: string[]; checks: string[]; planHash?: string; versionHash?: string }
 
 /** Plan cards resolve the waiting agent turn through this registry, keyed by message id. */
 const planWaiters = new Map<string, (decision: PlanDecision) => void>()
@@ -198,7 +198,8 @@ function list(value: unknown) {
 
 async function runAgent(options: TurnOptions) {
   const { sessionId, messageId, prompt, attachments, signal, patch, agentPermission, chatModel, workspacePath } = options
-  const runId = uid()
+  // The gateway requires a 32-character hex run id.
+  const runId = crypto.randomUUID().replaceAll('-', '')
   const files = attachments.filter((file) => file.kind === 'document').map((file) => ({ name: file.name, text: file.text ?? '', size: file.size }))
   patch((message) => addStep({ ...message, runId }, { label: 'Planning and reviewing the task', status: 'running' }))
 
@@ -240,7 +241,7 @@ async function runAgent(options: TurnOptions) {
 
   const planHistory = [
     { version: 1, status: 'proposed', plan: prepared.plan, success_checks: card.checks, rationale: card.critic.slice(0, 240), plan_hash: prepared.plan_version_hash },
-    { version: 2, status: 'approved', plan: decision.plan, success_checks: decision.checks, rationale: 'User approved the plan in PockPock Agent.', plan_hash: decision.planHash },
+    { version: 2, status: 'approved', plan: decision.plan, success_checks: decision.checks, rationale: 'User approved the plan in PockPock Agent.', plan_hash: decision.versionHash },
   ]
   const executionPrompt = `${prepared.execution_prompt}\n\nApproved plan:\n${decision.plan.map((step, index) => `${index + 1}. ${step}`).join('\n')}\n\nApproved success checks:\n${decision.checks.map((check) => `- ${check}`).join('\n')}`
   patch((message) => addStep(message, { label: 'Starting the approved task', status: 'running' }))
@@ -378,10 +379,11 @@ export async function decideApproval(approval: Approval, allow: boolean) {
 
 /** Approves or declines a PockPock plan in the backend, then releases the waiting turn. */
 export async function decidePlan(messageId: string, plan: PlanCard, approved: boolean, steps: string[], checks: string[]) {
-  const result = await sendJson<{ accepted?: boolean; approved_plan_hash?: string; detail?: string }>(
+  const result = await sendJson<{ accepted?: boolean; approved_plan_hash?: string; approved_version_hash?: string; detail?: string }>(
     `/api/agents/plans/${encodeURIComponent(plan.planId)}/decision`,
     { action_hash: plan.planHash, decision: approved ? 'approved' : 'rejected', plan: steps, success_checks: checks },
   )
   if (!result.accepted) throw new Error(result.detail || 'This plan can no longer be approved.')
-  resolvePlan(messageId, { approved, plan: steps, checks, planHash: result.approved_plan_hash })
+  if (approved && (!result.approved_plan_hash || !result.approved_version_hash)) throw new Error('The approved plan did not return a valid execution ticket. Send the task again.')
+  resolvePlan(messageId, { approved, plan: steps, checks, planHash: result.approved_plan_hash, versionHash: result.approved_version_hash })
 }

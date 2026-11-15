@@ -1,7 +1,7 @@
 import re
 import unittest
 
-from app import build_execution_prompt
+from app import build_execution_prompt, planning_timeout
 
 
 class ExecutionPromptTests(unittest.TestCase):
@@ -23,6 +23,15 @@ class ExecutionPromptTests(unittest.TestCase):
 
         self.assertIn(f"Detailed execution prompt:\n{model_prompt}", prompt)
         self.assertNotIn("Reviewed plan:", prompt)
+
+
+class PlanningTimeoutTests(unittest.TestCase):
+    def test_large_models_get_longer_planner_calls(self):
+        profiles = [{"name": "big", "parameter_billions": 27.8}, {"name": "mid", "parameter_billions": 9.7}]
+
+        self.assertEqual(planning_timeout(profiles, "big").total, 300)
+        self.assertEqual(planning_timeout(profiles, "mid").total, 120)
+        self.assertEqual(planning_timeout(profiles, "unknown").total, 120)
 
 
 if __name__ == "__main__":
