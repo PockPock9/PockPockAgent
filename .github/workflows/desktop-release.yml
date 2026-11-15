@@ -61,3 +61,43 @@ jobs:
             desktop/release/*.dmg
             desktop/release/*.zip
           if-no-files-found: error
+
+  release:
+    # Only for version tags: publishes the installers on the Releases page. Each file is attached
+    # under its versioned name and under a fixed name, so links to
+    # releases/latest/download/PockPock-Agent-Setup.exe always fetch the newest version.
+    name: Publish the release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check the tag matches the app version
+        run: |
+          version=$(node -p "require('./desktop/package.json').version")
+          if [ "v${version}" != "${GITHUB_REF_NAME}" ]; then
+            echo "The tag ${GITHUB_REF_NAME} does not match desktop/package.json version ${version}." >&2
+            exit 1
+          fi
+      - uses: actions/download-artifact@v7
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Add fixed-name copies
+        working-directory: dist
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          cp "PockPock-Agent-Setup-${version}.exe" PockPock-Agent-Setup.exe
+          cp "PockPock-Agent-${version}-mac-arm64.dmg" PockPock-Agent-mac-arm64.dmg
+          cp "PockPock-Agent-${version}-mac-x64.dmg" PockPock-Agent-mac-x64.dmg
+          ls -la
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes=".github/release-notes/${GITHUB_REF_NAME}.md"
+          if [ -f "$notes" ]; then set -- --notes-file "$notes"; else set -- --generate-notes; fi
+          gh release create "${GITHUB_REF_NAME}" dist/*.exe dist/*.dmg dist/*.zip \
+            --title "PockPock Agent ${GITHUB_REF_NAME#v}" --verify-tag "$@"
