@@ -47,6 +47,13 @@ contextBridge.exposeInMainWorld('pockpock', {
     cancel: () => ipcRenderer.invoke('setup:cancel'),
     onEvent: (callback) => subscribe('setup:event', callback),
   },
+  updates: {
+    state: () => ipcRenderer.invoke('updates:state'),
+    check: () => ipcRenderer.invoke('updates:check'),
+    download: () => ipcRenderer.invoke('updates:download'),
+    install: () => ipcRenderer.invoke('updates:install'),
+    onChange: (callback) => subscribe('updates:state', callback),
+  },
   setLoginItem: (enabled) => ipcRenderer.invoke('app:setLoginItem', enabled),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   openPath: (target) => ipcRenderer.invoke('shell:openPath', target),

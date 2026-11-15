@@ -28,7 +28,11 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: pockpock-agent-windows
-          path: desktop/release/*.exe
+          # latest.yml and the blockmap let installed copies update themselves (electron-updater).
+          path: |
+            desktop/release/*.exe
+            desktop/release/*.exe.blockmap
+            desktop/release/latest.yml
           if-no-files-found: error
 
   macos:
@@ -60,6 +64,7 @@ jobs:
           path: |
             desktop/release/*.dmg
             desktop/release/*.zip
+            desktop/release/latest-mac.yml
           if-no-files-found: error
 
   release:
@@ -106,5 +111,8 @@ jobs:
             "dist/PockPock-Agent-${version}-mac-arm64.dmg" "dist/PockPock-Agent-${version}-mac-x64.dmg"
             dist/PockPock-Agent-mac-arm64.dmg dist/PockPock-Agent-mac-x64.dmg
             "dist/PockPock-Agent-${version}-mac-arm64.zip" "dist/PockPock-Agent-${version}-mac-x64.zip"
+            # Update information read by installed copies: Windows downloads and installs the new
+            # version; macOS only reports it.
+            dist/latest.yml "dist/PockPock-Agent-Setup-${version}.exe.blockmap" dist/latest-mac.yml
           )
           gh release create "${GITHUB_REF_NAME}" "${files[@]}" --title "PockPock Agent ${version}" --verify-tag "$@"

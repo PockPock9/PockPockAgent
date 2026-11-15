@@ -93,6 +93,7 @@ The window has chats on the left, the conversation in the middle, the open folde
 - **Browser recipes** saves web tasks you repeat; each step asks for approval when it runs.
 - **Activity** shows which model handled each request and how long it took (no prompt text is stored).
 - **Models**, **Memory** and **Research** control which local models are used, learned preferences, and whether agents may read public websites.
+- **Updates** (Windows): new versions download in the background and install when you press **Restart to update** or quit PockPock; your chats and settings are kept. On a Mac, PockPock tells you when a new version is available and links to its download.
 - **Services** starts, stops and restarts everything (Ollama, the backend services, OpenClaw, NemoClaw) all at once or one by one, shows their logs, and sets startup options. All services start when the app opens; a model loads into memory only when a message uses it.
 
 Full guide: [PockPock Agent desktop app](docs/features/desktop-app.md).

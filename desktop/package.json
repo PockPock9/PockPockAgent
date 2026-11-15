@@ -16,7 +16,8 @@
     "dist:mac": "npm run build && electron-builder --mac"
   },
   "dependencies": {
-    "@lydell/node-pty": "^1.2.0-beta.18"
+    "@lydell/node-pty": "^1.2.0-beta.18",
+    "electron-updater": "6.8.12"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
@@ -119,7 +120,15 @@
     "dmg": {
       "title": "PockPock Agent ${version}",
       "artifactName": "PockPock-Agent-${version}-mac-${arch}.${ext}"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "PockPock9",
+        "repo": "PockPockAgent",
+        "releaseType": "release"
+      }
+    ]
   },
   "allowScripts": {
     "electron-winstaller": false

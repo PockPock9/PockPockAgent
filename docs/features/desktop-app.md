@@ -57,6 +57,24 @@ Setup skips anything already installed. If it stops (failure, cancel, a needed r
 
 Code: `setup.cjs` (shared steps and the final check), `hardware.cjs` (hardware check, model choice, download and disk estimates), `setup-win.cjs` and `setup-mac.cjs` (installers for each system), `platform.cjs` (process control, NemoClaw's shell and Docker for each system).
 
+## Updates
+
+The installed app updates itself from the project's GitHub releases (`electron/updater.cjs`, `electron-updater`, configured by `build.publish` in `desktop/package.json`). Running from source never checks.
+
+| | Windows | macOS |
+|---|---|---|
+| Check | 15 seconds after the app opens, then every 4 hours, and with **Settings → Updates → Check for updates** | Same |
+| New version | Downloads in the background (unless **Download updates automatically** is off; then **Download update**). The download is verified against the SHA-512 in `latest.yml` | Reported only, with **Open download page**: macOS refuses to replace an app that is signed only ad hoc, so the user installs the new DMG like the first time |
+| Install | **Restart to update** (Settings or the status bar) installs and reopens the app; otherwise it installs silently when the app quits. Chats, settings and setup state are kept | Manual |
+
+**Before the installer runs**, the app closes its terminals and stops the gateway and the four Python services, even when **Stop services when the app closes** is off: they run from inside the app folder (`resources\backend`), and Windows cannot replace files a running program holds. With that setting on, everything the app started is stopped as on a normal quit. The services start again when the new version opens.
+
+**After an update**, the new version may need other Python packages. Setup saves a fingerprint of the backend's requirements files (`backendDeps` in `setup.json`) after installing the backend. When the installed app starts and the bundled requirements no longer match, it runs `pip install` for them and `playwright install chromium` before starting the services; the status bar shows "Updating PockPock's services for the new version…". Output goes to `logs\backend-update.log`. If it fails (for example offline), the services start anyway and the next start tries again. Running **Setup** also brings the packages up to date.
+
+**Releases** (`.github/workflows/desktop-release.yml`) attach the update information read by installed copies: `latest.yml` and the installer's `.blockmap` (Windows) and `latest-mac.yml` (macOS). With a previous release's blockmap available, Windows downloads only the changed parts of the installer; otherwise the whole installer. Updater messages are written to `logs\updater.log`; failed checks are shown on the Settings page only.
+
+Copies of 0.1.0 do not contain the updater; they update to a later version by downloading it once.
+
 ## Running from source
 
 Requirements: Python 3.12 (`py -3.12 backend\scripts\pockpock.py setup` on Windows, `python3.12 backend/scripts/pockpock.py setup` on a Mac, creates the repository `.venv`), Node.js 24+, and `npm install` inside `desktop/`.

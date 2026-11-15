@@ -1,9 +1,10 @@
 // Window chrome: title bar, sidebar (chats and customizations), and status bar.
 import { useMemo, useState } from 'react'
-import { Activity, Brain, Folder, Globe, Globe2, MessageSquarePlus, PanelBottom, PanelLeft, PanelRight, Plug, Puzzle, Search, Server, ServerCog, Settings as SettingsIcon, Trash2 } from 'lucide-react'
+import { Activity, Brain, Download, Folder, Globe, Globe2, MessageSquarePlus, PanelBottom, PanelLeft, PanelRight, Plug, Puzzle, Search, Server, ServerCog, Settings as SettingsIcon, Trash2 } from 'lucide-react'
 import { relativeTime } from '../lib/api'
 import type { Status } from '../lib/status'
 import type { Session, Settings } from '../lib/types'
+import type { Updates } from '../lib/updates'
 import { Dot, IconButton } from './ui'
 import { mod } from '../lib/platform'
 
@@ -120,7 +121,8 @@ export function Sidebar({ overlay, sessions, activeId, page, running, status, on
   )
 }
 
-export function StatusBar({ status, version, onOpenServices }: { status: Status; version: string; onOpenServices: () => void }) {
+export function StatusBar({ status, version, onOpenServices, updates, onOpenSettings }: { status: Status; version: string; onOpenServices: () => void; updates: Updates; onOpenSettings: () => void }) {
+  const update = updates.state
   const backendTone = status.backend.phase === 'ready' ? 'ok' : status.backend.phase === 'checking' || status.backend.phase === 'starting' ? 'busy' : 'off'
   const running = status.state?.models.filter((model) => model.running).map((model) => model.name) ?? []
   return (
@@ -134,6 +136,17 @@ export function StatusBar({ status, version, onOpenServices }: { status: Status;
       </button>
       <span className="statusbar__spacer" />
       <span title="Models loaded in memory">{running.length ? `Loaded: ${running.join(', ')}` : 'No model loaded'}</span>
+      {update?.status === 'ready' && (
+        <button type="button" className="statusbar__update" onClick={() => void updates.install()} title={`Restart PockPock to install version ${update.version}`}>
+          <Download size={12} /> Restart to update to {update.version}
+        </button>
+      )}
+      {update?.status === 'available' && (
+        <button type="button" className="statusbar__update" onClick={onOpenSettings} title="Open Settings to update">
+          <Download size={12} /> Version {update.version} available
+        </button>
+      )}
+      {update?.status === 'downloading' && <span title="Downloading the new version in the background">Downloading update · {Math.round(update.progress * 100)}%</span>}
       <span>v{version}</span>
     </footer>
   )
