@@ -5,6 +5,8 @@
 
 PockPock is a local AI workspace for Windows and macOS. Its desktop app, **PockPock Agent**, chats with models running on your own PC and runs agents that plan and carry out tasks: reading and writing files, researching public websites, driving a browser, and, with the OpenClaw engine, operating the PC itself. Everything runs locally through [Ollama](https://ollama.com); prompts and replies are not sent to a cloud service or written to telemetry.
 
+**[Download PockPock Agent](https://github.com/PockPock9/PockPockAgent/releases/latest)** for Windows or Mac, open it, and press **Set up PockPock**. Setup installs everything else. See [Install](#install).
+
 ![PockPock Agent: chats on the left, the conversation in the middle, the open folder's files on the right](docs/images/home.png)
 
 ---
@@ -47,8 +49,10 @@ More screenshots, a guide to every feature, and [example prompts for OpenClaw](h
 
 PockPock runs on **Windows 10/11 (64-bit)** and **macOS 12 or later** (Apple silicon or Intel).
 
-1. Download the installer for your computer:
-   - **Windows:** `PockPock-Agent-Setup-<version>.exe`. Run it. It installs for the current user without administrator rights, creates Desktop and Start-menu shortcuts, and opens the app.
+**Download:** [Windows](https://github.com/PockPock9/PockPockAgent/releases/latest/download/PockPock-Agent-Setup.exe) · [Mac with Apple silicon](https://github.com/PockPock9/PockPockAgent/releases/latest/download/PockPock-Agent-mac-arm64.dmg) · [Mac with Intel](https://github.com/PockPock9/PockPockAgent/releases/latest/download/PockPock-Agent-mac-x64.dmg) · [all releases](https://github.com/PockPock9/PockPockAgent/releases)
+
+1. Install the app:
+   - **Windows:** open `PockPock-Agent-Setup.exe`. PockPock is not code-signed yet, so Windows may show **"Windows protected your PC"**: press **More info**, then **Run anyway**. The installer needs no administrator rights; it installs for the current user, creates Desktop and Start-menu shortcuts, and opens the app.
    - **Mac:** `PockPock-Agent-<version>-mac-arm64.dmg` (Apple silicon: M1 or newer) or `...-mac-x64.dmg` (Intel). Open it and drag **PockPock Agent** to **Applications**. The app is not notarized by Apple yet, so the first time: open it, press **Done** when macOS says it cannot verify the developer, then go to **System Settings → Privacy & Security**, press **Open Anyway** next to PockPock Agent, and confirm. Later launches open normally.
 2. The app opens on **Setup**. Press **Set up PockPock**. Setup checks the computer, picks an AI model that runs well on it (`qwen3.5:9b` with a graphics card of 8 GB or more or an Apple silicon Mac with 16 GB, otherwise the smaller `qwen3.5:4b`), checks there is enough free disk space, and installs everything in one go. Nothing needs to be installed beforehand. **Customize** lets you choose the components and the model yourself:
 
