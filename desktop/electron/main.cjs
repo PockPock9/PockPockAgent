@@ -140,7 +140,9 @@ function registerIpc() {
   handle('setup:status', () => setup.status())
   handle('setup:start', (plan) => {
     const components = Array.isArray(plan?.components) ? plan.components.filter((name) => ['core', 'ollama', 'openclaw', 'nemoclaw'].includes(name)) : ['core']
-    void setup.start({ components, disabledSkills: Array.isArray(plan?.disabledSkills) ? plan.disabledSkills.map(String) : [] })
+    // The model is checked against the offered choices in setup.start; anything else means "recommended".
+    const model = typeof plan?.model === 'string' ? plan.model.slice(0, 64) : undefined
+    void setup.start({ components, disabledSkills: Array.isArray(plan?.disabledSkills) ? plan.disabledSkills.map(String) : [], model })
     return true
   })
   handle('setup:cancel', () => { setup.cancel(); return true })

@@ -50,14 +50,14 @@ PockPock runs on **Windows 10/11 (64-bit)** and **macOS 12 or later** (Apple sil
 1. Download the installer for your computer:
    - **Windows:** `PockPock-Agent-Setup-<version>.exe`. Run it. It installs for the current user without administrator rights, creates Desktop and Start-menu shortcuts, and opens the app.
    - **Mac:** `PockPock-Agent-<version>-mac-arm64.dmg` (Apple silicon: M1 or newer) or `...-mac-x64.dmg` (Intel). Open it and drag **PockPock Agent** to **Applications**. The app is not notarized by Apple yet, so the first time: open it, press **Done** when macOS says it cannot verify the developer, then go to **System Settings → Privacy & Security**, press **Open Anyway** next to PockPock Agent, and confirm. Later launches open normally.
-2. The app opens on **Setup**. Choose what to install and press **Install**. Setup installs every prerequisite itself, so nothing needs to be installed beforehand:
+2. The app opens on **Setup**. Press **Set up PockPock**. Setup checks the computer, picks an AI model that runs well on it (`qwen3.5:9b` with a graphics card of 8 GB or more or an Apple silicon Mac with 16 GB, otherwise the smaller `qwen3.5:4b`), checks there is enough free disk space, and installs everything in one go. Nothing needs to be installed beforehand. **Customize** lets you choose the components and the model yourself:
 
 | Component | What it adds | Download |
 |---|---|---|
 | PockPock backend (always) | Python 3.12 (Windows: from python.org or winget; Mac: through uv, into PockPock's own folder), the PockPock services, an isolated browser for agent web tasks | about 600–700 MB |
-| Ollama and models | Ollama plus `qwen3.5:9b` (default model) and `qwen2.5:1.5b` (Smart Router classifier) | about 8 GB |
+| Ollama and models | Ollama plus the AI model (`qwen3.5:4b`, `qwen3.5:9b` or `qwen3.5:27b`) and `qwen2.5:1.5b` (Smart Router classifier) | about 5 GB with `4b`, 8 GB with `9b` |
 | OpenClaw engine | Node.js (if needed), OpenClaw, the PockPock permission plugin, and a list of OpenClaw skills you can untick | about 400 MB |
-| NemoClaw engine | Windows: WSL with Ubuntu, Docker Desktop and a NemoClaw sandbox. Mac (Apple silicon only): Apple's Command Line Tools, Docker Desktop and a NemoClaw sandbox | about 8 GB |
+| NemoClaw engine (only with **Customize**) | Windows: WSL with Ubuntu, Docker Desktop and a NemoClaw sandbox. Mac (Apple silicon only): Apple's Command Line Tools, Docker Desktop and a NemoClaw sandbox | about 8 GB |
 
 3. When the installs finish, setup **starts every service and checks it**: each service must answer its health check, Ollama must produce a short test reply, and the PockPock API must respond. Only then does it say "PockPock is ready". If a check fails, setup names the service; open **Services** to read its log and press **Try again**.
 
