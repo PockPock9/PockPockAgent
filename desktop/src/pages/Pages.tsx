@@ -1,14 +1,15 @@
 // Customize pages: Skills, MCP servers, Models, Memory, Settings.
 import { useCallback, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Brain, Download, LoaderCircle, Plug, Power, Puzzle, RefreshCw, Server, Trash2 } from 'lucide-react'
+import { Brain, ChevronDown, Download, LoaderCircle, Palette, Plug, Power, Puzzle, RefreshCw, Server, Trash2 } from 'lucide-react'
 import { ExtensionCard, inspectLink } from '../components/ExtensionCard'
 import type { Proposal } from '../components/ExtensionCard'
-import { Empty } from '../components/ui'
+import { Empty, MenuItem, Popover } from '../components/ui'
 import { formatBytes, getJson, sendJson } from '../lib/api'
 import type { Status } from '../lib/status'
 import type { AppInfo, Settings } from '../lib/types'
 import { updateSummary } from '../lib/updates'
+import { THEMES, validTheme } from '../lib/theme'
 import type { Updates } from '../lib/updates'
 
 function PageFrame({ title, eyebrow, intro, children, actions }: { title: string; eyebrow: string; intro: string; children: ReactNode; actions?: ReactNode }) {
@@ -252,6 +253,8 @@ export function MemoryPage() {
 
 export function SettingsPage({ status, info, onOpen, updates, settings, patchSettings }: { status: Status; info: AppInfo | null; onOpen: (page: 'services' | 'setup') => void; updates: Updates; settings: Settings; patchSettings: (change: Partial<Settings>) => void }) {
   const update = updates.state
+  const [themeOpen, setThemeOpen] = useState(false)
+  const theme = THEMES.find((item) => item.id === validTheme(settings.theme)) ?? THEMES[0]
   const [busy, setBusy] = useState('')
   const [message, setMessage] = useState('')
   const act = async (id: string, task: () => Promise<unknown>, done: string) => {
@@ -265,6 +268,22 @@ export function SettingsPage({ status, info, onOpen, updates, settings, patchSet
     <PageFrame eyebrow="System" title="Settings" intro="How PockPock runs on this PC.">
       {message && <div className="banner" role="status"><span>{message}</span></div>}
       <ul className="rows">
+        <li className="row">
+          <Palette size={16} className="row__icon" />
+          <div className="row__text"><strong id="theme-label">Theme</strong><span>{theme.detail}</span></div>
+          <div className="anchor">
+            <button type="button" className="button theme-button" aria-haspopup="menu" aria-expanded={themeOpen} aria-labelledby="theme-label theme-current" data-popover-toggle={themeOpen ? 'open' : undefined} onClick={() => setThemeOpen((value) => !value)}>
+              <Swatches colours={theme.swatches} /> <span id="theme-current">{theme.name}</span> <ChevronDown size={12} />
+            </button>
+            <Popover open={themeOpen} onClose={() => setThemeOpen(false)} align="right" className="popover--wide popover--down">
+              <div className="popover__label">Theme</div>
+              {THEMES.map((item) => (
+                <MenuItem key={item.id} icon={<Swatches colours={item.swatches} />} title={item.name} detail={item.detail} selected={item.id === theme.id}
+                  onSelect={() => { patchSettings({ theme: item.id }); setThemeOpen(false) }} />
+              ))}
+            </Popover>
+          </div>
+        </li>
         <li className="row">
           <Server size={16} className="row__icon" />
           <div className="row__text"><strong>Services</strong><span>{running} of {installed} installed services running · {status.backend.phase === 'ready' ? 'PockPock gateway ready' : status.backend.detail}</span></div>
@@ -310,4 +329,9 @@ export function SettingsPage({ status, info, onOpen, updates, settings, patchSet
       {info && <p className="note">PockPock Agent {info.version} · Electron {info.electron} · backend {info.backendRoot} · Python {info.python}</p>}
     </PageFrame>
   )
+}
+
+/** A small preview of a theme: canvas, panel, accent and text colours. Decorative: the name is next to it. */
+function Swatches({ colours }: { colours: string[] }) {
+  return <span className="swatches" aria-hidden="true">{colours.map((colour, index) => <span key={index} style={{ background: colour }} />)}</span>
 }

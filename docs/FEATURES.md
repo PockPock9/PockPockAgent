@@ -29,6 +29,7 @@ This index points to detailed feature contracts. Every new feature or change to 
 ## Desktop app and setup
 
 - [PockPock Agent desktop app](features/desktop-app.md): interface, Windows and macOS installers, first-run setup with a final service check, services, data and security.
+- [Themes and the brand mark](features/themes.md): the five themes, the theme picker, how a theme is applied before the first paint, the title-bar mark and the working indicator.
 
 ## Other product areas
 

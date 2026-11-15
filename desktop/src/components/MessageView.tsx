@@ -8,6 +8,7 @@ import { bridge, ENGINE_LABEL } from '../lib/types'
 import type { Approval, Engine, Message, ResearchBlock, ResearchSource, Step } from '../lib/types'
 import { formatDuration, stepDuration, turnPhases, useNow } from '../lib/timing'
 import { Markdown } from './ui'
+import { Mark } from './Mark'
 
 export function EngineIcon({ engine, size = 14 }: { engine: Engine; size?: number }) {
   if (engine === 'openclaw') return <Terminal size={size} />
@@ -39,7 +40,7 @@ function Steps({ steps, live, endedAt }: { steps: Step[]; live: boolean; endedAt
   return (
     <div className={`steps${open ? ' is-open' : ''}`}>
       <button type="button" className="steps__summary" onClick={() => setOpen((value) => !value)} aria-expanded={open}>
-        {live && running ? <LoaderCircle size={13} className="spin" /> : <ChevronRight size={13} className="steps__chevron" />}
+        {live && running ? <Mark size={15} working /> : <ChevronRight size={13} className="steps__chevron" />}
         <span>{summary}</span>
       </button>
       {open && (
@@ -220,7 +221,7 @@ export function MessageView({ message, live, onChange }: { message: Message; liv
       {message.approvals?.map((approval) => (
         <ApprovalCard key={approval.id} approval={approval} onChange={(next) => onChange({ ...message, approvals: message.approvals?.map((item) => item.id === next.id ? next : item) })} />
       ))}
-      {waiting && <div className="thinking"><span /><span /><span /> Thinking{message.timing && <time>{formatDuration(now - message.timing.startedAt)}</time>}</div>}
+      {waiting && <div className="thinking" role="status"><Mark size={16} working /> Thinking{message.timing && <time>{formatDuration(now - message.timing.startedAt)}</time>}</div>}
       {message.content && <div className={`message__body${message.status === 'error' ? ' is-error' : ''}`}><Markdown content={message.content} /></div>}
       {message.notice && <p className="message__notice"><AlertTriangle size={13} />{message.notice}</p>}
       {message.research?.map((block, index) => <ResearchCard key={index} block={block} />)}

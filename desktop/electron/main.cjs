@@ -1,11 +1,12 @@
 // PockPock Agent desktop app: window, local server, service supervision, first-run setup, and the
 // narrow IPC surface the renderer may use (storage, services, setup, workspace files, terminal).
-const { app, BrowserWindow, dialog, ipcMain, shell, Menu } = require('electron')
+const { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell, Menu } = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')
 const { ServiceManager } = require('./services.cjs')
 const { Setup } = require('./setup.cjs')
 const { Updater } = require('./updater.cjs')
+const themes = require('./themes.cjs')
 const paths = require('./paths.cjs')
 
 // An app opened from Finder or the Dock gets a minimal PATH; add the folders PockPock's tools live in.
@@ -36,6 +37,7 @@ const services = new ServiceManager({
 let autoStarting = false
 let startingDetail = '' // shown while services start, e.g. while packages are updated after an app update
 let updater = null
+let themeSetting = themes.DEFAULT // the saved choice, which may be "system"
 let setup = null // created once the app data folder is known
 
 /** The renderer's view of the backend: the gateway's state, or why it is not up. */
@@ -149,6 +151,14 @@ function registerIpc() {
     return true
   })
   handle('setup:cancel', () => { setup.cancel(); return true })
+  // Theme: the renderer applies the colours; the main process keeps the window background, the
+  // Windows caption buttons and Chromium's colour scheme in step. Only known theme ids are accepted.
+  handle('theme:set', (id) => {
+    if (!themes.IDS.includes(id)) throw new Error('Unknown theme.')
+    themeSetting = id
+    themes.applyNative(id)
+    return applyWindowTheme()
+  })
   handle('updates:state', () => updater.state)
   handle('updates:check', () => updater.check())
   handle('updates:download', () => updater.download())
@@ -179,6 +189,17 @@ function registerIpc() {
   })
 }
 
+/** Colours the window chrome for the current theme; returns the concrete theme id. */
+function applyWindowTheme() {
+  const resolved = themes.resolve(themeSetting)
+  const colours = themes.THEMES[resolved]
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.setBackgroundColor(colours.bg)
+    if (paths.IS_WIN) mainWindow.setTitleBarOverlay({ color: colours.bg, symbolColor: colours.symbol, height: 38 })
+  }
+  return resolved
+}
+
 async function createWindow() {
   if (DEV) {
     appOrigin = DEV_URL
@@ -188,16 +209,21 @@ async function createWindow() {
     appOrigin = `http://127.0.0.1:${started.port}`
   }
 
+  // The saved theme colours the window before the page paints, so there is no flash.
+  themeSetting = themes.valid(readSettings().theme)
+  themes.applyNative(themeSetting)
+  const initialTheme = themes.resolve(themeSetting)
+  const chrome = themes.THEMES[initialTheme]
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 900,
     minWidth: 760,
     minHeight: 520,
-    backgroundColor: '#0d1014',
+    backgroundColor: chrome.bg,
     title: 'PockPock Agent',
     icon: path.join(__dirname, '..', 'public', process.platform === 'win32' ? 'icon.ico' : 'icon.png'),
     titleBarStyle: paths.IS_MAC ? 'hiddenInset' : 'hidden',
-    titleBarOverlay: paths.IS_WIN ? { color: '#0d1014', symbolColor: '#aab4c2', height: 38 } : undefined,
+    titleBarOverlay: paths.IS_WIN ? { color: chrome.bg, symbolColor: chrome.symbol, height: 38 } : undefined,
     trafficLightPosition: paths.IS_MAC ? { x: 14, y: 12 } : undefined,
     show: false,
     webPreferences: {
@@ -225,7 +251,10 @@ async function createWindow() {
     callback(permission === 'clipboard-sanitized-write' || permission === 'media')
   })
 
-  await mainWindow.loadURL(`${appOrigin}/`)
+  // public/theme-boot.js reads ?theme= and sets data-theme before the app renders.
+  await mainWindow.loadURL(`${appOrigin}/?theme=${encodeURIComponent(initialTheme)}`)
+  // With "system", follow the OS switching between light and dark while the app is open.
+  nativeTheme.on('updated', () => { if (themeSetting === 'system') applyWindowTheme() })
   services.watch()
   // Before setup has installed the backend there is nothing to start.
   const needsSetup = !fs.existsSync(paths.venvPython())

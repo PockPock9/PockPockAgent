@@ -86,6 +86,7 @@ The window has chats on the left, the conversation in the middle, the open folde
   - **PockPock Agent** proposes a plan; you **Approve and run**, **Edit plan**, or **Decline**. It then works in a task folder (the open folder, or a new temporary one) and shows each step, changed files, sources it read, and files it produced.
   - **OpenClaw** is an agent that runs directly on this PC: commands, files, the browser, mouse and keyboard. Its permission picker sets what it may do without asking: **Ask first**, **Auto-approve safe**, or **Full access**.
   - **NemoClaw** runs OpenClaw inside a sandbox, so it cannot touch this PC.
+- **Theme**: **Settings → Theme** switches between **PockPock Dark** (the default), **Volt**, **Storm**, **Feather** (light) and **System** (follows your computer's light or dark mode). Every theme meets WCAG AA contrast. While an agent works, the PockPock mark's bolt pulses next to what it is doing.
 - **Approvals** appear as cards in the conversation with **Allow once** and **Deny**.
 - **Timing**: while a reply runs, counters show the seconds spent thinking, planning or on the current step. Afterwards each step shows how long it took, and a line under the reply splits the time into **Thinking** or **Planning**, **Waiting for you** (time on plan and approval cards), **Writing** or **Working**, and **Total**.
 - **Files** (right) shows the open folder; attach a file to the next message or open it. **Terminal** (**Ctrl+J**) is PowerShell in that folder.

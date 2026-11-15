@@ -7,6 +7,7 @@ import { RotateCcw, X } from 'lucide-react'
 import { bridge } from '../lib/types'
 import { IconButton } from './ui'
 import { mod } from '../lib/platform'
+import { terminalTheme, THEME_EVENT } from '../lib/theme'
 
 export function TerminalPanel({ workspace, onClose }: { workspace?: string; onClose: () => void }) {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -22,8 +23,10 @@ export function TerminalPanel({ workspace, onClose }: { workspace?: string; onCl
       fontSize: 13,
       cursorBlink: true,
       allowProposedApi: false,
-      theme: { background: '#0d1014', foreground: '#d6dde6', cursor: '#a78bfa', selectionBackground: '#3a3f5a' },
+      theme: terminalTheme(),
     })
+    const onTheme = () => { term.options.theme = terminalTheme() }
+    window.addEventListener(THEME_EVENT, onTheme)
     const fit = new FitAddon()
     term.loadAddon(fit)
     term.open(hostRef.current)
@@ -47,6 +50,7 @@ export function TerminalPanel({ workspace, onClose }: { workspace?: string; onCl
     term.focus()
     return () => {
       disposed = true
+      window.removeEventListener(THEME_EVENT, onTheme)
       observer.disconnect()
       input.dispose()
       offData()
