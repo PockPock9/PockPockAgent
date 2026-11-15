@@ -9,20 +9,25 @@ const http = require('node:http')
 const os = require('node:os')
 const path = require('node:path')
 const { spawn } = require('node:child_process')
+const { powerSaveBlocker } = require('electron')
 const paths = require('./paths.cjs')
+const hardware = require('./hardware.cjs')
 const platform = require('./platform.cjs')
 const { DEFINITIONS, httpJson } = require('./services.cjs')
 
 const host = paths.IS_MAC ? require('./setup-mac.cjs') : require('./setup-win.cjs')
 const { run } = platform
 
-const DEFAULT_MODEL = 'qwen3.5:9b'
+// The default model is chosen per computer (hardware.cjs) and remembered in setup.json.
 const ROUTER_MODEL = 'qwen2.5:1.5b' // the Smart Router's classifier
-const MODELS = [DEFAULT_MODEL, ROUTER_MODEL]
-const NEMOCLAW_ENV = `NEMOCLAW_NO_EXPRESS=1 NEMOCLAW_NON_INTERACTIVE=1 NEMOCLAW_PROVIDER=ollama NEMOCLAW_MODEL=${DEFAULT_MODEL} NEMOCLAW_SANDBOX_NAME=pockpock NEMOCLAW_CONTEXT_WINDOW=32768 NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1`
+const nemoclawEnv = (model) => `NEMOCLAW_NO_EXPRESS=1 NEMOCLAW_NON_INTERACTIVE=1 NEMOCLAW_PROVIDER=ollama NEMOCLAW_MODEL=${model} NEMOCLAW_SANDBOX_NAME=pockpock NEMOCLAW_CONTEXT_WINDOW=32768 NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1`
 const OPENCLAW_HOME = path.join(os.homedir(), '.openclaw')
 const BUNDLED_SKILLS = require('./openclaw-skills.json').skills
 const COMPONENTS = ['core', 'ollama', 'openclaw', 'nemoclaw']
+// What "Set up PockPock" installs. NemoClaw is left out: it needs administrator approval, Docker,
+// and on Windows a restart and an Ubuntu account, so it is offered under Customize instead.
+const RECOMMENDED = ['core', 'ollama', 'openclaw']
+const hasModel = (installed, name) => Boolean(installed?.some((item) => item === name || item === `${name}:latest`))
 
 class SetupError extends Error {}
 
@@ -56,11 +61,12 @@ class Setup {
     this.cancelled = false
     this.running = false
     this.liveSkills = null
+    this.model = null // the default model of the current run
   }
 
   /** Helpers handed to the operating-system installers. */
   get context() {
-    return { download, SetupError, NEMOCLAW_ENV, services: this.services }
+    return { download, SetupError, NEMOCLAW_ENV: nemoclawEnv(this.model || this.readState().defaultModel || 'qwen3.5:9b'), services: this.services }
   }
 
   readState() {
@@ -137,17 +143,33 @@ class Setup {
     return BUNDLED_SKILLS
   }
 
+  /** The default model: the one chosen at an earlier setup, else the one that fits this computer. */
+  chooseModel(state, specs, installed) {
+    if (state.defaultModel) return { name: state.defaultModel, reason: 'Chosen when PockPock was set up.' }
+    return hardware.recommendModel(specs, installed ?? [])
+  }
+
   async status() {
     const models = await this.ollamaModels()
     const state = this.readState()
     const nemoSupport = platform.nemoSupported()
     const core = await this.coreReady()
+    const specs = await hardware.detect()
+    const recommended = this.chooseModel(state, specs, models)
+    const openclawInstalled = Boolean(paths.openclawCmd()) && fs.existsSync(path.join(OPENCLAW_HOME, 'openclaw.json'))
+    const missing = [
+      !core && 'core', !paths.ollamaExe() && 'ollama', !openclawInstalled && 'openclaw', 'nemoclaw',
+      !hasModel(models, recommended.name) && 'model', !hasModel(models, ROUTER_MODEL) && 'router',
+    ].filter(Boolean)
     return {
       platform: process.platform,
       arch: os.arch(),
+      hardware: specs,
+      model: { ...recommended, choices: hardware.MODEL_CHOICES, missing },
+      recommended: { components: RECOMMENDED, ...hardware.estimate(RECOMMENDED, recommended.name, missing) },
       core: { installed: core },
-      ollama: { installed: Boolean(paths.ollamaExe()), running: models !== null, models: Object.fromEntries(MODELS.map((name) => [name, Boolean(models?.some((item) => item === name || item === `${name}:latest`))])) },
-      openclaw: { installed: Boolean(paths.openclawCmd()) && fs.existsSync(path.join(OPENCLAW_HOME, 'openclaw.json')), cli: Boolean(paths.openclawCmd()), node: Boolean(paths.nodeExe()) },
+      ollama: { installed: Boolean(paths.ollamaExe()), running: models !== null, models: Object.fromEntries([recommended.name, ROUTER_MODEL].map((name) => [name, hasModel(models, name)])) },
+      openclaw: { installed: openclawInstalled, cli: Boolean(paths.openclawCmd()), node: Boolean(paths.nodeExe()) },
       nemoclaw: { supported: nemoSupport.supported, reason: nemoSupport.reason, installed: nemoSupport.supported ? await this.nemoInstalled() : false, docker: Boolean(paths.dockerCli()) },
       winget: paths.IS_WIN ? host.packageManager() : true,
       skills: await this.skills(),
@@ -166,13 +188,20 @@ class Setup {
     const components = COMPONENTS.filter((name) => name === 'core' || (plan.components.includes(name) && (name !== 'nemoclaw' || nemoSupport.supported)))
     const known = new Set([...BUNDLED_SKILLS, ...(this.liveSkills ?? [])].map((skill) => skill.key))
     const disabledSkills = Array.isArray(plan.disabledSkills) ? plan.disabledSkills.filter((key) => known.has(key)) : []
+    const state = this.readState()
+    const choices = hardware.MODEL_CHOICES.map((item) => item.name)
     this.running = true
     this.cancelled = false
-    this.writeState({ pending: { components, disabledSkills }, lastRun: { startedAt: new Date().toISOString(), result: 'running' } })
-    this.emit({ type: 'started', components })
+    // Keep the computer awake: a long model download must not be cut off by sleep.
+    const awake = powerSaveBlocker.start('prevent-app-suspension')
     let outcome = 'done'
     let message = ''
     try {
+      const installed = await this.ollamaModels()
+      this.model = choices.includes(plan.model) ? plan.model : state.pending?.model || this.chooseModel(state, await hardware.detect(), installed).name
+      this.writeState({ pending: { components, disabledSkills, model: this.model }, lastRun: { startedAt: new Date().toISOString(), result: 'running' } })
+      this.emit({ type: 'started', components })
+      await this.checkDiskSpace(components, installed)
       await host.refreshPath()
       for (const component of components) {
         if (component === 'core') await this.installCore()
@@ -193,11 +222,34 @@ class Setup {
       message = error instanceof Error ? error.message : String(error)
       this.log(`Setup stopped: ${message}`)
     } finally {
+      powerSaveBlocker.stop(awake)
       this.running = false
-      this.writeState({ pending: outcome === 'done' ? null : { components, disabledSkills }, lastRun: { finishedAt: new Date().toISOString(), result: outcome, message } })
+      this.writeState({
+        pending: outcome === 'done' ? null : { components, disabledSkills, model: this.model },
+        ...(outcome === 'done' && components.includes('ollama') ? { defaultModel: this.model } : {}),
+        lastRun: { finishedAt: new Date().toISOString(), result: outcome, message },
+      })
       this.emit({ type: 'finished', outcome, message })
     }
     return { outcome, message }
+  }
+
+  /** Stops before downloading anything when the disk is too full for what is still missing. */
+  async checkDiskSpace(components, installed) {
+    const specs = await hardware.detect()
+    if (specs.freeDiskGB === null) return
+    const missing = [
+      !(await this.coreReady()) && 'core', !paths.ollamaExe() && 'ollama', !paths.openclawEntry() && 'openclaw',
+      components.includes('nemoclaw') && !(await this.nemoInstalled()) && 'nemoclaw',
+      !hasModel(installed, this.model) && 'model', !hasModel(installed, ROUTER_MODEL) && 'router',
+    ].filter(Boolean)
+    const { downloadGB, neededGB } = hardware.estimate(components, this.model, missing)
+    this.log(`Free disk space: ${specs.freeDiskGB} GB. Download: about ${downloadGB} GB; space needed: about ${neededGB} GB.`)
+    if (specs.freeDiskGB < neededGB) {
+      const computer = paths.IS_MAC ? 'Mac' : 'PC'
+      const bin = paths.IS_MAC ? 'Trash' : 'Recycle Bin'
+      throw new SetupError(`Not enough free disk space. Setup needs about ${neededGB} GB, and this ${computer} has ${specs.freeDiskGB} GB free. Free up ${Math.ceil(neededGB - specs.freeDiskGB)} GB (for example by emptying the ${bin} or removing large files you no longer need), then press Try again.`)
+    }
   }
 
   cancel() {
@@ -239,7 +291,7 @@ class Setup {
     await this.services.start('ollama')
     if ((await this.ollamaModels()) === null) throw new SetupError('Ollama did not start. Open Services to see its log.')
     this.step(C, 'ollama', 'Ollama', 'done')
-    for (const model of MODELS) {
+    for (const model of [this.model, ROUTER_MODEL]) {
       const installed = await this.ollamaModels()
       if (installed?.some((name) => name === model || name === `${model}:latest`)) { this.step(C, `model:${model}`, `Model ${model}`, 'done', 'Already downloaded'); continue }
       this.step(C, `model:${model}`, `Downloading ${model}`, 'running', '', 0)
@@ -312,7 +364,7 @@ class Setup {
 
   async tuneOpenClaw(disabledSkills) {
     const set = (key, value) => this.openclaw(['config', 'set', key, JSON.stringify(value), '--strict-json'], `Setting ${key}`)
-    await set('agents.defaults.model.primary', `ollama/${DEFAULT_MODEL}`)
+    await set('agents.defaults.model.primary', `ollama/${this.model}`)
     await set('agents.defaults.thinkingDefault', 'low')
     await set('agents.defaults.compaction.timeoutSeconds', 900)
     await set('models.providers.ollama.timeoutSeconds', 1800)
@@ -323,7 +375,7 @@ class Setup {
     const listed = await run(entry.node, [entry.script, 'config', 'get', 'models.providers.ollama.models', '--json'], { timeout: 60000 })
     try {
       const models = JSON.parse(listed.stdout.slice(listed.stdout.indexOf('[')))
-      const model = models.find((item) => item.id === DEFAULT_MODEL)
+      const model = models.find((item) => item.id === this.model)
       if (model && model.contextTokens !== 65536) {
         model.contextTokens = 65536
         await set('models.providers.ollama.models', models)
@@ -346,7 +398,7 @@ class Setup {
     if (!(await this.nemoInstalled())) {
       // Onboarding builds the sandbox image and points its inference at Ollama on this computer.
       if ((await this.ollamaModels()) === null) await this.services.start('ollama')
-      const { file, args } = platform.nemoSpawn(`env ${NEMOCLAW_ENV} nemoclaw onboard --non-interactive --yes --yes-i-accept-third-party-software`, host.DISTRO)
+      const { file, args } = platform.nemoSpawn(`env ${nemoclawEnv(this.model)} nemoclaw onboard --non-interactive --yes --yes-i-accept-third-party-software`, host.DISTRO)
       await this.must(file, args, 'NemoClaw onboarding')
     }
     this.services.nemoInstalled = null
@@ -414,4 +466,4 @@ class Setup {
   }
 }
 
-module.exports = { Setup, MODELS, DEFAULT_MODEL }
+module.exports = { Setup, ROUTER_MODEL, RECOMMENDED }

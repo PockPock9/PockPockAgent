@@ -172,16 +172,20 @@ export type Settings = {
 export type AppInfo = { version: string; electron: string; platform: string; arch: string; repoRoot: string; backendRoot: string; python: string; packaged: boolean; backendUrl: string; terminal: boolean; backend: BackendPhase; loginItem: boolean }
 
 export type SetupComponent = 'core' | 'ollama' | 'openclaw' | 'nemoclaw'
+export type ModelChoice = { name: string; downloadGB: number; summary: string }
 export type SetupStatus = {
   platform: string
   arch: string
+  hardware: { ramGB: number; gpu: { name: string; memoryGB: number; shared: boolean } | null; freeDiskGB: number | null; cpu: string }
+  model: { name: string; reason: string; choices: ModelChoice[]; missing: string[] }
+  recommended: { components: SetupComponent[]; downloadGB: number; neededGB: number }
   core: { installed: boolean }
   ollama: { installed: boolean; running: boolean; models: Record<string, boolean> }
   openclaw: { installed: boolean; cli: boolean; node: boolean }
   nemoclaw: { installed: boolean; supported: boolean; reason: string; docker: boolean }
   winget: boolean
   skills: Array<{ key: string; name: string; description: string }>
-  pending: { components: SetupComponent[]; disabledSkills: string[] } | null
+  pending: { components: SetupComponent[]; disabledSkills: string[]; model?: string } | null
   lastRun: { result?: string; message?: string } | null
   verified: { at: string; ok: boolean; problems: string[] } | null
   needsSetup: boolean
@@ -223,7 +227,7 @@ export type DesktopBridge = {
   }
   setup: {
     status: () => Promise<SetupStatus>
-    start: (plan: { components: SetupComponent[]; disabledSkills: string[] }) => Promise<boolean>
+    start: (plan: { components: SetupComponent[]; disabledSkills: string[]; model?: string }) => Promise<boolean>
     cancel: () => Promise<boolean>
     onEvent: (callback: (event: SetupEvent) => void) => () => void
   }

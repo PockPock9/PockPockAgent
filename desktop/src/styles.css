@@ -433,6 +433,35 @@ button.context-chip:hover { color: var(--text); background: var(--bg-raise); }
 .setup-skills { padding: 0 14px 12px 74px; }
 .setup-skills .link-button { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
 .setup-skills__actions { display: flex; gap: 14px; margin: 4px 0; }
+/* First-run welcome and the model choice. */
+.button--large { min-height: 40px; padding: 0 18px; font-size: 14px; font-weight: 600; }
+.setup-welcome { display: grid; gap: 16px; padding: 20px; }
+.setup-welcome h2 { margin: 0; font-size: 15px; }
+.setup-includes { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.setup-includes li { display: flex; gap: 10px; align-items: flex-start; color: var(--text-2); font-size: 13px; }
+.setup-includes svg { flex: none; margin-top: 2px; color: var(--accent-strong); }
+.setup-includes strong { color: var(--text); font-weight: 600; }
+.setup-facts { display: grid; gap: 8px; margin: 0; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-raise); }
+.setup-facts > div { display: grid; grid-template-columns: 130px 1fr; gap: 12px; font-size: 12.5px; }
+.setup-facts dt { display: flex; align-items: center; gap: 6px; color: var(--text-3); }
+.setup-facts dd { margin: 0; color: var(--text-2); }
+.setup-facts dd strong { color: var(--text); }
+.setup-facts dd.is-warning { color: #f2cd8a; }
+.banner > svg { flex: none; margin-top: 2px; }
+.setup-models { display: grid; gap: 6px; margin: 0; padding: 0 14px 14px 74px; border: 0; }
+.setup-models legend { margin-bottom: 4px; padding: 0; color: var(--text-3); font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.setup-models label { display: flex; align-items: flex-start; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 7px; cursor: pointer; }
+.setup-models label:hover { border-color: var(--border-strong); }
+.setup-models label.is-chosen { border-color: rgba(139, 108, 255, .5); }
+.setup-models input { margin-top: 3px; width: 15px; height: 15px; accent-color: var(--accent); }
+.setup-models span { display: grid; gap: 2px; }
+.setup-models strong { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.setup-models em { color: var(--text-2); font-size: 12px; font-style: normal; }
+.setup-models .note { margin: 2px 0 0; }
+@media (max-width: 720px) {
+  .setup-facts > div { grid-template-columns: 1fr; gap: 2px; }
+  .setup-models, .setup-skills { padding-left: 14px; }
+}
 .setup-progress { display: grid; gap: 12px; }
 .setup-steps { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
 .setup-step { display: flex; align-items: flex-start; gap: 10px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-panel); }
