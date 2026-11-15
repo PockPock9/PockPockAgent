@@ -13,7 +13,7 @@ import sys
 import time
 from urllib.request import urlopen
 
-from pockpock_paths import app_data_dir
+from pockpock_paths import app_data_dir, migrate_legacy_data
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
