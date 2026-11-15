@@ -11,7 +11,7 @@ The local agent performs supported work by requesting typed tools during an Agen
 - `backend/projects/agent_tools/research.py` implements user-directed public-host discovery and bounded same-host text/page retrieval. It blocks private destinations and unapproved redirects.
 - `backend/projects/agent_tools/research_contracts.py` defines provider-neutral, versioned source/evidence/error records and adapts existing named-host fetch results without changing the callable tool contract.
 - The gateway stores research provider opt-in in the local settings table. The Research settings page discloses that named public-site requests leave the PC; the gateway denies fetch tools while the provider is disabled.
-- Successful site crawls emit a replayable `research_sources` event. Conversations renders canonical source links, retrieval timestamps, snippets, bounded excerpts, and retrieval failures.
+- Successful site crawls emit a replayable `research_sources` event. The desktop app shows canonical source links, retrieval timestamps, snippets, bounded excerpts, and retrieval failures.
 - `backend/projects/agent_tools/artifacts.py` creates task-scoped text/office deliverables and images using an already-running local image engine.
 - `backend/projects/agent_tools/registry.py` exposes the model tool schemas and dispatches a registered name to its capability module.
 - `backend/projects/agent_tools/contracts.py` validates schemas, capabilities, permission/side-effect metadata, timeouts, and input/output byte limits.

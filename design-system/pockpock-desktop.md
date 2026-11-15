@@ -1,9 +1,9 @@
 # PockPock Agent desktop design system
 
 **Updated:** 2026-11-15
-**Scope:** The Electron desktop app in `desktop/`. The web dashboard keeps [pockpock-ai](pockpock-ai/MASTER.md).
+**Scope:** The Electron desktop app in `desktop/`, the only PockPock interface.
 
-The desktop app is a work tool used for long sessions, so it uses flat, quiet surfaces in the style of code-editor agents instead of the web dashboard's glass and animated background. PockPock's violet stays the single accent.
+The desktop app is a work tool used for long sessions, so it uses flat, quiet surfaces in the style of code-editor agents instead of glass effects or animated backgrounds. PockPock's violet stays the single accent.
 
 ## Tokens (`desktop/src/styles.css`, `:root`)
 

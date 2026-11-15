@@ -48,6 +48,6 @@ The scheduler does not add a queue, worker process, or additional database. MAG-
 - `backend/projects/run_store/test_delegation_scheduler.py`: child execution/tool filtering, dependency ordering, concurrency, cancellation, service errors, configuration bounds, stable IDs, and typed-result retry replay.
 - The same suite verifies approved child patch artifact reporting and rollback after validation failure; `backend/projects/agent_tools/test_workspace.py` covers stale/conflicting application and content-safe revert.
 - `backend/projects/run_store/test_event_contracts.py`: atomic claim, duplicate dispatch, parent binding, and terminal-run rejection.
-- `frontend/app/src/App.tsx`: parent timeline rendering for child status, activity, and result events.
+- `desktop/src/lib/engines.ts`: child status events become steps on the parent reply; child approval requests (`delegate_event`) appear as approval cards.
 
 Focused verification: `py -m unittest projects.run_store.test_delegation_scheduler`.

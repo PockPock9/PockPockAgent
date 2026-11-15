@@ -2,7 +2,7 @@
 
 ## Status
 
-**Partially implemented.** Frog AI supports isolated browsing and recipes through Playwright/Chromium, with Lightpanda 1.0.4 as an opt-in CDP backend limited to one active context at a time. The first AUT-02 slice adds a minimally permissioned Chrome extension and Native Messaging pairing handshake; it does not yet expose page observations/actions or connect to agent runs. AUT-01 defines the proposed permissions and platform boundaries for the remaining local interaction tools: a user-connected Chrome session, native desktop interaction, bounded command/file workflows, and user-managed schedules. These other additions remain planned.
+**Partially implemented.** Frog AI supports isolated browsing and recipes through Playwright/Chromium, with Lightpanda 1.0.4 as an opt-in CDP backend limited to one active context at a time. The first AUT-02 slice (a Chrome extension and Native Messaging pairing handshake) was removed on 2026-11-15 together with the web frontend and is in git history; operating the user's real browser and PC is currently done by the OpenClaw engine under its permission modes. AUT-01 defines the proposed permissions and platform boundaries for the remaining local interaction tools: a user-connected Chrome session, native desktop interaction, bounded command/file workflows, and user-managed schedules. These other additions remain planned.
 
 ## AUT-01 design baseline
 
@@ -16,7 +16,7 @@ These are the v1 design decisions for the child implementation tasks. They prese
 - **Native desktop:** a separate Windows automation adapter/service for one user-selected foreground window. It does not use browser DOM automation for websites.
 - **Commands and files:** tool schemas and permission checks remain in `backend/projects/agent_tools/`; workspace operations reuse current path and secret-file guards. A command runner is a separate local process only if the implementation establishes a stable, enforceable process boundary.
 - **Run coordination:** the gateway remains the authorization and approval point; the run store owns durable events. MAG-06 owns durable background job execution; it does not grant tools additional permissions.
-- **Planned module boundaries:** `backend/projects/agent_tools/` owns schemas and dispatch; `backend/projects/browser_automation/` remains the isolated Playwright/Lightpanda runtime; `backend/projects/chrome_companion/` owns the extension/native-messaging pairing shell (agent-run integration remains planned); a future `backend/projects/desktop_automation/` owns Windows foreground-window control. The gateway/run store own approvals and durable run events; MAG-06 owns scheduled job dispatch.
+- **Planned module boundaries:** `backend/projects/agent_tools/` owns schemas and dispatch; `backend/projects/browser_automation/` remains the isolated Playwright/Lightpanda runtime; a Chrome companion (removed scaffold, see git history) would own the extension/native-messaging pairing if resumed; a future `backend/projects/desktop_automation/` owns Windows foreground-window control. The gateway/run store own approvals and durable run events; MAG-06 owns scheduled job dispatch.
 
 ### Permission and confirmation matrix
 
@@ -101,7 +101,7 @@ The implementation tracker assigns IDs and dependencies in [TASKS.md](../TASKS.m
 
 1. **AUT-01 — Specify contracts and permission model (design complete).** The v1 capability matrix, Chrome connection choice, Windows platform scope, approval rules, privacy-retention rules, resource bounds, and service boundaries are recorded above.
 2. **AUT-06 — Add a shared browser engine adapter and Lightpanda support (complete).** Preserve Playwright/Chromium as the default; keep Lightpanda opt-in, loopback-only, one-context-at-a-time, and explicit about unsupported operations.
-3. **AUT-02 — Connect selected Chrome tabs.** AUT-02A implements the pairing/revocation shell. AUT-02B adds the scoped run relay, typed observations/actions, approvals, and durable events. AUT-02C verifies lifecycle/privacy in Chrome Stable. Console/network diagnostics are excluded from v1.
+3. **AUT-02 — Connect selected Chrome tabs (blocked; scaffold removed 2026-11-15).** AUT-02A implemented the pairing/revocation shell. AUT-02B adds the scoped run relay, typed observations/actions, approvals, and durable events. AUT-02C verifies lifecycle/privacy in Chrome Stable. Console/network diagnostics are excluded from v1.
 4. **AUT-03 — Add native desktop observation/actions.** Add an OS-specific adapter behind a narrow local contract, target selection, permission/error states, approvals, cancellation, evidence, and tests for target changes and denied actions.
 5. **AUT-04 — Add bounded command/file workflows.** Reuse workspace safeguards; define named command profiles, restricted process execution, cancellation, output/artifact handling, approval, and adversarial path/process tests. No arbitrary shell input.
 6. **AUT-05 — Add user-managed recurring workflows.** Build on the durable worker lifecycle in MAG-06. Start with explicit user-created, versioned workflows; persist schedules and run outcomes; bound retries/concurrency; add pause/disable/notification and restart recovery.

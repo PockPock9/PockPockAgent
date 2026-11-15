@@ -24,15 +24,18 @@ These rules apply to every human or AI change in this repository.
 
 - Prefer cohesive modules with explicit ownership over a larger server, UI component, or tool file. Preserve the local-first deployment model unless the user asks to change it.
 - Keep secrets, credentials, prompts, and private user content out of logs and telemetry. Preserve workspace and permission boundaries.
-- Run the narrowest relevant existing validation after implementation. For the frontend use `npm run build`; for Python changes use `python -m py_compile` on changed modules and relevant project validation. Run tests when requested or when a change requires a test to establish correctness; report exactly what ran and its result.
+- Run the narrowest relevant existing validation after implementation. For the desktop app run `npm run typecheck` and `npm run build` in `desktop/`; for Python changes run `python -m py_compile` on changed modules and `backend/scripts/run_tests.py` (or the affected project's suite). Run tests when requested or when a change requires a test to establish correctness; report exactly what ran and its result.
 - When validation fails, fix the cause and rerun it. Never report a check as passed unless it actually passed.
 - Update this document only when the user explicitly changes project-wide contribution rules.
 
 ## UI/UX workflow
 
-- Before building UI, use the project-installed UI/UX Pro Max prompt in `.github/prompts/ui-ux-pro-max/` to settle the design system: palette, type scale, spacing, and component rules. Save the verified system in the repository under `design-system/`, with page-specific overrides only when needed.
-- Build with the installed `frontend-design` skill and the project's existing React, TypeScript, and Tailwind stack. Reuse existing components. This project does not currently use shadcn/ui; use its components only if the project adopts that library. Check current library APIs with Context7.
-- If a Figma link is provided, retrieve its context with the configured Figma MCP server before implementation.
-- After building, open the page with Playwright at 390px mobile and 1440px desktop widths. Save screenshots, inspect the browser console for errors, and fix visible issues.
-- Before finishing, run the installed `web-design-guidelines` skill and fix accessibility findings, including contrast, focus states, labels, keyboard navigation, and touch targets.
-- Cover loading, empty, error, and success states in every UI workflow.
+The user interface is the Electron desktop app in `desktop/` (React, TypeScript, Vite, plain CSS with tokens in `desktop/src/styles.css`). There is no web frontend.
+
+- Follow [`design-system/pockpock-desktop.md`](design-system/pockpock-desktop.md) for tokens, layout and component rules. Use the project prompts in `.github/prompts/ui-ux-pro-max/` and the `frontend-design` skill when designing new screens, and update the design-system file when a rule changes.
+- Reuse the existing components (`desktop/src/components/`) and page frame. Check current library APIs with Context7. If a Figma link is provided, read it with the configured Figma MCP server first.
+- Keep privileged work in the main process (`desktop/electron/`). The renderer is sandboxed and reaches it only through named calls in `preload.cjs`; every new handler must check the caller with `handle()` and validate its arguments.
+- After building, run the real app with Playwright's Electron driver (`_electron`), using `POCKPOCK_DESKTOP_USER_DATA` pointed at a temporary folder so real chats are untouched. Check a 1440×900 window and a narrow 820 px window, save screenshots, and fix console errors and visible issues.
+- Before finishing, run the `web-design-guidelines` skill and fix accessibility findings: contrast, focus states, labels, keyboard navigation, and control sizes.
+- Cover loading, empty, error and success states in every screen.
+- Do not run tests that load models or restart the gateway or OpenClaw while the user may be using them; check `ollama ps` and recent Ollama requests first.

@@ -1,8 +1,8 @@
 # OpenClaw agent mode
 
-OpenClaw mode lets the PockPock **Conversations** page talk to an [OpenClaw](https://docs.openclaw.ai) agent that runs **directly on this Windows PC, with no sandbox**. It is a fourth response mode next to **Chat**, **Agent**, and **NemoClaw**. The agent can run shell commands, read and change files anywhere your Windows account can, and use OpenClaw's other tools. What it may do without asking is set by a three-option permission picker in the composer.
+OpenClaw mode lets the PockPock Agent desktop app talk to an [OpenClaw](https://docs.openclaw.ai) agent that runs **directly on this Windows PC, with no sandbox**. It is one of the four modes in the composer, next to **Chat**, **PockPock Agent** and **NemoClaw**. The agent can run shell commands, read and change files anywhere your Windows account can, and use OpenClaw's other tools. What it may do without asking is set by a three-option permission picker in the composer.
 
-In the interface this is the **OpenClaw** engine of Agent mode, chosen from the engine chip next to the Chat / Agent switch. This page calls it OpenClaw mode.
+In the composer it is the **OpenClaw** entry of the mode picker. Setup installs and configures it (Node.js, OpenClaw, onboarding against Ollama, the permission plugin, the skills you chose, and the gateway login item); the **Services** page starts and stops its gateway.
 
 PockPock does not install OpenClaw or its gateway. It connects to an existing local gateway, sends each message, streams the reply, and shows approval requests.
 
@@ -79,10 +79,10 @@ The gateway starts at sign-in from a Startup-folder item created by onboarding. 
 
 ## User flow
 
-1. Open **Conversations**. On load, the page calls `GET /api/openclaw/status`.
-2. Select **Agent** in the response-mode switch, then choose **OpenClaw** from the engine chip next to it (see [Agent engines](agent-extensions.md#agent-engines)). The option is disabled when Node.js or the helper is missing or the integration is turned off; its line gives the reason.
-3. A status chip shows `This PC · <model>` with a green dot when the gateway answers, or `OpenClaw offline · Recheck` with a red dot. Selecting it rechecks.
-4. Choose a permission mode from the chip next to it. Full access is shown in amber. If the permission plugin is not loaded, Ask first and Auto-approve safe are disabled and only Full access can run.
+1. Open PockPock Agent. It calls `GET /api/openclaw/status` on start and every 30 seconds, and again when the OpenClaw gateway service comes up.
+2. Choose **OpenClaw** in the composer's mode picker. The option is disabled when Node.js or the helper is missing or the integration is turned off; its line gives the reason.
+3. The mode chip above the composer has a green dot when the gateway answers; the status bar shows OpenClaw's state, and **Services** shows details and the log.
+4. Choose a permission mode from the permission picker. Full access is shown in amber. If the permission plugin is not loaded, Ask first and Auto-approve safe are disabled and only Full access can run.
 5. Send a message. The reply streams as it is written. Each tool call appears as an activity line above the reply: running, completed, failed, denied, or stopped.
 6. When an action needs approval, an **Approval required · OpenClaw** card appears with the action and its target (the command line, file path, or URL). Choose **Allow once** or **Deny**. The agent waits, then continues with the result.
 7. **Stop** cancels the request, denies anything still waiting, and aborts the agent run in OpenClaw.
@@ -91,7 +91,7 @@ Skills and MCP servers can be added to this engine by pasting a link; see [Skill
 
 ### Choosing the model
 
-With the OpenClaw engine selected, the model picker lists **Default** (OpenClaw's configured model) and the other tool-capable Ollama models in OpenClaw's config. The choice is stored in the browser (`frog-ai-chat-openclaw-model`) and sent with each message; PockPock sets it on the conversation's OpenClaw session before the turn. Choosing **Default** resets the session to OpenClaw's default. A name that is not in OpenClaw's list is refused.
+With the OpenClaw engine selected, the model picker lists **Default** (OpenClaw's configured model) and the other tool-capable Ollama models in OpenClaw's config. The choice is saved in the app's settings (`clawModel`) and sent with each message; PockPock sets it on the conversation's OpenClaw session before the turn. Choosing **Default** resets the session to OpenClaw's default. A name that is not in OpenClaw's list is refused.
 
 A model is loaded by Ollama when a turn first uses it and unloaded after Ollama's idle period (five minutes unless `OLLAMA_KEEP_ALIVE` is set). Status checks do not load a model. Switching to a model that does not fit beside the loaded one makes Ollama unload the other first.
 
@@ -112,7 +112,7 @@ Each PockPock conversation maps to one OpenClaw session (`pockpock-<conversation
 ## Modules and data flow
 
 ```text
-ChatView (OpenClaw mode)
+PockPock Agent desktop app (OpenClaw mode)
   -> POST /api/openclaw/chat {session_id, message, permission_mode, model?}   (frog_ai_server.py, same-PC check)
   -> projects/openclaw_bridge/api.py -> OpenClawBridge.start_turn
        writes ~/.openclaw/pockpock/permissions.json  {session key: mode}
@@ -136,7 +136,7 @@ ChatView (OpenClaw mode)
 | `backend/projects/openclaw_bridge/install_plugin.py` | Copies the plugin into `~/.openclaw/policies/`, enables it, and reloads or restarts the gateway |
 | `backend/projects/openclaw_bridge/test_bridge.py`, `plugin/test_policy.mjs` | Unit tests (no OpenClaw needed) |
 | `backend/scripts/frog_ai_server.py` | Builds the bridge from environment configuration, mounts the router with the same-PC check, adds rate limits |
-| `frontend/app/src/features/chat/ChatView.tsx` | Mode switch, status chip, permission picker, send path, activity lines, approval cards |
+| `desktop/src/components/ChatPane.tsx`, `desktop/src/lib/engines.ts`, `desktop/src/components/MessageView.tsx` | Mode and permission pickers, status, send path, activity steps, approval cards |
 
 OpenClaw's own session permission mode is set to `full` for PockPock sessions, and the plugin applies the PockPock mode instead. OpenClaw's built-in approval modes were not used because, on native Windows, they refuse any command that does not start with a resolvable program file, which rules out PowerShell cmdlets such as `Remove-Item` even when wrapped in `powershell -Command`.
 
@@ -206,7 +206,7 @@ An invalid agent name disables the integration at startup and logs a warning.
 - `~/.openclaw/pockpock/permissions.json`: the mode for up to 300 most recent PockPock sessions. Written by PockPock before each turn, read by the plugin.
 - `~/.openclaw/policies/pockpock-permissions.ts`: the installed copy of the plugin.
 - OpenClaw keeps its own session transcripts, memory, and workspace under `~/.openclaw/`. Clearing PockPock chats does not delete them; use `openclaw sessions` to manage them.
-- The browser stores conversation text and activity lines in local storage, as for other modes. The selected permission mode is stored under `frog-ai-chat-openclaw-permission`.
+- The desktop app saves conversation text and activity steps in its chat file (`%APPDATA%\PockPock Agent\sessions.json`), as for other modes. The selected permission mode is saved in its settings (`clawPermission`).
 
 ## Security and privacy
 
@@ -214,7 +214,7 @@ An invalid agent name disables the integration at startup and logs a warning.
 - **Enforcement is inside OpenClaw.** The plugin runs in the gateway process before each tool call, so approval does not depend on the browser or PockPock staying connected. If the plugin is not loaded, PockPock refuses Ask first and Auto-approve safe turns instead of running them unprotected.
 - **Fail closed.** Unknown tools, unrecognized commands, a missing or unreadable mode record, an unanswered approval, and a dropped connection all result in asking or denying, never in running.
 - **No injection path.** The message, session id, and mode reach the helper as one JSON line on stdin. Nothing from the user is placed on a command line. Session ids must match `pockpock-…` so a request cannot target a session the plugin does not govern.
-- **Same-PC only.** The routes reuse the gateway's agent-task locality check, so the Tailscale dashboard and other origins cannot start turns or answer approvals. The OpenClaw gateway itself listens only on loopback with a token, which the helper reads from the local OpenClaw config and sends only to `127.0.0.1`.
+- **Same-PC only.** The routes reuse the gateway's agent-task locality check, so requests from other machines or origins cannot start turns or answer approvals. The OpenClaw gateway itself listens only on loopback with a token, which the helper reads from the local OpenClaw config and sends only to `127.0.0.1`.
 - **No telemetry.** Messages, replies, commands, and approvals are not written to router telemetry, run tables, or PockPock logs. Unexpected bridge errors log a stack trace without request content.
 - **Limits of the approval card.** You approve what the card shows: the command line, file path, or URL. It does not show a file's new contents. An agent with write access could also edit PockPock's or OpenClaw's own configuration, including the permission record, but in Ask first and Auto-approve safe that edit itself requires your approval.
 

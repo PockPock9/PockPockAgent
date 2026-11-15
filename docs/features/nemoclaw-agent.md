@@ -1,8 +1,8 @@
 # NemoClaw agent mode
 
-NemoClaw mode lets the PockPock **Conversations** page talk to a sandboxed [NVIDIA NemoClaw](https://github.com/NVIDIA/NemoClaw) agent (OpenClaw harness inside an OpenShell sandbox) running in WSL on the same PC. It is a third response mode next to **Chat** and **Agent**. PockPock does not install, onboard, or manage NemoClaw; it only sends turns to an existing sandbox and shows the reply.
+NemoClaw mode lets the PockPock Agent desktop app talk to a sandboxed [NVIDIA NemoClaw](https://github.com/NVIDIA/NemoClaw) agent (OpenClaw harness inside an OpenShell sandbox) running in WSL on the same PC. It is a third response mode next to **Chat** and **Agent**. PockPock does not install, onboard, or manage NemoClaw; it only sends turns to an existing sandbox and shows the reply.
 
-In the interface this is the **NemoClaw** engine of Agent mode, chosen from the engine chip next to the Chat / Agent switch. This page calls it NemoClaw mode.
+In the composer it is the **NemoClaw** entry of the mode picker. Setup installs WSL with Ubuntu, Docker Desktop and NemoClaw and onboards a `pockpock` sandbox against Ollama; the **Services** page starts and stops the sandbox (starting Docker Desktop first).
 
 ## When to use it
 
@@ -23,10 +23,10 @@ NemoClaw mode has no PockPock plan approval or permission modes. The sandbox is 
 
 ## User flow
 
-1. Open **Conversations**. On load, the page calls `GET /api/nemoclaw/status?probe=0` (a full check instead when NemoClaw is the saved engine).
+1. Open PockPock Agent. It calls `GET /api/nemoclaw/status?probe=0` on start (a full check instead when NemoClaw is the selected mode).
    On load the page asks only whether NemoClaw is installed (`?probe=0`). The sandbox itself is checked when NemoClaw is selected, because that check makes the sandbox test its model, which loads the model into memory.
-2. Select **Agent** in the response-mode switch, then choose **NemoClaw** from the engine chip next to it (see [Agent engines](agent-extensions.md#agent-engines)). The option is disabled when WSL is unavailable or the integration is turned off, and while the sandbox is still being checked; its line shows the reason. Skills and MCP servers added through PockPock are not available inside the sandbox.
-3. A status chip shows `Sandbox · <model>` with a green dot when ready, `Sandbox offline · Recheck` with a red dot otherwise, and a spinner while checking. Selecting the chip forces a fresh status check. On screens 700px wide or narrower the chip shows only the dot; the full text remains available to screen readers.
+2. Choose **NemoClaw** in the composer's mode picker. The option is disabled when WSL is unavailable or the integration is turned off; its line shows the reason. Skills and MCP servers added through PockPock are not available inside the sandbox.
+3. The mode chip above the composer shows a green dot when the sandbox is ready, a pulsing dot while it is being checked, and a grey dot otherwise; **Settings** → **Check sandbox** forces a fresh status check.
 4. The model picker and permission chip are hidden in this mode, because NemoClaw uses its own configured model and sandbox policy.
 5. Send a message. The transcript shows `NemoClaw · <model>` on the reply. Each PockPock conversation maps to one NemoClaw session (`pockpock-<conversation id>`), so the agent remembers earlier turns in the same thread.
 6. Stop cancels the request and terminates the WSL process for that turn.
@@ -36,7 +36,7 @@ Switching an existing conversation into NemoClaw mode does not copy earlier Chat
 ## Modules and data flow
 
 ```text
-ChatView (NemoClaw mode)
+PockPock Agent desktop app (NemoClaw mode)
   -> POST /api/nemoclaw/chat {session_id, message}         (frog_ai_server.py, same-PC check)
   -> projects/nemoclaw_bridge/api.py  -> NemoClawBridge.run_turn (worker thread)
   -> wsl.exe [-d <distro>] --exec /bin/bash -c <fixed script>
@@ -52,7 +52,7 @@ ChatView (NemoClaw mode)
 | `backend/projects/nemoclaw_bridge/api.py` | `/api/nemoclaw/status` and `/api/nemoclaw/chat` routes, SSE framing, heartbeat events, disconnect cancellation |
 | `backend/projects/nemoclaw_bridge/test_bridge.py` | Unit tests using a fake runner (no WSL needed) |
 | `backend/scripts/frog_ai_server.py` | Builds the bridge from environment configuration, mounts the router with the gateway's same-PC request check, adds rate limits |
-| `frontend/app/src/features/chat/ChatView.tsx` | Mode switch, status chip, NemoClaw send path, error and truncation notices |
+| `desktop/src/components/ChatPane.tsx`, `desktop/src/lib/engines.ts` | Mode picker, readiness check, NemoClaw send path, error and truncation notices |
 
 ## API contract
 
@@ -109,7 +109,7 @@ Invalid names (anything other than letters, digits, `.`, `_`, `-`) disable the i
 ## Security and privacy
 
 - **No shell injection:** the bash script passed to `wsl.exe` is a fixed constant. The message, session id, and other values are forwarded as environment variables through `WSLENV` and quoted inside the script, so user text is never parsed as shell syntax or placed in the command line.
-- **Same-PC only:** the routes reuse the gateway's agent-task locality check, so the Tailscale dashboard and non-local origins cannot drive the sandboxed agent.
+- **Same-PC only:** the routes reuse the gateway's agent-task locality check, so other machines and non-local origins cannot drive the sandboxed agent.
 - **No telemetry:** messages and replies are not written to router telemetry, run tables, or logs. Unexpected bridge exceptions log a stack trace without request content. Browser conversation history stays in local storage as for other modes.
 - **Persistence outside PockPock:** NemoClaw stores its own session transcripts and agent memory inside the sandbox (`/sandbox/.openclaw`). Clearing PockPock chats does not delete them; use NemoClaw's tools (`nemoclaw <sandbox> connect`, or `nemoclaw <sandbox> destroy`) to manage that data.
 - **Agent capabilities:** OpenClaw can run shell commands and edit files inside its sandbox and reach the network destinations its OpenShell policy allows. Review that policy with `nemoclaw <sandbox> policy list` before giving it sensitive tasks.
@@ -131,4 +131,4 @@ Invalid names (anything other than letters, digits, `.`, `_`, `-`) disable the i
 
 - Unit tests: from `backend/`, run `..\.venv\Scripts\python.exe -m unittest projects.nemoclaw_bridge.test_bridge` (16 tests; no WSL required).
 - Live bridge: `GET /api/nemoclaw/status?refresh=1` returns `ready: true`; two `POST /api/nemoclaw/chat` turns with the same `session_id` show the second reply recalling the first.
-- UI: on **Conversations**, select **NemoClaw**, confirm the green `Sandbox · <model>` chip, send a message, and confirm the reply label reads `NemoClaw · <model>`.
+- UI: in PockPock Agent choose **NemoClaw**, confirm the mode chip's dot turns green, send a message, and confirm the reply's model label reads `NemoClaw · <model>`.

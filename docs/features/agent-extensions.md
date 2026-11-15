@@ -1,6 +1,6 @@
 # Agent engines, skills, and MCP servers
 
-**Conversations** has two response modes: **Chat** and **Agent**. Agent mode runs on one of three engines, chosen from a picker next to the switch. Skills and MCP servers can be added to the OpenClaw engine by pasting a link; PockPock shows what the link would install and waits for approval before anything is installed or run.
+The PockPock Agent composer has four modes: **Chat**, and three agent engines (**PockPock Agent**, **OpenClaw**, **NemoClaw**). Skills and MCP servers can be added to the OpenClaw engine by pasting a link; PockPock shows what the link would install and waits for approval before anything is installed or run.
 
 ## Agent engines
 
@@ -10,11 +10,10 @@
 | **OpenClaw** | An OpenClaw gateway on this PC, no sandbox | Anything your Windows account can, limited by the permission mode | [OpenClaw agent mode](openclaw-agent.md) |
 | **NemoClaw** | OpenClaw inside a sandbox in WSL | Only the sandbox | [NemoClaw agent mode](nemoclaw-agent.md) |
 
-1. Select **Agent** in the switch. The engine chip next to it shows the current engine.
-2. Select the chip to choose **PockPock**, **OpenClaw**, or **NemoClaw**. An engine that is not installed is disabled and its line gives the reason; while its status is still being checked the line says so (the NemoClaw check can take about a minute after a restart).
-3. The controls after the chip change with the engine: workspace, permission and model pickers for PockPock; a status chip and the Ask first / Auto-approve safe / Full access picker for OpenClaw; a status chip for NemoClaw.
+1. Open the mode picker in the composer and choose **Chat**, **PockPock Agent**, **OpenClaw** or **NemoClaw**. An engine that is not installed is disabled and its line gives the reason.
+2. The controls next to it change with the engine: permission (with the task-folder choice) and model pickers for PockPock Agent; the Ask first / Auto-approve safe / Full access picker and model picker for OpenClaw; none for NemoClaw. The chip above the composer shows the engine with a status dot.
 
-Switching to **Chat** and back returns to the last engine. The choice is stored in the browser (`frog-ai-chat-agent-engine`; the full mode in `frog-ai-chat-agent-mode`). Each engine keeps its own memory of a thread: turns sent with one engine are not copied to another.
+The choice is saved in the app's settings file (`engine`, `agentPermission`, `clawPermission`, `chatModel`, `clawModel`). Each engine keeps its own memory of a chat: turns sent with one engine are not copied to another.
 
 ## Skills and MCP servers
 
@@ -25,7 +24,7 @@ Both are installed into **OpenClaw** and are used only by the OpenClaw engine. T
 
 ### User flow
 
-1. Open the **Skills** or **MCP servers** page from the sidebar (or **+** → **Skills…** / **MCP servers…** in the chat) and paste a link into the box at the top. In Agent mode you can also paste the link into the message box and send it. Accepted in the message box:
+1. Open the **Skills** or **MCP servers** page from the sidebar (or **+** → **Skills…** / **MCP servers…** in the composer) and paste a link into the box at the top. In any agent mode you can also paste the link into the message box and send it. Accepted in the message box:
    - a GitHub link on its own (`https://github.com/owner/repo`, or a folder inside it such as `…/tree/main/skills/pdf`);
    - any link with a short request that names what it is, such as `install skill <link>` or `connect mcp <link>`.
 2. PockPock downloads the repository from GitHub and reads it without running anything, then shows an **Approval required** card:
@@ -71,7 +70,7 @@ When a repository has both skills and a README-documented MCP server, the server
 ## Modules and data flow
 
 ```text
-ChatView / AgentExtensions.tsx
+Desktop app: ChatPane / ExtensionCard / Skills and MCP pages
   │ POST /api/extensions/inspect {url}          → proposal (nothing installed)
   │ POST /api/extensions/install {proposal_id}  → skills copied, or MCP server tested and saved
   ▼
@@ -92,9 +91,10 @@ agent_extensions/service.py
 | `backend/projects/agent_extensions/service.py` | Proposals, install, list, remove, the install manifest |
 | `backend/projects/agent_extensions/gateway_config.mjs` | Reads and edits `mcp.servers` and `skills.entries.<name>.enabled`, and lists OpenClaw's skills, through the gateway |
 | `backend/projects/agent_extensions/api.py` | `/api/extensions` routes |
-| `frontend/app/src/features/chat/AgentExtensions.tsx` | Link detection in chat and the approval card |
-| `frontend/app/src/features/extensions/ExtensionsPage.tsx` | The Skills and MCP servers pages: add from a link, switches, remove |
-| `frontend/app/src/features/chat/ChatView.tsx` | Engine picker; routes a pasted link to the approval card |
+| `desktop/src/components/ExtensionCard.tsx` | Link detection in the composer and the approval card |
+| `desktop/src/pages/Pages.tsx` (`SkillsPage`, `McpPage`) | The Skills and MCP servers pages: add from a link, switches, remove |
+| `desktop/src/components/ChatPane.tsx` | Mode picker; routes a pasted link to the approval card |
+| `desktop/electron/setup.cjs`, `desktop/electron/openclaw-skills.json` | The setup skills choice: skills left out are installed but switched off |
 | `backend/projects/openclaw_bridge/plugin/pockpock-permissions.ts` | Names the server and tool on MCP approval cards |
 
 MCP servers are saved through the gateway because the OpenClaw CLI refuses MCP changes while the gateway is running. The helper connects the same way the chat helper does (token on loopback).

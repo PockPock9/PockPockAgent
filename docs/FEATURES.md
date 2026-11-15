@@ -26,8 +26,11 @@ This index points to detailed feature contracts. Every new feature or change to 
 - [Agent engines, skills, and MCP servers](features/agent-extensions.md)
 - [PockPock Agent desktop app](features/desktop-app.md)
 
+## Desktop app and setup
+
+- [PockPock Agent desktop app](features/desktop-app.md): interface, installer, first-run setup, services, data and security.
+
 ## Other product areas
 
-- Conversations, model selection, local routing, and the overview dashboard are implemented in the web app and API. Their current setup and operating behavior is documented in [README.md](../README.md). Add focused pages here as those features receive significant behavior or contract changes.
-- The standalone YourBrand marketing and dashboard concept is documented in [YourBrand marketing and workspace demo](features/yourbrand-marketing-demo.md); it runs from `frontend/site/` and uses local mock data only.
-- Open WebUI integration and prompt-free Signal Room telemetry are documented in [README.md](../README.md) and their adapters under `backend/scripts/`.
+- Chat, model selection and the Smart Router are implemented in the gateway (`backend/scripts/frog_ai_server.py`, `smart_router.py`) and documented in [README.md](../README.md#smart-router). Prompt-free routing telemetry is stored by `backend/scripts/telemetry_store.py` and shown on the desktop app's **Activity** page.
+- The web dashboard, the Open WebUI pipe, the Signal Room dashboard, the Chrome companion scaffold and the YourBrand demo were removed on 2026-11-15; they remain in git history (commit `364820f`).

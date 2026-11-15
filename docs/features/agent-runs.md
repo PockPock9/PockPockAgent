@@ -8,15 +8,15 @@ Run records may also express a parent/child delegation relationship. Child metad
 
 ## User flow
 
-1. In Conversations, the user asks the agent to perform a supported task and selects a permission mode.
-2. The user may select a workspace. If none is selected, the API creates a dedicated task directory beneath `%USERPROFILE%\PockPock AI Tasks\<run-id>`.
+1. In PockPock Agent, the user chooses the **PockPock Agent** mode, asks for a supported task, and selects a permission mode.
+2. The user may work in the open folder (permission picker → **Work in <folder>**). Otherwise the API creates a dedicated task directory beneath `%USERPROFILE%\PockPock AI Tasks\<run-id>`.
 3. The planner prepares a structured task brief, execution plan, and model choice. A critic reviews scope, tool capability, step ordering, and success checks, and can request one bounded revision. The UI shows the review summary/findings alongside the resulting plan. The user can inspect and edit the plan and success checks, then approve or decline before any agent tool runs. The gateway checks a short-lived, one-use approval ticket against the exact run request and critic review.
-4. The browser receives and renders run events as they are produced. On reload, it requests the saved run/event history and rebuilds the activity timeline.
+4. The desktop app renders run events as they are produced (steps, approvals, research sources, changed files, produced files) and saves them with the chat. The gateway also keeps the full event history, readable through `GET /api/runs/{run_id}/events`.
 5. Completion provides the task workspace and created files, with an action to open the workspace in the local file manager.
 
 ## Components and data flow
 
-- `frontend/app/src/App.tsx` owns the conversation UI, activity timeline, and run-history requests.
+- `desktop/src/lib/engines.ts` runs the plan → approve → run sequence and maps run events to the message; `desktop/src/components/MessageView.tsx` renders the plan card, approvals and results.
 - `backend/scripts/frog_ai_server.py` owns HTTP/SSE endpoints and local-request policy. `backend/projects/agent_core/executor.py` owns approved-run execution and coordination; `AgentCoreServices` makes the gateway's current run state and adapters explicit at the boundary.
 - `backend/scripts/agent_run_store.py` is the gateway-side repository client and task journal projection. `backend/projects/run_store/app.py` owns the HTTP service boundary and durable SQLite operations.
 - `backend/projects/agent_tools/` owns the agent tool catalog, workspace-scoped file operations, and research/artifact tools.
@@ -79,5 +79,5 @@ The run store also owns task/workspace-scoped `research_collections`, `research_
 
 - Keep event ordering, status mapping, and replay pagination compatible when changing the run-store schema.
 - Update [ARCHITECTURE.md](../ARCHITECTURE.md) if persistence, ownership, replay, or deployment boundaries change.
-- Update the Conversations section of [README.md](../../README.md) when user-visible flow or setup changes.
+- Update [README.md](../../README.md) and the [desktop app page](desktop-app.md) when user-visible flow or setup changes.
 - Run the relevant Python syntax checks and agent validation after code changes; cover run creation, event status transitions, cancellation, cancellation replay, late-event rejection, replay pagination, duplicate IDs, and old-path fallback when adding or changing persistence behavior.

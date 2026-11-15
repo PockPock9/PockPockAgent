@@ -2,7 +2,9 @@
 
 This is the execution queue for [the agent capability roadmap](ROADMAP.md). An AI agent starting work should read this tracker, `AGENTS.md`, and the roadmap before editing code.
 
-**Tracker updated:** 2026-11-13  
+**Tracker updated:** 2026-11-15  
+
+**2026-11-15 change:** the web frontend (`frontend/app`) was removed; the only interface is the Electron desktop app in `desktop/`. Completion notes below that mention `frontend/app/...` files, the Conversations page or 390/1440 px browser checks describe work as it was done then; the same behaviour now lives in `desktop/src/` (see [desktop app](features/desktop-app.md)). New UI work targets the desktop app. The Chrome companion scaffold (`backend/projects/chrome_companion/`) was also removed, so the AUT-02 group (AUT-02B, B1–B3 and C) is blocked until signed-in browser access is reconsidered; OpenClaw now covers operating the user's real browser and PC.  
 **Rule:** pick one task only: the highest-priority `Ready` task whose dependencies are all `Done`. If none is ready, report the blocking dependency. Do not start `Blocked`, `In progress`, or `Not started` work without explicitly coordinating with the current task owner.
 
 ## Status and agent handoff rules
@@ -71,13 +73,13 @@ Choose the first `Ready` task in this table. Priority order is computer/browser 
 | 30 | AUT-06 | Add a shared browser engine adapter and Lightpanda support (tracking group) | AUT-01, BRW-01, BRW-05, BRW-06C3 | Done |
 | 30.1 | AUT-06A | Add a browser engine interface with Playwright as the default | AUT-01, BRW-01 | Done |
 | 30.2 | AUT-06B | Integrate and verify Lightpanda CDP capabilities | AUT-06A | Done |
-| 31 | AUT-02 | Connect explicitly selected Chrome tabs to agent runs | AUT-01 | In progress |
+| 31 | AUT-02 | Connect explicitly selected Chrome tabs to agent runs | AUT-01 | Blocked |
 | 31.1 | AUT-02A | Add explicit Chrome tab pairing and revocation | AUT-01 | Done |
-| 31.2 | AUT-02B | Bridge paired-tab operations to agent runs (tracking group) | AUT-02A | In progress |
-| 31.21 | AUT-02B1 | Add authenticated transient relay for a paired tab | AUT-02A | In progress |
-| 31.22 | AUT-02B2 | Add bounded page observation and screenshot evidence | AUT-02B1 | Not started |
-| 31.23 | AUT-02B3 | Add approval-bound tab actions and cancellation replay | AUT-02B2, FND-04 | Not started |
-| 31.3 | AUT-02C | Verify Chrome companion lifecycle and privacy guarantees | AUT-02B3 | Not started |
+| 31.2 | AUT-02B | Bridge paired-tab operations to agent runs (tracking group) | AUT-02A | Blocked |
+| 31.21 | AUT-02B1 | Add authenticated transient relay for a paired tab | AUT-02A | Blocked |
+| 31.22 | AUT-02B2 | Add bounded page observation and screenshot evidence | AUT-02B1 | Blocked |
+| 31.23 | AUT-02B3 | Add approval-bound tab actions and cancellation replay | AUT-02B2, FND-04 | Blocked |
+| 31.3 | AUT-02C | Verify Chrome companion lifecycle and privacy guarantees | AUT-02B3 | Blocked |
 | 32 | AUT-03 | Add approval-gated native desktop interaction | AUT-01 | Ready |
 | 33 | AUT-04 | Add scoped command and filesystem workflows | AUT-01 | Ready |
 | 34 | AUT-05 | Add user-managed recurring workflow schedules | AUT-02, AUT-03, AUT-04, MAG-06 | Not started |
