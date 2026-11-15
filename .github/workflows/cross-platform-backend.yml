@@ -6,6 +6,7 @@ on:
     paths:
       - "backend/projects/**"
       - "backend/scripts/**"
+      - "desktop/**"
       - "README.md"
       - "docs/**"
       - ".github/workflows/cross-platform-backend.yml"
@@ -13,6 +14,7 @@ on:
     paths:
       - "backend/projects/**"
       - "backend/scripts/**"
+      - "desktop/**"
       - "README.md"
       - "docs/**"
       - ".github/workflows/cross-platform-backend.yml"
@@ -36,7 +38,23 @@ jobs:
       - run: python backend/scripts/pockpock.py setup
       - if: runner.os == 'Linux'
         run: sudo .venv/bin/python -m playwright install-deps chromium
-      - run: python -m unittest discover -s backend/scripts -p "test_pockpock*.py"
-      - run: python -m unittest discover -s projects -p "test_*.py"
-        working-directory: backend
+      - run: .venv/bin/python backend/scripts/run_tests.py
+        if: runner.os != 'Windows'
+      - run: .venv\Scripts\python.exe backend\scriptsun_tests.py
+        if: runner.os == 'Windows'
       - run: python backend/scripts/pockpock.py check
+
+  desktop:
+    name: Desktop app (Windows)
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build

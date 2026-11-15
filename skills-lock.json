@@ -8,13 +8,6 @@
       "computedHash": "83485963700bcf11d5bf78118facb301676b69d918fee2e45a95e7f1a2840f6c",
       "installMode": "copy"
     },
-    "web-artifacts-builder": {
-      "source": "anthropics/skills",
-      "sourceType": "github",
-      "skillPath": "skills/web-artifacts-builder/SKILL.md",
-      "computedHash": "7a081b86fd5068d3ca2c4d9c059956634feff65ccbf1c39c3d34a6e5d0971139",
-      "installMode": "copy"
-    },
     "web-design-guidelines": {
       "source": "vercel-labs/agent-skills",
       "sourceType": "github",

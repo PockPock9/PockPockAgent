@@ -5,7 +5,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "projects"))
 
 from planner.evaluation import DEFAULT_ROUTING_PROFILES, evaluate_routing
-from planner.routing import required_context_tokens, task_capability
+from planner.routing import choose_candidate, required_context_tokens, task_capability
 
 
 class RoutingEvaluationTests(unittest.TestCase):

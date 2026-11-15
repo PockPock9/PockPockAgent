@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-import observability_dashboard as telemetry
+import telemetry_store as telemetry
 
 
 RUN_EVENT_CONTRACT_VERSION = 1

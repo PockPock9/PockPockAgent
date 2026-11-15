@@ -4,7 +4,6 @@ import asyncio
 import base64
 from contextlib import asynccontextmanager
 from dataclasses import replace
-import importlib.util
 import hashlib
 import hmac
 import ipaddress
@@ -31,7 +30,6 @@ from urllib.parse import quote, unquote, urlsplit
 import aiohttp
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 
@@ -40,7 +38,7 @@ SCRIPTS = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(SCRIPTS))
 
-import observability_dashboard as telemetry
+import telemetry_store as telemetry
 from pockpock_paths import app_data_dir
 from agent_run_store import (
     InvalidRunRelationship,
@@ -131,7 +129,6 @@ from projects.run_store.delegation_scheduler import (
     run_subtask_plan,
     stable_delegate_run_id,
 )
-from projects.chrome_companion.api import router as chrome_companion_router
 from projects.agent_extensions.api import create_router as create_extensions_router
 from projects.agent_extensions.service import ExtensionService
 from projects.nemoclaw_bridge.api import create_router as create_nemoclaw_router
@@ -139,12 +136,7 @@ from projects.nemoclaw_bridge.bridge import NemoClawBridge, NemoClawConfig
 from projects.openclaw_bridge.api import create_router as create_openclaw_router
 from projects.openclaw_bridge.bridge import OpenClawBridge, OpenClawConfig
 
-spec = importlib.util.spec_from_file_location("smart_router_pipe", SCRIPTS / "smart_router_pipe.py")
-if spec is None or spec.loader is None:
-    raise RuntimeError("Could not load the configured Smart Router pipe")
-router_module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(router_module)
-Pipe = router_module.Pipe
+from smart_router import Pipe
 
 logger = logging.getLogger("frog-ai")
 OLLAMA_URL = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
@@ -167,7 +159,6 @@ async def lifespan(_: FastAPI):
 
 
 api = FastAPI(title="PockPock AI Local API", docs_url=None, redoc_url=None, lifespan=lifespan)
-api.include_router(chrome_companion_router)
 
 
 @api.middleware("http")
@@ -360,30 +351,6 @@ async def decide_agent_approval(run_id: str, approval_id: str, payload: AgentApp
     if result.get("accepted") and future is not None and not future.done():
         future.set_result(payload.decision)
     return result
-
-
-@api.post("/api/agents/pick-workspace")
-async def pick_agent_workspace(request: Request):
-    """Open a local folder picker so the user can scope a task to a chosen workspace."""
-    require_local_agent_request(request)
-
-    def choose_folder() -> str:
-        import tkinter
-        from tkinter import filedialog
-
-        root = tkinter.Tk()
-        root.withdraw()
-        root.attributes("-topmost", True)
-        try:
-            return filedialog.askdirectory(title="Choose a workspace for this agent task", mustexist=True) or ""
-        finally:
-            root.destroy()
-
-    try:
-        selected = await asyncio.to_thread(choose_folder)
-    except Exception as err:
-        raise HTTPException(status_code=503, detail=f"The local folder picker could not open: {err}") from err
-    return {"path": str(Path(selected).resolve()) if selected else "", "cancelled": not bool(selected)}
 
 
 def connect_db():
@@ -2643,11 +2610,6 @@ async def chat(payload: ChatPayload):
         "Cache-Control": "no-cache",
         "X-Accel-Buffering": "no",
     })
-
-
-WEB_DIST = ROOT.parent / "frontend" / "app" / "dist"
-if WEB_DIST.is_dir():
-    api.mount("/", StaticFiles(directory=str(WEB_DIST), html=True), name="dashboard")
 
 
 if __name__ == "__main__":
