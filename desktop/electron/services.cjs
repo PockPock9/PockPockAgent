@@ -251,11 +251,12 @@ class ServiceManager {
       this.spawnLogged('gateway', python, ['-u', path.join(paths.backendRoot(), 'scripts', 'pockpock_server.py')], { cwd: path.dirname(paths.backendRoot()), env })
     } else if (definition.id === 'ollama') {
       // NemoClaw and long agent turns need more context than Ollama's default 4K.
-      this.spawnLogged('ollama', paths.ollamaExe(), ['serve'], { env: paths.cleanEnv({ OLLAMA_CONTEXT_LENGTH: process.env.OLLAMA_CONTEXT_LENGTH || '32768' }) })
+      this.spawnLogged('ollama', paths.ollamaExe(), ['serve'], { cwd: paths.HOME, env: paths.cleanEnv({ OLLAMA_CONTEXT_LENGTH: process.env.OLLAMA_CONTEXT_LENGTH || '32768' }) })
     } else if (definition.id === 'openclaw') {
       const entry = paths.openclawEntry()
       if (!entry) throw new Error('OpenClaw was not found.')
-      const result = await run(entry.node, [entry.script, 'gateway', 'start'], { timeout: 120000 })
+      // Started from the home folder: a long-running service must not hold the app's folder open (it blocks moving or updating it).
+      const result = await run(entry.node, [entry.script, 'gateway', 'start'], { timeout: 120000, cwd: paths.HOME })
       fs.appendFileSync(path.join(paths.logsRoot(), 'openclaw-start.log'), `\n=== ${new Date().toISOString()}\n${result.stdout}${result.stderr}`)
       if (!result.ok && !(await portOpen(definition.port))) throw new Error((result.stderr || result.stdout).trim().split('\n').slice(-3).join(' ') || 'openclaw gateway start failed.')
     } else if (definition.id === 'nemoclaw') {
