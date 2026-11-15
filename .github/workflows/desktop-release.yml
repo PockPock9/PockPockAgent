@@ -99,5 +99,12 @@ jobs:
         run: |
           notes=".github/release-notes/${GITHUB_REF_NAME}.md"
           if [ -f "$notes" ]; then set -- --notes-file "$notes"; else set -- --generate-notes; fi
-          gh release create "${GITHUB_REF_NAME}" dist/*.exe dist/*.dmg dist/*.zip \
-            --title "PockPock Agent ${GITHUB_REF_NAME#v}" --verify-tag "$@"
+          version="${GITHUB_REF_NAME#v}"
+          # Listed by name: the Windows build folder can also hold an internal uninstaller .exe.
+          files=(
+            "dist/PockPock-Agent-Setup-${version}.exe" dist/PockPock-Agent-Setup.exe
+            "dist/PockPock-Agent-${version}-mac-arm64.dmg" "dist/PockPock-Agent-${version}-mac-x64.dmg"
+            dist/PockPock-Agent-mac-arm64.dmg dist/PockPock-Agent-mac-x64.dmg
+            "dist/PockPock-Agent-${version}-mac-arm64.zip" "dist/PockPock-Agent-${version}-mac-x64.zip"
+          )
+          gh release create "${GITHUB_REF_NAME}" "${files[@]}" --title "PockPock Agent ${version}" --verify-tag "$@"
