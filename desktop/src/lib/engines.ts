@@ -3,6 +3,7 @@
 // OpenClaw (/api/openclaw/chat), NemoClaw (/api/nemoclaw/chat).
 import { sendJson, stream, text, uid } from './api'
 import type { StreamEvent } from './api'
+import { stampTiming } from './timing'
 import type { AgentPermission, Approval, Artifact, Attachment, ClawPermission, Engine, Message, PlanCard, Step } from './types'
 
 export type TurnOptions = {
@@ -47,7 +48,8 @@ function addStep(message: Message, step: Omit<Step, 'id'> & { id?: string }, fin
   const id = step.id ?? uid()
   const index = steps.findIndex((item) => item.id === id)
   const next = { ...step, id } as Step
-  if (index >= 0) steps[index] = next
+  // An update to an existing step (same id) keeps its start time; its end time is kept while it stays finished.
+  if (index >= 0) steps[index] = { ...next, startedAt: steps[index].startedAt, endedAt: next.status === 'running' ? undefined : steps[index].endedAt }
   else steps.push(next)
   return { ...message, steps: steps.slice(-80) }
 }
@@ -68,19 +70,27 @@ function setApprovalStatus(message: Message, id: string, status: Approval['statu
   return { ...message, approvals: message.approvals?.map((item) => item.id === id ? { ...item, status } : item) }
 }
 
-/** Buffers streamed tokens so the UI updates at most every 50 ms. */
+/** Buffers streamed tokens so the UI updates at most every 50 ms. The first token's arrival time is
+ * recorded exactly, not when the buffer is flushed. */
 function tokenBuffer(patch: TurnOptions['patch']) {
   let pending = ''
   let timer: number | undefined
+  let firstAt = 0
   const flush = () => {
     if (timer !== undefined) { window.clearTimeout(timer); timer = undefined }
     if (!pending) return
     const chunk = pending
+    const at = firstAt
     pending = ''
-    patch((message) => ({ ...message, content: message.content + chunk }))
+    patch((message) => ({
+      ...message,
+      content: message.content + chunk,
+      timing: message.timing && message.timing.firstOutputAt === undefined ? { ...message.timing, firstOutputAt: at } : message.timing,
+    }))
   }
   return {
     push(chunk: string) {
+      if (!firstAt && chunk) firstAt = Date.now()
       pending += chunk
       if (timer === undefined) timer = window.setTimeout(flush, 50)
     },
@@ -89,10 +99,27 @@ function tokenBuffer(patch: TurnOptions['patch']) {
 }
 
 export async function runTurn(options: TurnOptions): Promise<void> {
-  if (options.engine === 'chat') return runChat(options)
-  if (options.engine === 'openclaw') return runOpenClaw(options)
-  if (options.engine === 'nemoclaw') return runNemoClaw(options)
-  return runAgent(options)
+  // Every change is stamped with the time it was made (captured here, not inside React's state
+  // updater, which may run later), so steps, approvals and phases get precise start and end times.
+  const patch: TurnOptions['patch'] = (change) => {
+    const at = Date.now()
+    options.patch((message) => stampTiming(change(message), at))
+  }
+  const startedAt = Date.now()
+  options.patch((message) => ({ ...message, timing: { startedAt } }))
+  const turn = { ...options, patch }
+  try {
+    if (options.engine === 'chat') return await runChat(turn)
+    if (options.engine === 'openclaw') return await runOpenClaw(turn)
+    if (options.engine === 'nemoclaw') return await runNemoClaw(turn)
+    return await runAgent(turn)
+  } finally {
+    const endedAt = Date.now()
+    options.patch((message) => {
+      const settled = stampTiming(message, endedAt)
+      return settled.timing ? { ...settled, timing: { ...settled.timing, endedAt } } : settled
+    })
+  }
 }
 
 async function runChat({ history, prompt, attachments, signal, patch, chatModel }: TurnOptions) {
@@ -226,13 +253,16 @@ async function runAgent(options: TurnOptions) {
     workspace: workspacePath || 'A new temporary folder for this task',
     status: 'pending',
   }
-  patch((message) => addStep({ ...message, plan: card, model: prepared.selected_model }, { label: `Planned ${card.steps.length} steps with ${prepared.selected_model}`, status: 'done' }))
+  const planReadyAt = Date.now()
+  patch((message) => addStep({ ...message, plan: card, model: prepared.selected_model, timing: message.timing && { ...message.timing, planReadyAt } }, { label: `Planned ${card.steps.length} steps with ${prepared.selected_model}`, status: 'done' }))
 
   const decision = await new Promise<PlanDecision>((resolve) => {
     const onAbort = () => resolve({ approved: false, plan: card.steps, checks: card.checks })
     signal.addEventListener('abort', onAbort, { once: true })
     planWaiters.set(messageId, (result) => { signal.removeEventListener('abort', onAbort); resolve(result) })
   })
+  const planDecidedAt = Date.now()
+  patch((message) => ({ ...message, timing: message.timing && { ...message.timing, planDecidedAt } }))
   if (signal.aborted) throw new DOMException('Stopped', 'AbortError')
   if (!decision.approved) {
     patch((message) => ({ ...message, content: 'Plan declined. No agent tools were run and nothing was changed.', status: 'done' }))

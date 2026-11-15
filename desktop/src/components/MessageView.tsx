@@ -6,6 +6,7 @@ import { relativeTime, sendJson } from '../lib/api'
 import { decideApproval, decidePlan } from '../lib/engines'
 import { bridge, ENGINE_LABEL } from '../lib/types'
 import type { Approval, Engine, Message, ResearchBlock, ResearchSource, Step } from '../lib/types'
+import { formatDuration, stepDuration, turnPhases, useNow } from '../lib/timing'
 import { Markdown } from './ui'
 
 export function EngineIcon({ engine, size = 14 }: { engine: Engine; size?: number }) {
@@ -22,11 +23,19 @@ function StepIcon({ status }: { status: Step['status'] }) {
   return <X size={13} />
 }
 
-function Steps({ steps, live }: { steps: Step[]; live: boolean }) {
+function Steps({ steps, live, endedAt }: { steps: Step[]; live: boolean; endedAt?: number }) {
   const [open, setOpen] = useState(false)
-  const running = steps.find((step) => step.status === 'running')
+  const now = useNow(live)
+  // After the turn, a step that never reported its end is timed up to the end of the turn.
+  const at = live ? now : endedAt ?? now
+  const running = [...steps].reverse().find((step) => step.status === 'running')
   const failed = steps.filter((step) => step.status === 'failed' || step.status === 'blocked').length
-  const summary = live && running ? running.label : `Worked through ${steps.length} ${steps.length === 1 ? 'step' : 'steps'}${failed ? ` · ${failed} did not succeed` : ''}`
+  const first = steps.find((step) => step.startedAt !== undefined)?.startedAt
+  const last = Math.max(0, ...steps.map((step) => step.endedAt ?? (step.startedAt === undefined ? 0 : at)))
+  const runningFor = running ? stepDuration(running, at) : null
+  const summary = live && running
+    ? `${running.label}${runningFor !== null ? ` · ${formatDuration(runningFor)}` : ''}`
+    : `Worked through ${steps.length} ${steps.length === 1 ? 'step' : 'steps'}${first !== undefined && last > first ? ` in ${formatDuration(last - first)}` : ''}${failed ? ` · ${failed} did not succeed` : ''}`
   return (
     <div className={`steps${open ? ' is-open' : ''}`}>
       <button type="button" className="steps__summary" onClick={() => setOpen((value) => !value)} aria-expanded={open}>
@@ -40,6 +49,7 @@ function Steps({ steps, live }: { steps: Step[]; live: boolean }) {
               <StepIcon status={step.status} />
               <span>{step.label}</span>
               {step.status !== 'done' && step.status !== 'running' && <small>{step.status === 'blocked' ? 'Denied' : step.status === 'stopped' ? 'Stopped' : 'Failed'}</small>}
+              <StepTime step={step} at={step.status === 'running' ? at : step.endedAt ?? at} />
             </li>
           ))}
         </ol>
@@ -48,13 +58,21 @@ function Steps({ steps, live }: { steps: Step[]; live: boolean }) {
   )
 }
 
+/** A step's duration; hidden for steps that were instant (under 0.05 s) or have no timing. */
+function StepTime({ step, at }: { step: Step; at: number }) {
+  const ms = stepDuration(step, at)
+  if (ms === null || (step.status !== 'running' && ms < 50)) return null
+  return <time className="step__time">{formatDuration(ms)}</time>
+}
+
 function ApprovalCard({ approval, onChange }: { approval: Approval; onChange: (next: Approval) => void }) {
   const decide = async (allow: boolean) => {
+    const decidedAt = Date.now()
     onChange({ ...approval, status: 'busy', error: undefined })
     try {
       await decideApproval(approval, allow)
       // The stream confirms the outcome; show it now so the buttons do not linger.
-      onChange({ ...approval, status: allow ? 'approved' : 'rejected' })
+      onChange({ ...approval, status: allow ? 'approved' : 'rejected', resolvedAt: approval.resolvedAt ?? decidedAt })
     } catch (error) {
       onChange({ ...approval, status: 'pending', error: error instanceof Error ? error.message : 'The decision was not accepted.' })
     }
@@ -84,6 +102,7 @@ function PlanReview({ message, onChange }: { message: Message; onChange: (next: 
   const [checks, setChecks] = useState(plan.checks)
   const [busy, setBusy] = useState(false)
   const pending = plan.status === 'pending'
+  const planningMs = message.timing?.planReadyAt ? message.timing.planReadyAt - message.timing.startedAt : null
   const decide = async (approved: boolean) => {
     const keptSteps = steps.map((step) => step.trim()).filter(Boolean)
     const keptChecks = checks.map((check) => check.trim()).filter(Boolean)
@@ -104,7 +123,7 @@ function PlanReview({ message, onChange }: { message: Message; onChange: (next: 
   ))
   return (
     <section className={`card card--plan${pending ? ' is-pending' : ''}`}>
-      <header><Bot size={14} /><strong>{pending ? 'Review the plan before it runs' : plan.status === 'approved' ? 'Plan approved' : 'Plan declined'}</strong><span>{plan.model}</span></header>
+      <header><Bot size={14} /><strong>{pending ? 'Review the plan before it runs' : plan.status === 'approved' ? 'Plan approved' : 'Plan declined'}</strong><span>{plan.model}{planningMs !== null && ` · planned in ${formatDuration(planningMs)}`}</span></header>
       {plan.goal && <p className="card__title">{plan.goal}</p>}
       <div className="plan__grid">
         <div>
@@ -172,6 +191,7 @@ function ResearchCard({ block }: { block: ResearchBlock }) {
 
 export function MessageView({ message, live, onChange }: { message: Message; live: boolean; onChange: (next: Message) => void }) {
   const [copied, setCopied] = useState(false)
+  const now = useNow(live)
   if (message.role === 'user') {
     return (
       <article className="message message--user">
@@ -186,19 +206,21 @@ export function MessageView({ message, live, onChange }: { message: Message; liv
   }
   const copy = () => void navigator.clipboard.writeText(message.content).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1400) })
   const waiting = live && !message.content && !message.plan && !(message.steps?.length)
+  const phases = live ? null : turnPhases(message)
   const openFolder = () => { if (message.workspacePath) void bridge()?.openPath(message.workspacePath) }
   return (
     <article className="message message--assistant">
       <div className="message__meta">
         <span className="message__engine"><EngineIcon engine={message.engine} size={13} />{ENGINE_LABEL[message.engine]}</span>
         {message.model && <span className="message__model">{message.model}</span>}
+        {live && message.timing && <time className="message__elapsed" aria-label="Elapsed time">{formatDuration(now - message.timing.startedAt)}</time>}
       </div>
-      {message.steps?.length ? <Steps steps={message.steps} live={live} /> : null}
+      {message.steps?.length ? <Steps steps={message.steps} live={live} endedAt={message.timing?.endedAt} /> : null}
       {message.plan && <PlanReview message={message} onChange={onChange} />}
       {message.approvals?.map((approval) => (
         <ApprovalCard key={approval.id} approval={approval} onChange={(next) => onChange({ ...message, approvals: message.approvals?.map((item) => item.id === next.id ? next : item) })} />
       ))}
-      {waiting && <div className="thinking"><span /><span /><span /> Thinking</div>}
+      {waiting && <div className="thinking"><span /><span /><span /> Thinking{message.timing && <time>{formatDuration(now - message.timing.startedAt)}</time>}</div>}
       {message.content && <div className={`message__body${message.status === 'error' ? ' is-error' : ''}`}><Markdown content={message.content} /></div>}
       {message.notice && <p className="message__notice"><AlertTriangle size={13} />{message.notice}</p>}
       {message.research?.map((block, index) => <ResearchCard key={index} block={block} />)}
@@ -225,6 +247,11 @@ export function MessageView({ message, live, onChange }: { message: Message; liv
         <div className="message__footer">
           {message.content && <button type="button" className="icon-button icon-button--small" onClick={copy} aria-label="Copy reply" title="Copy reply">{copied ? <Check size={13} /> : <Copy size={13} />}</button>}
           <span>{message.status === 'stopped' ? 'Stopped · ' : ''}{relativeTime(message.createdAt)}</span>
+          {phases && (
+            <span className="message__timing" aria-label="Time taken">
+              {phases.map((phase) => <span key={phase.label} className={phase.label === 'Total' ? 'is-total' : undefined}>{phase.label} <time>{formatDuration(phase.ms)}</time></span>)}
+            </span>
+          )}
         </div>
       )}
     </article>

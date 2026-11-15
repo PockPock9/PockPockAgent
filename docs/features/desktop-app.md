@@ -12,6 +12,7 @@ PockPock Agent is the PockPock interface: a desktop app (Electron) for Windows a
 | Approvals | OpenClaw tool calls (Ask first / Auto-approve safe) and PockPock Agent file or browser actions show a card with **Allow once** / **Deny** and the exact command, path, URL or diff. |
 | Permissions | PockPock Agent: Default, Auto-review, Full access, plus **Work in the open folder** or **Use a new temporary folder**. OpenClaw: Ask first, Auto-approve safe, Full access. Full access is shown in amber. |
 | Models | Chat and PockPock Agent: Smart route or any switched-on local model. OpenClaw: its default or any model in its config. A model loads only when a message uses it. |
+| Timing | Live counters (tenths of a second) while a reply is thinking, planning or running a step; each finished step's duration; the planning time on the plan card; and under every reply a breakdown: **Thinking** (or **Planning**), **Waiting for you**, **Writing** (Chat) or **Working**, and **Total**. |
 | Agent results | A collapsible list of steps; research sources (with **Save** and **Check for changes**); changed files; produced files; and a button to open the task folder. |
 | Attachments | Upload documents or images, drag them onto the chat, or attach a text file from the Files panel. OpenClaw and NemoClaw accept text and documents only. |
 | Files | Browse the open folder, attach files to the next message, open files or show folders in Explorer or Finder. |
@@ -128,6 +129,17 @@ The window loads the interface from the app's own loopback server, which also fo
 | Browser recipe run | `POST /api/browser-recipes/{id}/run` (streamed), approvals as for PockPock Agent |
 
 One turn runs at a time across all chats; the send button is disabled while another chat is working. OpenClaw and NemoClaw keep their own memory per chat; switching mode inside a chat does not copy earlier turns into the other engine.
+
+### Timing
+
+`desktop/src/lib/timing.ts` times every turn in the renderer, as each stream event arrives (`Date.now()`, milliseconds). It therefore measures what the user waited for, including network and model load time, not model compute time alone.
+
+- `runTurn` (`lib/engines.ts`) records `timing.startedAt` and `timing.endedAt` on the assistant message and wraps every message change in `stampTiming`. That gives each step a `startedAt` (when it first appeared) and an `endedAt` (when it stopped running), and each approval a `requestedAt` and `resolvedAt`. The time is taken when the event arrives, not inside React's state updater, which may run later. A step updated under the same id (OpenClaw tool events, NemoClaw status) keeps its start time.
+- `timing.firstOutputAt` is the first token, step, plan or approval. Tokens are buffered for 50 ms before they are shown, but the first token's arrival time is recorded exactly.
+- PockPock Agent also records `planReadyAt` (the plan card appeared) and `planDecidedAt` (approved, declined or stopped). Approval cards record `resolvedAt` at the click.
+- `turnPhases` splits a finished turn into phases. Chat: **Thinking** (start to first token) and **Writing**. OpenClaw and NemoClaw: **Thinking** (start to first output) and **Working**. PockPock Agent: **Planning** (start to plan card) and **Working**. Time spent on the plan card and on approval cards is reported as **Waiting for you** and subtracted from the model's phases. Phases under 0.05 s are hidden; **Total** is always shown. A step's own duration includes any approval it waited for (a file change waits for its approval card); the breakdown under the reply counts that time as **Waiting for you**.
+- Durations are shown as `12.3 s`, `2 min 5.0 s` or `1 h 2 min 5.0 s`, with tabular figures so live counters do not jitter. Live counters update every 100 ms.
+- Timing is saved with the chat in `sessions.json`. Replies from before this feature have no timing and show none.
 
 ### Status
 

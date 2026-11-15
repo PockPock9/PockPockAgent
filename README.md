@@ -83,6 +83,7 @@ The window has chats on the left, the conversation in the middle, the open folde
   - **OpenClaw** is an agent that runs directly on this PC: commands, files, the browser, mouse and keyboard. Its permission picker sets what it may do without asking: **Ask first**, **Auto-approve safe**, or **Full access**.
   - **NemoClaw** runs OpenClaw inside a sandbox, so it cannot touch this PC.
 - **Approvals** appear as cards in the conversation with **Allow once** and **Deny**.
+- **Timing**: while a reply runs, counters show the seconds spent thinking, planning or on the current step. Afterwards each step shows how long it took, and a line under the reply splits the time into **Thinking** or **Planning**, **Waiting for you** (time on plan and approval cards), **Writing** or **Working**, and **Total**.
 - **Files** (right) shows the open folder; attach a file to the next message or open it. **Terminal** (**Ctrl+J**) is PowerShell in that folder.
 - **Skills and MCP servers**: paste a GitHub link in the composer or on the **Skills** / **MCP servers** page. You see what would be installed and approve it first. Switch any of them off without removing it.
 - **Browser recipes** saves web tasks you repeat; each step asks for approval when it runs.
