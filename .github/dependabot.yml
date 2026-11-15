@@ -1,4 +1,7 @@
 # Weekly dependency update pull requests. Each one runs CI like any other pull request.
+# Updates are grouped so each week brings at most one pull request per ecosystem:
+# without groups, Dependabot opens a separate pull request for every package in every
+# requirements file, and the backend lists the same packages in several folders.
 version: 2
 updates:
   - package-ecosystem: npm
@@ -6,8 +9,8 @@ updates:
     schedule:
       interval: weekly
     groups:
-      desktop-dev:
-        dependency-type: development
+      desktop:
+        patterns: ["*"]
     open-pull-requests-limit: 5
     commit-message:
       prefix: "chore(deps)"
@@ -17,6 +20,9 @@ updates:
       - /backend/projects/*
     schedule:
       interval: weekly
+    groups:
+      backend:
+        patterns: ["*"]
     open-pull-requests-limit: 5
     commit-message:
       prefix: "chore(deps)"
@@ -24,5 +30,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
     commit-message:
       prefix: "ci"
