@@ -1,13 +1,13 @@
 // Customize pages: Skills, MCP servers, Models, Memory, Settings.
 import { useCallback, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Brain, ExternalLink, LoaderCircle, Play, Plug, Power, Puzzle, RefreshCw, Server, Trash2 } from 'lucide-react'
+import { Brain, LoaderCircle, Plug, Power, Puzzle, RefreshCw, Server, Trash2 } from 'lucide-react'
 import { ExtensionCard, inspectLink } from '../components/ExtensionCard'
 import type { Proposal } from '../components/ExtensionCard'
 import { Empty } from '../components/ui'
 import { formatBytes, getJson, sendJson } from '../lib/api'
 import type { Status } from '../lib/status'
-import { bridge } from '../lib/types'
+import type { AppInfo } from '../lib/types'
 
 function PageFrame({ title, eyebrow, intro, children, actions }: { title: string; eyebrow: string; intro: string; children: ReactNode; actions?: ReactNode }) {
   return (
@@ -248,7 +248,7 @@ export function MemoryPage() {
   )
 }
 
-export function SettingsPage({ status, info }: { status: Status; info: { version: string; electron: string; repoRoot: string; backendUrl: string } | null }) {
+export function SettingsPage({ status, info, onOpen }: { status: Status; info: AppInfo | null; onOpen: (page: 'services' | 'setup') => void }) {
   const [busy, setBusy] = useState('')
   const [message, setMessage] = useState('')
   const act = async (id: string, task: () => Promise<unknown>, done: string) => {
@@ -256,25 +256,21 @@ export function SettingsPage({ status, info }: { status: Status; info: { version
     setMessage('')
     try { await task(); setMessage(done); await status.refreshState() } catch (actError) { setMessage(actError instanceof Error ? actError.message : 'That did not work.') } finally { setBusy('') }
   }
-  const desktop = bridge()
+  const running = status.services.filter((service) => service.status === 'running').length
+  const installed = status.services.filter((service) => service.available).length
   return (
-    <PageFrame eyebrow="Customize" title="Settings" intro="Local services PockPock Agent depends on.">
+    <PageFrame eyebrow="System" title="Settings" intro="How PockPock runs on this PC.">
       {message && <div className="banner" role="status"><span>{message}</span></div>}
       <ul className="rows">
         <li className="row">
-          <Power size={16} className="row__icon" />
-          <div className="row__text"><strong>PockPock backend</strong><span>{status.backend.detail}{status.backend.startedByApp ? ' · stops when this app quits' : ''}</span><code>{info?.backendUrl}</code></div>
-          {status.backend.phase !== 'ready' && desktop && <button type="button" className="button" disabled={busy === 'backend'} onClick={() => void act('backend', () => desktop.backend.retry(), 'Backend checked.')}><RefreshCw size={13} /> Try again</button>}
-        </li>
-        <li className="row">
           <Server size={16} className="row__icon" />
-          <div className="row__text"><strong>Ollama</strong><span>{status.state?.connected ? 'Running' : status.state?.error || 'Not running'}</span></div>
-          <button type="button" className="button" disabled={busy === 'ollama'} onClick={() => void act('ollama', () => sendJson('/api/ollama/start'), 'Ollama is running.')}>{busy === 'ollama' ? <LoaderCircle size={13} className="spin" /> : <Play size={13} />} {status.state?.connected ? 'Reconnect' : 'Start'}</button>
+          <div className="row__text"><strong>Services</strong><span>{running} of {installed} installed services running · {status.backend.phase === 'ready' ? 'PockPock gateway ready' : status.backend.detail}</span></div>
+          <button type="button" className="button" onClick={() => onOpen('services')}>Open Services</button>
         </li>
         <li className="row">
           <RefreshCw size={16} className="row__icon" />
-          <div className="row__text"><strong>Smart Router</strong><span>{status.state?.router_enabled === false ? 'Paused: Chat and PockPock Agent will not answer.' : 'On'}</span></div>
-          <Toggle checked={status.state?.router_enabled !== false} busy={busy === 'router'} label="Smart Router" onChange={(enabled) => void act('router', () => sendJson('/api/router', { enabled }, 'PUT'), enabled ? 'Router started.' : 'Router paused.')} />
+          <div className="row__text"><strong>Smart Router</strong><span>{status.state?.router_enabled === false ? 'Paused: Chat and PockPock Agent will not answer.' : 'On. Picks a local model for each Chat and PockPock Agent request.'}</span></div>
+          <Toggle checked={status.state?.router_enabled !== false} busy={busy === 'router' || !status.state} label="Smart Router" onChange={(enabled) => void act('router', () => sendJson('/api/router', { enabled }, 'PUT'), enabled ? 'Router started.' : 'Router paused.')} />
         </li>
         <li className="row">
           <Plug size={16} className="row__icon" />
@@ -283,16 +279,16 @@ export function SettingsPage({ status, info }: { status: Status; info: { version
         </li>
         <li className="row">
           <Plug size={16} className="row__icon" />
-          <div className="row__text"><strong>NemoClaw</strong><span>{status.nemoChecking ? 'Checking the sandbox (this loads its model)…' : status.nemo?.detail || 'Not checked'}</span></div>
+          <div className="row__text"><strong>NemoClaw sandbox check</strong><span>{status.nemoChecking ? 'Checking the sandbox (this loads its model)…' : status.nemo?.detail || 'Not checked'}</span></div>
           <button type="button" className="button" disabled={status.nemoChecking} onClick={() => void status.refreshNemo(true, true)}>{status.nemoChecking ? <LoaderCircle size={13} className="spin" /> : <RefreshCw size={13} />} Check sandbox</button>
         </li>
         <li className="row">
-          <ExternalLink size={16} className="row__icon" />
-          <div className="row__text"><strong>Web dashboard</strong><span>Browser recipes, research collections and request history are still in the web dashboard.</span></div>
-          <button type="button" className="button" onClick={() => void desktop?.openExternal(`${info?.backendUrl || 'http://127.0.0.1:8766'}/`)}><ExternalLink size={13} /> Open</button>
+          <Power size={16} className="row__icon" />
+          <div className="row__text"><strong>Setup</strong><span>Install missing components, repair them, or add OpenClaw and NemoClaw later.</span></div>
+          <button type="button" className="button" onClick={() => onOpen('setup')}>Run setup</button>
         </li>
       </ul>
-      {info && <p className="note">PockPock Agent {info.version} · Electron {info.electron} · {info.repoRoot}</p>}
+      {info && <p className="note">PockPock Agent {info.version} · Electron {info.electron} · backend {info.backendRoot} · Python {info.python}</p>}
     </PageFrame>
   )
 }

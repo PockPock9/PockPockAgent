@@ -322,6 +322,26 @@ function handleAgentEvent(event: StreamEvent, patch: TurnOptions['patch'], pushT
       }))
       break
     }
+    case 'research_sources': {
+      const evidence = Array.isArray(event.evidence) ? event.evidence as Array<Record<string, unknown>> : []
+      const sources = (Array.isArray(event.sources) ? event.sources as Array<Record<string, unknown>> : []).map((source) => ({
+        source_id: text(source.source_id),
+        title: text(source.title) || text(source.canonical_url),
+        url: text(source.canonical_url),
+        excerpt: text(evidence.find((item) => item.source_id === source.source_id)?.excerpt).slice(0, 400),
+      }))
+      const errors = (Array.isArray(event.errors) ? event.errors as Array<Record<string, unknown>> : []).map((item) => text(item.message) || 'A source could not be retrieved.')
+      patch((message) => ({ ...message, research: [...(message.research ?? []), { taskId: text(event.task_id), query: text(event.query), sources, errors }] }))
+      break
+    }
+    case 'patch':
+      if (event.status === 'applied' && text(event.path)) {
+        patch((message) => message.changes?.some((item) => item.path === text(event.path)) ? message : { ...message, changes: [...(message.changes ?? []), { path: text(event.path), summary: text(event.summary) || text(event.message) }] })
+      }
+      break
+    case 'command_result':
+      patch((message) => addStep(message, { label: `${event.status === 'success' || event.exit_code === 0 ? 'Command finished' : 'Command failed'}: ${text(event.command)}`.slice(0, 160), status: event.status === 'success' || event.exit_code === 0 ? 'done' : 'failed' }, false))
+      break
     case 'artifact': {
       const artifact: Artifact = { name: text(event.name), path: text(event.path), url: text(event.url), kind: text(event.kind) }
       if (['answer.md', 'run_report.md', 'task_brief.json'].includes(artifact.name)) break

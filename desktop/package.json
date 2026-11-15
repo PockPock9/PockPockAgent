@@ -10,28 +10,86 @@
     "build": "tsc -b && vite build",
     "app": "node scripts/launch.cjs",
     "start": "npm run build && node scripts/launch.cjs",
-    "typecheck": "tsc -b --noEmit"
+    "typecheck": "tsc -b --noEmit",
+    "dist": "npm run build && electron-builder --win nsis"
   },
   "dependencies": {
-    "@lydell/node-pty": "^1.2.0-beta.18",
-    "@xterm/addon-fit": "^0.11.0",
-    "@xterm/xterm": "^6.0.0",
-    "lucide-react": "^1.73.0",
-    "react": "^19.3.1",
-    "react-dom": "^19.3.1",
-    "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1"
+    "@lydell/node-pty": "^1.2.0-beta.18"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.3.0",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "concurrently": "^10.0.7",
     "cross-env": "^10.1.0",
     "electron": "^45.3.2",
+    "electron-builder": "^26.18.0",
+    "lucide-react": "^1.73.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "typescript": "^7.0.2",
     "vite": "^8.3.8",
     "wait-on": "^9.5.1"
+  },
+  "author": "PockPock",
+  "build": {
+    "appId": "ai.pockpock.agent",
+    "productName": "PockPock Agent",
+    "directories": {
+      "output": "release",
+      "buildResources": "public"
+    },
+    "files": [
+      "dist/**",
+      "electron/**",
+      "public/icon.*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/@lydell/**"
+    ],
+    "extraResources": [
+      {
+        "from": "../backend",
+        "to": "backend",
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**",
+          "!**/test_*.py",
+          "!**/*.pyc"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "public/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "runAfterFinish": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "PockPock Agent",
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "PockPock-Agent-Setup-${version}.exe",
+      "installerIcon": "public/icon.ico",
+      "uninstallerIcon": "public/icon.ico"
+    }
+  },
+  "allowScripts": {
+    "electron-winstaller": false
   }
 }

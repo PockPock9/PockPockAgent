@@ -8,12 +8,17 @@ import { Sidebar, StatusBar, TitleBar } from './components/Shell'
 import type { Page } from './components/Shell'
 import { TerminalPanel } from './components/TerminalPanel'
 import { McpPage, MemoryPage, ModelsPage, SettingsPage, SkillsPage } from './pages/Pages'
+import { ActivityPage } from './pages/ActivityPage'
+import { RecipesPage } from './pages/RecipesPage'
+import { ResearchPage } from './pages/ResearchPage'
+import { ServicesPage } from './pages/ServicesPage'
+import { SetupPage } from './pages/SetupPage'
 import { uid } from './lib/api'
 import { cancelActiveRun, runTurn } from './lib/engines'
 import { useStatus } from './lib/status'
 import { titleFrom, useSessions, useSettings } from './lib/store'
 import { bridge } from './lib/types'
-import type { Attachment, Message } from './lib/types'
+import type { AppInfo, Attachment, Message } from './lib/types'
 
 type Running = { sessionId: string; messageId: string; controller: AbortController }
 
@@ -33,7 +38,7 @@ export default function App() {
   const sessions = useSessions()
   const engine = settings.engine ?? 'agent'
   const status = useStatus(engine === 'nemoclaw')
-  const [page, setPage] = useState<Page>('chat')
+  const [page, setPage] = useState<Page | 'setup'>('chat')
   const [running, setRunning] = useState<Running | null>(null)
   const runningRef = useRef<Running | null>(null)
   const [attachments, setAttachments] = useState<Attachment[]>([])
@@ -42,9 +47,17 @@ export default function App() {
   const narrowSidebar = useNarrow('(max-width: 860px)')
   const narrowFiles = useNarrow('(max-width: 1100px)')
   const [overlay, setOverlay] = useState<'sidebar' | 'files' | null>(null)
-  const [info, setInfo] = useState<{ version: string; electron: string; repoRoot: string; backendUrl: string } | null>(null)
+  const [info, setInfo] = useState<AppInfo | null>(null)
+  const [loginItem, setLoginItemState] = useState(false)
 
-  useEffect(() => { void bridge()?.info().then(setInfo) }, [])
+  useEffect(() => {
+    const desktop = bridge()
+    if (!desktop) return
+    void desktop.info().then((next) => { setInfo(next); setLoginItemState(next.loginItem) })
+    // First launch, or a setup that stopped part-way (for example for a Windows restart).
+    void desktop.setup.status().then((setup) => { if (setup.needsSetup || setup.pending) setPage('setup') })
+  }, [])
+  const setLoginItem = (enabled: boolean) => { void bridge()?.setLoginItem(enabled).then(setLoginItemState) }
   const active = sessions.sessions.find((session) => session.id === sessions.activeId) ?? null
 
   const newChat = useCallback(() => {
@@ -169,11 +182,17 @@ export default function App() {
     <div className={`shell${sidebarInGrid ? '' : ' no-sidebar'}${filesInGrid ? '' : ' no-files'}${showTerminal ? ' has-terminal' : ''}`}>
       <TitleBar settings={{ ...settings, sidebar: showSidebar, files: showFiles }} onToggle={toggle} onChooseFolder={() => void chooseFolder()} />
       {showSidebar && (
-        <Sidebar overlay={sidebarOverlay} sessions={sessions.sessions} activeId={sessions.activeId} page={page} running={running} status={status}
+        <Sidebar overlay={sidebarOverlay} sessions={sessions.sessions} activeId={sessions.activeId} page={page === 'setup' ? 'settings' : page} running={running} status={status}
           onSelect={(id) => { sessions.setActiveId(id); setPage('chat'); setOverlay(null) }} onNew={() => { newChat(); setOverlay(null) }} onDelete={deleteSession} onPage={(next) => { setPage(next); setOverlay(null) }} />
       )}
       {(sidebarOverlay || filesOverlay) && <button type="button" className="overlay-backdrop" aria-label="Close panel" onClick={() => setOverlay(null)} />}
       <main className="main" id="main">
+        {page === 'chat' && (status.backend.phase === 'starting' || status.backend.phase === 'stopped' || status.backend.phase === 'failed') && (
+          <div className={`banner${status.backend.phase === 'starting' ? '' : ' banner--error'}`} role="status">
+            <span>{status.backend.phase === 'starting' ? `Starting services… ${status.services.filter((item) => item.status === 'running').length} of ${status.services.filter((item) => item.available).length} running` : status.backend.detail}</span>
+            <button type="button" className="link-button" onClick={() => setPage('services')}>Services</button>
+          </div>
+        )}
         {sessions.saveError && <div className="banner banner--error" role="alert"><span>Chats could not be saved: {sessions.saveError}</span></div>}
         {page === 'chat' && (
           <ChatPane session={active} running={running} status={status} settings={settings} patchSettings={patch} onSend={send} onStop={stop}
@@ -184,14 +203,19 @@ export default function App() {
         {page === 'mcp' && <McpPage status={status} />}
         {page === 'models' && <ModelsPage status={status} />}
         {page === 'memory' && <MemoryPage />}
-        {page === 'settings' && <SettingsPage status={status} info={info} />}
+        {page === 'settings' && <SettingsPage status={status} info={info} onOpen={(next) => setPage(next)} />}
+        {page === 'recipes' && <RecipesPage />}
+        {page === 'activity' && <ActivityPage status={status} />}
+        {page === 'research' && <ResearchPage />}
+        {page === 'services' && <ServicesPage status={status} settings={settings} patchSettings={patch} loginItem={loginItem} setLoginItem={setLoginItem} />}
+        {page === 'setup' && <SetupPage onDone={() => setPage('chat')} />}
       </main>
       {showFiles && (
         <FilesPanel overlay={filesOverlay} workspace={settings.workspace} onChooseFolder={() => void chooseFolder()}
           onAttach={(file) => setAttachments((previous) => [...previous, { name: file.name, kind: 'document', text: file.text, size: file.size }])} />
       )}
       {showTerminal && <TerminalPanel workspace={settings.workspace} onClose={() => patch({ terminal: false })} />}
-      <StatusBar status={status} version={info?.version ?? '0.1.0'} />
+      <StatusBar status={status} version={info?.version ?? '0.1.0'} onOpenServices={() => setPage('services')} />
     </div>
   )
 }

@@ -60,6 +60,10 @@ export type PlanCard = {
 
 export type Artifact = { name: string; path: string; url: string; kind: string }
 
+export type ResearchSource = { source_id: string; title: string; url: string; excerpt: string }
+export type ResearchBlock = { taskId: string; query: string; sources: ResearchSource[]; errors: string[] }
+export type FileChange = { path: string; summary: string }
+
 export type Message = {
   id: string
   role: 'user' | 'assistant'
@@ -73,6 +77,8 @@ export type Message = {
   approvals?: Approval[]
   plan?: PlanCard
   artifacts?: Artifact[]
+  research?: ResearchBlock[]
+  changes?: FileChange[]
   runId?: string
   taskId?: string
   workspacePath?: string
@@ -89,19 +95,49 @@ export type Session = {
 
 export type Model = { name: string; size: number; enabled: boolean; running: boolean; details?: Record<string, unknown> }
 
+export type Trace = {
+  id: number
+  created_at: string
+  event: string
+  model: string
+  automatic_model: string
+  role: string
+  status: string
+  category: string
+  source: string
+  reason: string
+  error: string
+  duration_ms: number | null
+}
+
 export type AppState = {
   api_connected: boolean
   connected: boolean
   error: string
   router_enabled: boolean
-  models: Model[]
+  classifier?: string
+  models: Array<Model & { calls?: number; successes?: number; avg_ms?: number | null }>
   active: Array<{ model: string; role: string }>
+  events?: Trace[]
+  totals?: { requests?: number; calls?: number; avg_ms?: number | null }
 }
 
 export type ClawStatus = { available: boolean; ready: boolean; detail: string; plugin?: boolean; model?: string; models?: string[] }
 export type NemoStatus = { available: boolean; ready: boolean; checked?: boolean; detail: string; model?: string; sandbox?: string }
 
-export type BackendPhase = { phase: 'checking' | 'starting' | 'ready' | 'missing' | 'failed'; detail: string; startedByApp: boolean }
+export type BackendPhase = { phase: 'checking' | 'starting' | 'ready' | 'missing' | 'failed' | 'stopped'; detail: string; startedByApp: boolean }
+
+export type ServiceState = {
+  id: string
+  name: string
+  group: string
+  port: number
+  description: string
+  status: 'checking' | 'running' | 'stopped' | 'starting' | 'stopping' | 'unavailable' | 'error'
+  detail: string
+  startedByApp: boolean
+  available: boolean
+}
 
 export type FileEntry = { name: string; path: string; directory: boolean; muted: boolean }
 
@@ -116,11 +152,32 @@ export type Settings = {
   files?: boolean
   terminal?: boolean
   useWorkspaceForAgent?: boolean
+  services?: { autoStart?: boolean; stopOnQuit?: boolean; nemoclaw?: boolean }
 }
+
+export type AppInfo = { version: string; electron: string; repoRoot: string; backendRoot: string; python: string; packaged: boolean; backendUrl: string; terminal: boolean; backend: BackendPhase; loginItem: boolean }
+
+export type SetupComponent = 'core' | 'ollama' | 'openclaw' | 'nemoclaw'
+export type SetupStatus = {
+  core: { installed: boolean }
+  ollama: { installed: boolean; running: boolean; models: Record<string, boolean> }
+  openclaw: { installed: boolean; cli: boolean; node: boolean }
+  nemoclaw: { installed: boolean; wsl: boolean; docker: boolean }
+  winget: boolean
+  skills: Array<{ key: string; name: string; description: string }>
+  pending: { components: SetupComponent[]; disabledSkills: string[] } | null
+  lastRun: { result?: string; message?: string } | null
+  needsSetup: boolean
+}
+export type SetupEvent =
+  | { type: 'started'; components: SetupComponent[] }
+  | { type: 'log'; line: string }
+  | { type: 'step'; component: SetupComponent; id: string; label: string; status: 'running' | 'done' | 'waiting' | 'failed'; detail?: string; progress?: number }
+  | { type: 'finished'; outcome: 'done' | 'failed' | 'cancelled' | 'restart' | 'action'; message: string }
 
 /** The preload bridge. Absent when the renderer runs in a plain browser (tests, Vite preview). */
 export type DesktopBridge = {
-  info: () => Promise<{ version: string; electron: string; repoRoot: string; backendUrl: string; terminal: boolean; backend: BackendPhase }>
+  info: () => Promise<AppInfo>
   store: { get: <T>(key: 'sessions' | 'settings') => Promise<T | null>; set: (key: 'sessions' | 'settings', value: unknown) => Promise<boolean> }
   workspace: {
     choose: () => Promise<string | null>
@@ -138,6 +195,22 @@ export type DesktopBridge = {
     onExit: (callback: (id: number, code: number) => void) => () => void
   }
   backend: { retry: () => Promise<boolean>; onStatus: (callback: (state: BackendPhase) => void) => () => void }
+  services: {
+    list: () => Promise<ServiceState[]>
+    start: (id: string) => Promise<unknown>
+    stop: (id: string) => Promise<unknown>
+    restart: (id: string) => Promise<unknown>
+    logs: (id: string) => Promise<{ file: string; text: string }>
+    openLogs: () => Promise<string>
+    onChange: (callback: (list: ServiceState[]) => void) => () => void
+  }
+  setup: {
+    status: () => Promise<SetupStatus>
+    start: (plan: { components: SetupComponent[]; disabledSkills: string[] }) => Promise<boolean>
+    cancel: () => Promise<boolean>
+    onEvent: (callback: (event: SetupEvent) => void) => () => void
+  }
+  setLoginItem: (enabled: boolean) => Promise<boolean>
   openExternal: (url: string) => Promise<void>
   openPath: (target: string) => Promise<boolean>
 }

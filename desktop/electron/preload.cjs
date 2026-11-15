@@ -32,6 +32,22 @@ contextBridge.exposeInMainWorld('pockpock', {
     retry: () => ipcRenderer.invoke('backend:retry'),
     onStatus: (callback) => subscribe('backend:status', callback),
   },
+  services: {
+    list: () => ipcRenderer.invoke('services:list'),
+    start: (id) => ipcRenderer.invoke('services:start', id),
+    stop: (id) => ipcRenderer.invoke('services:stop', id),
+    restart: (id) => ipcRenderer.invoke('services:restart', id),
+    logs: (id) => ipcRenderer.invoke('services:logs', id),
+    openLogs: () => ipcRenderer.invoke('services:openLogs'),
+    onChange: (callback) => subscribe('services:changed', callback),
+  },
+  setup: {
+    status: () => ipcRenderer.invoke('setup:status'),
+    start: (plan) => ipcRenderer.invoke('setup:start', plan),
+    cancel: () => ipcRenderer.invoke('setup:cancel'),
+    onEvent: (callback) => subscribe('setup:event', callback),
+  },
+  setLoginItem: (enabled) => ipcRenderer.invoke('app:setLoginItem', enabled),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   openPath: (target) => ipcRenderer.invoke('shell:openPath', target),
 })

@@ -1,12 +1,12 @@
 // Window chrome: title bar, sidebar (chats and customizations), and status bar.
 import { useMemo, useState } from 'react'
-import { Brain, Folder, MessageSquarePlus, PanelBottom, PanelLeft, PanelRight, Plug, Puzzle, Search, Server, Settings as SettingsIcon, Trash2 } from 'lucide-react'
+import { Activity, Brain, Folder, Globe, Globe2, MessageSquarePlus, PanelBottom, PanelLeft, PanelRight, Plug, Puzzle, Search, Server, ServerCog, Settings as SettingsIcon, Trash2 } from 'lucide-react'
 import { relativeTime } from '../lib/api'
 import type { Status } from '../lib/status'
 import type { Session, Settings } from '../lib/types'
 import { Dot, IconButton } from './ui'
 
-export type Page = 'chat' | 'skills' | 'mcp' | 'models' | 'memory' | 'settings'
+export type Page = 'chat' | 'skills' | 'mcp' | 'models' | 'memory' | 'research' | 'recipes' | 'activity' | 'services' | 'settings'
 
 export function TitleBar({ settings, onToggle, onChooseFolder }: {
   settings: Settings
@@ -66,11 +66,17 @@ export function Sidebar({ overlay, sessions, activeId, page, running, status, on
     return result
   }, [sessions, query])
   const enabledModels = status.state?.models.filter((model) => model.enabled).length
-  const nav: Array<{ page: Page; icon: React.ReactNode; label: string; count?: number }> = [
+  const servicesUp = status.services.filter((service) => service.status === 'running').length
+  const installed = status.services.filter((service) => service.available).length
+  const nav: Array<{ page: Page; icon: React.ReactNode; label: string; count?: number | string; tone?: string }> = [
+    { page: 'recipes', icon: <Globe size={15} />, label: 'Browser recipes' },
+    { page: 'activity', icon: <Activity size={15} />, label: 'Activity' },
     { page: 'skills', icon: <Puzzle size={15} />, label: 'Skills', count: status.counts?.skills },
     { page: 'mcp', icon: <Plug size={15} />, label: 'MCP servers', count: status.counts?.mcp },
     { page: 'models', icon: <Server size={15} />, label: 'Models', count: enabledModels },
     { page: 'memory', icon: <Brain size={15} />, label: 'Memory' },
+    { page: 'research', icon: <Globe2 size={15} />, label: 'Research' },
+    { page: 'services', icon: <ServerCog size={15} />, label: 'Services', count: installed ? `${servicesUp}/${installed}` : undefined, tone: installed && servicesUp < installed ? 'warn' : undefined },
     { page: 'settings', icon: <SettingsIcon size={15} />, label: 'Settings' },
   ]
   return (
@@ -105,7 +111,7 @@ export function Sidebar({ overlay, sessions, activeId, page, running, status, on
         <div className="section-label">Customize</div>
         {nav.map((item) => (
           <button type="button" key={item.page} className={`nav-item${page === item.page ? ' is-active' : ''}`} aria-current={page === item.page ? 'page' : undefined} onClick={() => onPage(item.page)}>
-            {item.icon}<span>{item.label}</span>{item.count !== undefined && <small>{item.count}</small>}
+            {item.icon}<span>{item.label}</span>{item.count !== undefined && <small className={item.tone ? `nav-item__count--${item.tone}` : ''}>{item.count}</small>}
           </button>
         ))}
       </nav>
@@ -113,16 +119,18 @@ export function Sidebar({ overlay, sessions, activeId, page, running, status, on
   )
 }
 
-export function StatusBar({ status, version }: { status: Status; version: string }) {
+export function StatusBar({ status, version, onOpenServices }: { status: Status; version: string; onOpenServices: () => void }) {
   const backendTone = status.backend.phase === 'ready' ? 'ok' : status.backend.phase === 'checking' || status.backend.phase === 'starting' ? 'busy' : 'off'
   const running = status.state?.models.filter((model) => model.running).map((model) => model.name) ?? []
   return (
     <footer className="statusbar">
+      <button type="button" className="statusbar__services" onClick={onOpenServices} title="Open Services">
       <span title={status.backend.detail}><Dot tone={backendTone} /> {status.backend.phase === 'ready' ? 'Backend ready' : status.backend.detail}</span>
       <span title={status.state?.error || ''}><Dot tone={status.state?.connected ? 'ok' : 'off'} /> Ollama</span>
       <span><Dot tone={status.state?.router_enabled ? 'ok' : 'warn'} /> Router {status.state?.router_enabled === false ? 'paused' : ''}</span>
       <span title={status.claw?.detail}><Dot tone={status.claw?.ready ? 'ok' : 'off'} /> OpenClaw</span>
       <span title={status.nemo?.detail}><Dot tone={status.nemoChecking ? 'busy' : status.nemo?.ready ? 'ok' : status.nemo?.checked === false ? 'warn' : 'off'} /> NemoClaw{status.nemo?.checked === false ? ' · not checked' : ''}</span>
+      </button>
       <span className="statusbar__spacer" />
       <span title="Models loaded in memory">{running.length ? `Loaded: ${running.join(', ')}` : 'No model loaded'}</span>
       <span>v{version}</span>

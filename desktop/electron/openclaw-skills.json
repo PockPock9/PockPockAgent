@@ -1,0 +1,120 @@
+{
+  "generatedFrom": "openclaw skills list --json (eligible on Windows)",
+  "openclawVersion": "2026.11.3",
+  "skills": [
+    {
+      "key": "add-model-provider",
+      "name": "add-model-provider",
+      "description": "Add and live-prove a model provider with non-interactive config one-liners, without exposing credentials.",
+      "source": "openclaw-custodian"
+    },
+    {
+      "key": "browser-automation",
+      "name": "browser-automation",
+      "description": "Use when controlling web pages with the OpenClaw browser tool, especially multi-step flows, login checks, tab management, or recovery from stale refs/timeouts.",
+      "source": "openclaw-extra"
+    },
+    {
+      "key": "canvas",
+      "name": "canvas",
+      "description": "Present hosted widget documents on a connected macOS panel and control panel visibility or navigation.",
+      "source": "openclaw-extra"
+    },
+    {
+      "key": "clawhub",
+      "name": "clawhub",
+      "description": "Search ClawHub for plugins by default, or skills when explicitly requested; install, verify, update, uninstall, publish, or sync skills.",
+      "source": "openclaw-bundled"
+    },
+    {
+      "key": "cloud-image-bake",
+      "name": "cloud-image-bake",
+      "description": "Bake, select, prove, and safely retire a Cloud Worker image with crabbox and config one-liners.",
+      "source": "openclaw-custodian"
+    },
+    {
+      "key": "configure-channel",
+      "name": "configure-channel",
+      "description": "Configure and prove a chat channel with non-interactive one-liners; secrets only as SecretRefs.",
+      "source": "openclaw-custodian"
+    },
+    {
+      "key": "control-ui",
+      "name": "control-ui",
+      "description": "Operate and troubleshoot the OpenClaw Control UI: navigate connected clients, organize sessions, build session dashboards, and handle direct or Tailscale-hosted Gateways.",
+      "source": "openclaw-bundled"
+    },
+    {
+      "key": "diagnose-gateway",
+      "name": "diagnose-gateway",
+      "description": "Diagnose Gateway, config, secrets, channels, and port failures with read-only one-liners.",
+      "source": "openclaw-custodian"
+    },
+    {
+      "key": "diagram-maker",
+      "name": "diagram-maker",
+      "description": "Create SVG/HTML or Excalidraw diagrams for concepts, architecture, flows, and whiteboards.",
+      "source": "openclaw-bundled"
+    },
+    {
+      "key": "healthcheck",
+      "name": "healthcheck",
+      "description": "Audit/harden OpenClaw hosts: SSH, firewall, updates, exposure, backups, disk encryption, gateway security.",
+      "source": "openclaw-bundled"
+    },
+    {
+      "key": "meme-maker",
+      "name": "meme-maker",
+      "description": "Search meme templates, suggest formats, and generate local or hosted image memes.",
+      "source": "openclaw-bundled"
+    },
+    {
+      "key": "node-connect",
+      "name": "node-connect",
+      "description": "Diagnose OpenClaw Control UI browser and native Android, iOS, or macOS node connection failures across route, auth, pairing, QR/setup-code, and reconnect states.",
+      "source": "openclaw-bundled"
+    },
+    {
+      "key": "node-inspect-debugger",
+      "name": "node-inspect-debugger",
+      "description": "Debug Node.js with node inspect, --inspect, breakpoints, CDP, heap, and CPU profiles.",
+      "source": "openclaw-bundled"
+    },
+    {
+      "key": "notion",
+      "name": "notion",
+      "description": "Notion CLI/API for pages, Markdown content, data sources, files, comments, search, Workers, and raw API calls.",
+      "source": "openclaw-bundled"
+    },
+    {
+      "key": "python-debugpy",
+      "name": "python-debugpy",
+      "description": "Debug Python with pdb, breakpoint(), post-mortem inspection, and debugpy remote attach.",
+      "source": "openclaw-bundled"
+    },
+    {
+      "key": "skill-creator",
+      "name": "skill-creator",
+      "description": "Author or review AgentSkills: create, repair, validate, or restructure SKILL.md files and bundled resources.",
+      "source": "openclaw-bundled"
+    },
+    {
+      "key": "spike",
+      "name": "spike",
+      "description": "Run throwaway prototypes to validate feasibility, compare approaches, and report a verdict.",
+      "source": "openclaw-bundled"
+    },
+    {
+      "key": "visualize",
+      "name": "visualize",
+      "description": "Create inline visuals for code and explanations, or author persistent OpenClaw dashboard widgets with show_widget.",
+      "source": "openclaw-bundled"
+    },
+    {
+      "key": "weather",
+      "name": "weather",
+      "description": "Current weather and forecasts with web_fetch, falling back to wttr.in curl for locations, rain, temperature, travel planning.",
+      "source": "openclaw-bundled"
+    }
+  ]
+}

@@ -1,11 +1,11 @@
 // One message in the conversation: the user's prompt, or an assistant turn with its activity,
 // plan review, approvals, reply, and produced files.
 import { useState } from 'react'
-import { AlertTriangle, Box, Bot, Check, ChevronRight, CircleSlash, Copy, FileText, FolderOpen, Image as ImageIcon, LoaderCircle, MessageSquare, Pencil, Shield, Terminal, X } from 'lucide-react'
-import { relativeTime } from '../lib/api'
+import { AlertTriangle, Bookmark, Box, Bot, Check, ChevronRight, CircleSlash, Copy, FileText, FolderOpen, Globe, Image as ImageIcon, LoaderCircle, MessageSquare, Pencil, RefreshCw, Shield, Terminal, X } from 'lucide-react'
+import { relativeTime, sendJson } from '../lib/api'
 import { decideApproval, decidePlan } from '../lib/engines'
 import { bridge, ENGINE_LABEL } from '../lib/types'
-import type { Approval, Engine, Message, Step } from '../lib/types'
+import type { Approval, Engine, Message, ResearchBlock, ResearchSource, Step } from '../lib/types'
 import { Markdown } from './ui'
 
 export function EngineIcon({ engine, size = 14 }: { engine: Engine; size?: number }) {
@@ -132,6 +132,44 @@ function PlanReview({ message, onChange }: { message: Message; onChange: (next: 
   )
 }
 
+function ResearchCard({ block }: { block: ResearchBlock }) {
+  const [saved, setSaved] = useState<Record<string, 'saving' | 'saved' | 'error'>>({})
+  const [note, setNote] = useState('')
+  const save = async (source: ResearchSource) => {
+    setSaved((current) => ({ ...current, [source.source_id]: 'saving' }))
+    try {
+      await sendJson(`/api/agents/${encodeURIComponent(block.taskId)}/research-collection/sources`, { source_id: source.source_id, notes: '' })
+      setSaved((current) => ({ ...current, [source.source_id]: 'saved' }))
+    } catch (error) {
+      setSaved((current) => ({ ...current, [source.source_id]: 'error' }))
+      setNote(error instanceof Error ? error.message : 'Could not save the source.')
+    }
+  }
+  const refresh = async (source: ResearchSource) => {
+    try {
+      const result = await sendJson<{ changed?: boolean }>(`/api/agents/${encodeURIComponent(block.taskId)}/research-collection/sources/${encodeURIComponent(source.source_id)}/refresh`)
+      setNote(result.changed ? `${source.title} has changed since it was saved.` : `${source.title} has not changed.`)
+    } catch (error) { setNote(error instanceof Error ? error.message : 'Could not check the source.') }
+  }
+  return (
+    <section className="card card--sources">
+      <header><Globe size={14} /><strong>{block.sources.length} {block.sources.length === 1 ? 'source' : 'sources'} read</strong><span>{block.query}</span></header>
+      <ul className="sources">
+        {block.sources.map((source) => (
+          <li key={source.source_id}>
+            <div><a href={source.url} target="_blank" rel="noreferrer">{source.title}</a><small>{source.url}</small>{source.excerpt && <p>{source.excerpt}</p>}</div>
+            {block.taskId && (saved[source.source_id] === 'saved'
+              ? <button type="button" className="button" onClick={() => void refresh(source)}><RefreshCw size={12} /> Check for changes</button>
+              : <button type="button" className="button" disabled={saved[source.source_id] === 'saving'} onClick={() => void save(source)}><Bookmark size={12} /> Save</button>)}
+          </li>
+        ))}
+      </ul>
+      {block.errors.map((error, index) => <p key={index} className="card__error">{error}</p>)}
+      {note && <p className="note">{note}</p>}
+    </section>
+  )
+}
+
 export function MessageView({ message, live, onChange }: { message: Message; live: boolean; onChange: (next: Message) => void }) {
   const [copied, setCopied] = useState(false)
   if (message.role === 'user') {
@@ -163,6 +201,12 @@ export function MessageView({ message, live, onChange }: { message: Message; liv
       {waiting && <div className="thinking"><span /><span /><span /> Thinking</div>}
       {message.content && <div className={`message__body${message.status === 'error' ? ' is-error' : ''}`}><Markdown content={message.content} /></div>}
       {message.notice && <p className="message__notice"><AlertTriangle size={13} />{message.notice}</p>}
+      {message.research?.map((block, index) => <ResearchCard key={index} block={block} />)}
+      {message.changes?.length ? (
+        <section className="card card--changes"><header><FileText size={14} /><strong>Changed {message.changes.length} {message.changes.length === 1 ? 'file' : 'files'}</strong></header>
+          <ul className="changes">{message.changes.map((change) => <li key={change.path}><code>{change.path}</code>{change.summary && <span>{change.summary}</span>}</li>)}</ul>
+        </section>
+      ) : null}
       {message.artifacts?.length ? (
         <div className="artifacts">
           {message.artifacts.map((artifact) => (

@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { getJson } from './api'
 import { bridge } from './types'
-import type { AppState, BackendPhase, ClawStatus, NemoStatus } from './types'
+import type { AppState, BackendPhase, ClawStatus, NemoStatus, ServiceState } from './types'
 
 export type ExtensionCounts = { skills: number; mcp: number }
 
@@ -15,12 +15,16 @@ export function useStatus(nemoSelected: boolean) {
   const [nemo, setNemo] = useState<NemoStatus | null>(null)
   const [nemoChecking, setNemoChecking] = useState(false)
   const [counts, setCounts] = useState<ExtensionCounts | null>(null)
+  const [services, setServices] = useState<ServiceState[]>([])
 
   useEffect(() => {
     const desktop = bridge()
     if (!desktop) { setBackend({ phase: 'ready', detail: 'Browser preview', startedByApp: false }); return }
     void desktop.info().then((info) => setBackend(info.backend))
-    return desktop.backend.onStatus(setBackend)
+    void desktop.services.list().then(setServices)
+    const offStatus = desktop.backend.onStatus(setBackend)
+    const offServices = desktop.services.onChange(setServices)
+    return () => { offStatus(); offServices() }
   }, [])
 
   const refreshState = useCallback(async (): Promise<AppState | null> => {
@@ -72,7 +76,13 @@ export function useStatus(nemoSelected: boolean) {
     void refreshNemo(nemoSelected)
   }, [ready, nemoSelected, refreshNemo])
 
-  return { backend, state, claw, nemo, nemoChecking, counts, refreshState, refreshClaw, refreshNemo, refreshCounts }
+  // When OpenClaw or NemoClaw come up after the app started, their status follows without waiting for the next poll.
+  const clawUp = services.find((item) => item.id === 'openclaw')?.status === 'running'
+  const nemoUp = services.find((item) => item.id === 'nemoclaw')?.status === 'running'
+  useEffect(() => { if (ready) void refreshClaw(true) }, [ready, clawUp, refreshClaw])
+  useEffect(() => { if (ready && nemoSelected) void refreshNemo(true) }, [ready, nemoUp, nemoSelected, refreshNemo])
+
+  return { backend, state, claw, nemo, nemoChecking, counts, services, refreshState, refreshClaw, refreshNemo, refreshCounts }
 }
 
 export type Status = ReturnType<typeof useStatus>

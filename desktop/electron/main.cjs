@@ -1,9 +1,11 @@
-// PockPock Agent desktop app: window, local server, backend supervision, and the narrow IPC
-// surface the renderer may use (session storage, workspace files, terminal, shell helpers).
+// PockPock Agent desktop app: window, local server, service supervision, first-run setup, and the
+// narrow IPC surface the renderer may use (storage, services, setup, workspace files, terminal).
 const { app, BrowserWindow, dialog, ipcMain, shell, Menu } = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')
-const { Backend } = require('./backend.cjs')
+const { ServiceManager } = require('./services.cjs')
+const { Setup } = require('./setup.cjs')
+const paths = require('./paths.cjs')
 const { startServer } = require('./server.cjs')
 const workspace = require('./workspace.cjs')
 const { Terminals } = require('./terminal.cjs')
@@ -11,7 +13,6 @@ const { Terminals } = require('./terminal.cjs')
 const DEV = process.env.POCKPOCK_DESKTOP_DEV === '1'
 const DEV_URL = 'http://127.0.0.1:5180'
 const BACKEND_URL = process.env.POCKPOCK_BACKEND_URL || 'http://127.0.0.1:8766'
-const REPO_ROOT = process.env.POCKPOCK_ROOT || path.resolve(__dirname, '..', '..')
 const PREFERRED_PORT = 8790
 const MAX_STORE_BYTES = 20 * 1024 * 1024
 const STORE_KEYS = new Set(['sessions', 'settings'])
@@ -22,7 +23,28 @@ if (process.env.POCKPOCK_DESKTOP_USER_DATA) app.setPath('userData', process.env.
 let mainWindow = null
 let appOrigin = ''
 let server = null
-const backend = new Backend({ backendUrl: BACKEND_URL, repoRoot: REPO_ROOT, onStatus: (state) => send('backend:status', state) })
+let quitting = false
+const services = new ServiceManager({
+  onChange: (list) => { send('services:changed', list); send('backend:status', backendPhase(list)) },
+})
+let autoStarting = false
+let setup = null // created once the app data folder is known
+
+/** The renderer's view of the backend: the gateway's state, or why it is not up. */
+function backendPhase(list = services.list()) {
+  const gateway = list.find((item) => item.id === 'gateway')
+  if (!gateway || gateway.status === 'checking') return { phase: 'checking', detail: 'Checking services…', startedByApp: false }
+  if (gateway.status === 'running') return { phase: 'ready', detail: gateway.detail, startedByApp: gateway.startedByApp }
+  if (gateway.status === 'unavailable') return { phase: 'missing', detail: gateway.detail, startedByApp: false }
+  if (gateway.status === 'starting' || autoStarting) return { phase: 'starting', detail: 'Starting PockPock services…', startedByApp: false }
+  if (gateway.status === 'error') return { phase: 'failed', detail: gateway.detail, startedByApp: false }
+  return { phase: 'stopped', detail: 'The PockPock gateway is stopped. Start it from Services.', startedByApp: false }
+}
+
+function appSettings() {
+  const services = readSettings().services
+  return { autoStart: services?.autoStart !== false, stopOnQuit: services?.stopOnQuit !== false, nemoclaw: services?.nemoclaw !== false }
+}
 const terminals = new Terminals((...args) => send(...args))
 
 function send(channel, ...args) {
@@ -57,10 +79,14 @@ function registerIpc() {
     version: app.getVersion(),
     electron: process.versions.electron,
     platform: process.platform,
-    repoRoot: REPO_ROOT,
+    repoRoot: paths.repoRoot(),
+    backendRoot: paths.backendRoot(),
+    python: paths.venvPython(),
+    packaged: app.isPackaged,
     backendUrl: BACKEND_URL,
     terminal: terminals.available(),
-    backend: backend.state,
+    backend: backendPhase(),
+    loginItem: app.getLoginItemSettings().openAtLogin,
   }))
 
   handle('store:get', (key) => {
@@ -105,7 +131,24 @@ function registerIpc() {
   handle('terminal:resize', (id, cols, rows) => terminals.resize(id, cols, rows))
   handle('terminal:kill', (id) => terminals.kill(id))
 
-  handle('backend:retry', () => backend.ensure())
+  handle('setup:status', () => setup.status())
+  handle('setup:start', (plan) => {
+    const components = Array.isArray(plan?.components) ? plan.components.filter((name) => ['core', 'ollama', 'openclaw', 'nemoclaw'].includes(name)) : ['core']
+    void setup.start({ components, disabledSkills: Array.isArray(plan?.disabledSkills) ? plan.disabledSkills.map(String) : [] })
+    return true
+  })
+  handle('setup:cancel', () => { setup.cancel(); return true })
+  handle('backend:retry', () => services.startAll({ includeNemo: false }))
+  handle('services:list', () => { void services.refresh(); return services.list() })
+  handle('services:start', (id) => id === 'all' ? services.startAll({ includeNemo: true }) : services.start(String(id)))
+  handle('services:stop', (id) => id === 'all' ? services.stopAll(false) : services.stop(String(id)))
+  handle('services:restart', async (id) => { await services.stop(String(id)); return services.start(String(id)) })
+  handle('services:logs', (id) => services.logs(String(id)))
+  handle('services:openLogs', () => shell.openPath(paths.logsRoot()))
+  handle('app:setLoginItem', (enabled) => {
+    app.setLoginItemSettings({ openAtLogin: Boolean(enabled), path: process.execPath, args: app.isPackaged ? [] : [path.join(__dirname, '..')] })
+    return app.getLoginItemSettings().openAtLogin
+  })
   handle('shell:openExternal', (url) => {
     const parsed = new URL(String(url))
     if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') throw new Error('Only web links can be opened.')
@@ -167,7 +210,14 @@ async function createWindow() {
   })
 
   await mainWindow.loadURL(`${appOrigin}/`)
-  void backend.ensure()
+  services.watch()
+  // Before setup has installed the backend there is nothing to start.
+  const needsSetup = !fs.existsSync(paths.venvPython())
+  if (!needsSetup && appSettings().autoStart) {
+    autoStarting = true
+    send('backend:status', backendPhase())
+    services.startAll({ includeNemo: appSettings().nemoclaw }).finally(() => { autoStarting = false; send('backend:status', backendPhase()) })
+  }
 }
 
 if (!app.requestSingleInstanceLock()) {
@@ -179,13 +229,19 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     if (process.platform === 'win32') app.setAppUserModelId('ai.pockpock.agent')
     Menu.setApplicationMenu(null)
+    setup = new Setup({ services, userData: app.getPath('userData'), emit: (event) => send('setup:event', event) })
     registerIpc()
     return createWindow()
   })
   app.on('window-all-closed', () => app.quit())
-  app.on('before-quit', () => {
+  app.on('before-quit', (event) => {
+    if (quitting) return
     terminals.killAll()
-    backend.stop()
-    server?.close()
+    if (!appSettings().stopOnQuit) { server?.close(); return }
+    // Stop what this app started (OpenClaw and NemoClaw need a command, not just a kill).
+    event.preventDefault()
+    quitting = true
+    const done = () => { services.killOwnedSync(); server?.close(); app.exit(0) }
+    Promise.race([services.stopAll(true), new Promise((resolve) => setTimeout(resolve, 20000))]).then(done, done)
   })
 }
