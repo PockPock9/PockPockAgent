@@ -17,6 +17,7 @@ import { uid } from './lib/api'
 import { cancelActiveRun, runTurn } from './lib/engines'
 import { useStatus } from './lib/status'
 import { titleFrom, useSessions, useSettings } from './lib/store'
+import { useUpdates } from './lib/updates'
 import { bridge } from './lib/types'
 import type { AppInfo, Attachment, Message } from './lib/types'
 import { hasMod } from './lib/platform'
@@ -36,6 +37,7 @@ function useNarrow(query: string) {
 
 export default function App() {
   const { settings, patch } = useSettings()
+  const updates = useUpdates()
   const sessions = useSessions()
   const engine = settings.engine ?? 'agent'
   const status = useStatus(engine === 'nemoclaw')
@@ -204,7 +206,7 @@ export default function App() {
         {page === 'mcp' && <McpPage status={status} />}
         {page === 'models' && <ModelsPage status={status} />}
         {page === 'memory' && <MemoryPage />}
-        {page === 'settings' && <SettingsPage status={status} info={info} onOpen={(next) => setPage(next)} />}
+        {page === 'settings' && <SettingsPage status={status} info={info} onOpen={(next) => setPage(next)} updates={updates} settings={settings} patchSettings={patch} />}
         {page === 'recipes' && <RecipesPage />}
         {page === 'activity' && <ActivityPage status={status} />}
         {page === 'research' && <ResearchPage />}
@@ -216,7 +218,7 @@ export default function App() {
           onAttach={(file) => setAttachments((previous) => [...previous, { name: file.name, kind: 'document', text: file.text, size: file.size }])} />
       )}
       {showTerminal && <TerminalPanel workspace={settings.workspace} onClose={() => patch({ terminal: false })} />}
-      <StatusBar status={status} version={info?.version ?? '0.1.0'} onOpenServices={() => setPage('services')} />
+      <StatusBar status={status} version={info?.version ?? '0.1.0'} onOpenServices={() => setPage('services')} updates={updates} onOpenSettings={() => setPage('settings')} />
     </div>
   )
 }

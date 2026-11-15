@@ -1,13 +1,15 @@
 // Customize pages: Skills, MCP servers, Models, Memory, Settings.
 import { useCallback, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Brain, LoaderCircle, Plug, Power, Puzzle, RefreshCw, Server, Trash2 } from 'lucide-react'
+import { Brain, Download, LoaderCircle, Plug, Power, Puzzle, RefreshCw, Server, Trash2 } from 'lucide-react'
 import { ExtensionCard, inspectLink } from '../components/ExtensionCard'
 import type { Proposal } from '../components/ExtensionCard'
 import { Empty } from '../components/ui'
 import { formatBytes, getJson, sendJson } from '../lib/api'
 import type { Status } from '../lib/status'
-import type { AppInfo } from '../lib/types'
+import type { AppInfo, Settings } from '../lib/types'
+import { updateSummary } from '../lib/updates'
+import type { Updates } from '../lib/updates'
 
 function PageFrame({ title, eyebrow, intro, children, actions }: { title: string; eyebrow: string; intro: string; children: ReactNode; actions?: ReactNode }) {
   return (
@@ -248,7 +250,8 @@ export function MemoryPage() {
   )
 }
 
-export function SettingsPage({ status, info, onOpen }: { status: Status; info: AppInfo | null; onOpen: (page: 'services' | 'setup') => void }) {
+export function SettingsPage({ status, info, onOpen, updates, settings, patchSettings }: { status: Status; info: AppInfo | null; onOpen: (page: 'services' | 'setup') => void; updates: Updates; settings: Settings; patchSettings: (change: Partial<Settings>) => void }) {
+  const update = updates.state
   const [busy, setBusy] = useState('')
   const [message, setMessage] = useState('')
   const act = async (id: string, task: () => Promise<unknown>, done: string) => {
@@ -282,6 +285,22 @@ export function SettingsPage({ status, info, onOpen }: { status: Status; info: A
           <div className="row__text"><strong>NemoClaw sandbox check</strong><span>{status.nemoChecking ? 'Checking the sandbox (this loads its model)…' : status.nemo?.detail || 'Not checked'}</span></div>
           <button type="button" className="button" disabled={status.nemoChecking} onClick={() => void status.refreshNemo(true, true)}>{status.nemoChecking ? <LoaderCircle size={13} className="spin" /> : <RefreshCw size={13} />} Check sandbox</button>
         </li>
+        <li className="row">
+          <Download size={16} className="row__icon" />
+          <div className="row__text"><strong>Updates</strong><span>{updateSummary(update)}</span>
+            {update?.status === 'downloading' && <span className="progress" aria-label="Download progress"><span style={{ width: `${Math.round(update.progress * 100)}%` }} /></span>}
+          </div>
+          {update?.status === 'ready' && <button type="button" className="button button--primary" onClick={() => void updates.install()}><RefreshCw size={13} /> Restart to update</button>}
+          {update?.status === 'available' && <button type="button" className="button button--primary" onClick={() => void updates.download()}><Download size={13} /> {update.canInstall ? 'Download update' : 'Open download page'}</button>}
+          {update && !['ready', 'available', 'downloading', 'unsupported'].includes(update.status) && <button type="button" className="button" disabled={update.status === 'checking'} onClick={() => void updates.check()}>{update.status === 'checking' ? <LoaderCircle size={13} className="spin" /> : <RefreshCw size={13} />} Check for updates</button>}
+        </li>
+        {update?.canInstall && update.status !== 'unsupported' && (
+          <li className="row">
+            <Download size={16} className="row__icon" />
+            <div className="row__text"><strong>Download updates automatically</strong><span>New versions download in the background and install when PockPock restarts. Your chats and settings are kept.</span></div>
+            <Toggle checked={settings.updates?.autoDownload !== false} label="Download updates automatically" onChange={(autoDownload) => patchSettings({ updates: { ...settings.updates, autoDownload } })} />
+          </li>
+        )}
         <li className="row">
           <Power size={16} className="row__icon" />
           <div className="row__text"><strong>Setup</strong><span>Install missing components, repair them, or add OpenClaw and NemoClaw later.</span></div>

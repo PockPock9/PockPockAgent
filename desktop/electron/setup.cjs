@@ -3,6 +3,7 @@
 // (+ default models), openclaw (+ skills choice), nemoclaw (sandbox + Docker). The operating-system
 // specific parts live in setup-win.cjs and setup-mac.cjs. Progress streams to the renderer; a plan
 // that needs a restart or a user action is saved and resumed on the next run.
+const crypto = require('node:crypto')
 const fs = require('node:fs')
 const https = require('node:https')
 const http = require('node:http')
@@ -258,9 +259,67 @@ class Setup {
     else this.child?.kill?.()
   }
 
+  /** The backend's requirements files, as bundled with this version of the app. */
+  requirementsFiles() {
+    const backend = paths.backendRoot()
+    return [path.join(backend, 'scripts', 'requirements-pockpock.txt'), ...fs.readdirSync(path.join(backend, 'projects')).map((name) => path.join(backend, 'projects', name, 'requirements.txt')).filter((file) => fs.existsSync(file))]
+  }
+
+  /** A fingerprint of the requirements: an app update that needs new packages changes it. */
+  backendDepsHash() {
+    const hash = crypto.createHash('sha256')
+    for (const file of this.requirementsFiles()) hash.update(path.basename(path.dirname(file))).update(fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n'))
+    return hash.digest('hex').slice(0, 16)
+  }
+
+  /** True when the backend is installed but its packages were installed for other requirements,
+   * which happens after the app updated itself. */
+  backendOutdated() {
+    if (!fs.existsSync(paths.venvPython())) return false
+    try { return this.readState().backendDeps !== this.backendDepsHash() } catch { return false }
+  }
+
+  async installPackages() {
+    await this.must(paths.venvPython(), ['-m', 'pip', 'install', '--disable-pip-version-check', '--upgrade', 'pip'], 'Updating pip')
+    await this.must(paths.venvPython(), ['-m', 'pip', 'install', '--disable-pip-version-check', ...this.requirementsFiles().flatMap((file) => ['-r', file])], 'Installing backend packages')
+  }
+
+  /** After an app update: installs the packages the new version needs and the matching agent
+   * browser, before the services start. Output goes to logs/backend-update.log. */
+  async refreshBackend() {
+    if (this.running) return { ok: false, error: 'Setup is running.' }
+    const logFile = path.join(paths.logsRoot(), 'backend-update.log')
+    const write = (line) => { try { fs.appendFileSync(logFile, `${line}\n`) } catch { /* ignore */ } }
+    write(`=== ${new Date().toISOString()} updating backend packages for PockPock ${require('electron').app.getVersion()}`)
+    const run = async (args) => {
+      const result = await platform.run(paths.venvPython(), args, { timeout: 15 * 60 * 1000 })
+      write(`> python ${args.join(' ')}\n${result.stdout}${result.stderr}`.slice(-20000))
+      if (!result.ok) throw new SetupError(`python ${args.slice(0, 3).join(' ')} failed`)
+    }
+    try {
+      await run(['-m', 'pip', 'install', '--disable-pip-version-check', ...this.requirementsFiles().flatMap((file) => ['-r', file])])
+      await run(['-m', 'playwright', 'install', 'chromium'])
+      this.writeState({ backendDeps: this.backendDepsHash() })
+      write('done')
+      return { ok: true }
+    } catch (error) {
+      write(`failed: ${error.message}`)
+      return { ok: false, error: error.message }
+    }
+  }
+
   async installCore() {
     const C = 'core'
-    if (await this.coreReady()) { this.step(C, 'core', 'PockPock backend', 'done', 'Already installed'); return }
+    if (await this.coreReady()) {
+      if (!this.backendOutdated()) { this.step(C, 'core', 'PockPock backend', 'done', 'Already installed'); return }
+      // Installed, but for an older version of the app: bring the packages up to date.
+      this.step(C, 'packages', 'Updating backend packages', 'running')
+      await this.installPackages()
+      await this.must(paths.venvPython(), ['-m', 'playwright', 'install', 'chromium'], 'Installing the agent browser')
+      this.writeState({ backendDeps: this.backendDepsHash() })
+      this.step(C, 'packages', 'Updating backend packages', 'done')
+      return
+    }
     this.step(C, 'python', 'Python 3.12', 'running')
     const python = await host.ensurePython(this, this.context)
     this.step(C, 'python', 'Python 3.12', 'done', python)
@@ -271,13 +330,11 @@ class Setup {
     }
     this.step(C, 'venv', 'Python environment', 'done', paths.venvRoot())
     this.step(C, 'packages', 'Backend packages', 'running')
-    const backend = paths.backendRoot()
-    const requirements = [path.join(backend, 'scripts', 'requirements-pockpock.txt'), ...fs.readdirSync(path.join(backend, 'projects')).map((name) => path.join(backend, 'projects', name, 'requirements.txt')).filter((file) => fs.existsSync(file))]
-    await this.must(paths.venvPython(), ['-m', 'pip', 'install', '--disable-pip-version-check', '--upgrade', 'pip'], 'Updating pip')
-    await this.must(paths.venvPython(), ['-m', 'pip', 'install', '--disable-pip-version-check', ...requirements.flatMap((file) => ['-r', file])], 'Installing backend packages')
+    await this.installPackages()
     this.step(C, 'packages', 'Backend packages', 'done')
     this.step(C, 'chromium', 'Isolated browser for agents', 'running')
     await this.must(paths.venvPython(), ['-m', 'playwright', 'install', 'chromium'], 'Installing the agent browser')
+    this.writeState({ backendDeps: this.backendDepsHash() })
     this.step(C, 'chromium', 'Isolated browser for agents', 'done')
   }
 

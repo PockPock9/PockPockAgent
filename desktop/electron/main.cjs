@@ -5,6 +5,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { ServiceManager } = require('./services.cjs')
 const { Setup } = require('./setup.cjs')
+const { Updater } = require('./updater.cjs')
 const paths = require('./paths.cjs')
 
 // An app opened from Finder or the Dock gets a minimal PATH; add the folders PockPock's tools live in.
@@ -33,6 +34,8 @@ const services = new ServiceManager({
   onChange: (list) => { send('services:changed', list); send('backend:status', backendPhase(list)) },
 })
 let autoStarting = false
+let startingDetail = '' // shown while services start, e.g. while packages are updated after an app update
+let updater = null
 let setup = null // created once the app data folder is known
 
 /** The renderer's view of the backend: the gateway's state, or why it is not up. */
@@ -41,7 +44,7 @@ function backendPhase(list = services.list()) {
   if (!gateway || gateway.status === 'checking') return { phase: 'checking', detail: 'Checking services…', startedByApp: false }
   if (gateway.status === 'running') return { phase: 'ready', detail: gateway.detail, startedByApp: gateway.startedByApp }
   if (gateway.status === 'unavailable') return { phase: 'missing', detail: gateway.detail, startedByApp: false }
-  if (gateway.status === 'starting' || autoStarting) return { phase: 'starting', detail: 'Starting PockPock services…', startedByApp: false }
+  if (gateway.status === 'starting' || autoStarting) return { phase: 'starting', detail: startingDetail || 'Starting PockPock services…', startedByApp: false }
   if (gateway.status === 'error') return { phase: 'failed', detail: gateway.detail, startedByApp: false }
   return { phase: 'stopped', detail: 'The PockPock gateway is stopped. Start it from Services.', startedByApp: false }
 }
@@ -146,6 +149,10 @@ function registerIpc() {
     return true
   })
   handle('setup:cancel', () => { setup.cancel(); return true })
+  handle('updates:state', () => updater.state)
+  handle('updates:check', () => updater.check())
+  handle('updates:download', () => updater.download())
+  handle('updates:install', () => updater.install(true))
   handle('backend:retry', () => services.startAll({ includeNemo: false }))
   handle('services:list', () => { void services.refresh(); return services.list() })
   handle('services:start', (id) => id === 'all' ? services.startAll({ includeNemo: true }) : services.start(String(id)))
@@ -225,8 +232,18 @@ async function createWindow() {
   if (!needsSetup && appSettings().autoStart) {
     autoStarting = true
     send('backend:status', backendPhase())
-    services.startAll({ includeNemo: appSettings().nemoclaw }).finally(() => { autoStarting = false; send('backend:status', backendPhase()) })
+    void (async () => {
+      // After the app updated itself, the new version may need other Python packages.
+      if (app.isPackaged && setup.backendOutdated()) {
+        startingDetail = 'Updating PockPock’s services for the new version…'
+        send('backend:status', backendPhase())
+        await setup.refreshBackend()
+        startingDetail = ''
+      }
+      await services.startAll({ includeNemo: appSettings().nemoclaw })
+    })().finally(() => { autoStarting = false; startingDetail = ''; send('backend:status', backendPhase()) })
   }
+  updater.start()
 }
 
 if (!app.requestSingleInstanceLock()) {
@@ -240,6 +257,17 @@ if (!app.requestSingleInstanceLock()) {
     // Windows uses the app's own title bar. macOS needs a menu bar for Cmd+C/V/X/A/Z, Cmd+Q and Cmd+W.
     Menu.setApplicationMenu(paths.IS_MAC ? Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { label: 'View', submenu: [{ role: 'reload' }, { role: 'toggleDevTools' }, { type: 'separator' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' }, { role: 'togglefullscreen' }] }, { role: 'windowMenu' }]) : null)
     setup = new Setup({ services, userData: app.getPath('userData'), emit: (event) => send('setup:event', event) })
+    updater = new Updater({
+      emit: (state) => send('updates:state', state),
+      autoDownload: () => readSettings().updates?.autoDownload !== false,
+      // The Python services and terminals run from inside the app folder; Windows cannot replace
+      // files a running program holds, so they stop before the installer runs.
+      beforeInstall: async () => {
+        terminals.killAll()
+        for (const id of ['gateway', 'planner', 'validator', 'run-store', 'browser-automation']) await services.stop(id).catch(() => undefined)
+        services.killOwnedSync()
+      },
+    })
     registerIpc()
     return createWindow()
   })
@@ -249,6 +277,14 @@ if (!app.requestSingleInstanceLock()) {
   app.on('before-quit', (event) => {
     if (quitting) return
     terminals.killAll()
+    if (updater?.ready) {
+      // A downloaded update installs on quit, after the backend has stopped.
+      event.preventDefault()
+      quitting = true
+      const others = appSettings().stopOnQuit ? Promise.race([services.stopAll(true), new Promise((resolve) => setTimeout(resolve, 20000))]) : Promise.resolve()
+      void others.catch(() => undefined).then(() => updater.install(false))
+      return
+    }
     if (!appSettings().stopOnQuit) { server?.close(); return }
     // Stop what this app started (OpenClaw and NemoClaw need a command, not just a kill).
     event.preventDefault()

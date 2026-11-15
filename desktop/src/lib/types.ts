@@ -167,11 +167,22 @@ export type Settings = {
   terminal?: boolean
   useWorkspaceForAgent?: boolean
   services?: { autoStart?: boolean; stopOnQuit?: boolean; nemoclaw?: boolean }
+  updates?: { autoDownload?: boolean }
 }
 
 export type AppInfo = { version: string; electron: string; platform: string; arch: string; repoRoot: string; backendRoot: string; python: string; packaged: boolean; backendUrl: string; terminal: boolean; backend: BackendPhase; loginItem: boolean }
 
 export type SetupComponent = 'core' | 'ollama' | 'openclaw' | 'nemoclaw'
+export type UpdateState = {
+  status: 'idle' | 'checking' | 'none' | 'available' | 'downloading' | 'ready' | 'error' | 'unsupported'
+  current: string
+  version: string
+  progress: number
+  error: string
+  checkedAt: string
+  canInstall: boolean // Windows installs updates itself; macOS links to the download page
+  releaseUrl: string
+}
 export type ModelChoice = { name: string; downloadGB: number; summary: string }
 export type SetupStatus = {
   platform: string
@@ -230,6 +241,13 @@ export type DesktopBridge = {
     start: (plan: { components: SetupComponent[]; disabledSkills: string[]; model?: string }) => Promise<boolean>
     cancel: () => Promise<boolean>
     onEvent: (callback: (event: SetupEvent) => void) => () => void
+  }
+  updates: {
+    state: () => Promise<UpdateState>
+    check: () => Promise<UpdateState>
+    download: () => Promise<UpdateState>
+    install: () => Promise<boolean>
+    onChange: (callback: (state: UpdateState) => void) => () => void
   }
   setLoginItem: (enabled: boolean) => Promise<boolean>
   openExternal: (url: string) => Promise<void>

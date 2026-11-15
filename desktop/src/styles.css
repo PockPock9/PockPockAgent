@@ -165,6 +165,9 @@ code, kbd, pre { font-family: var(--mono); }
 .step svg { flex: none; margin-top: 3px; }
 .step--done svg { color: var(--ok); } .step--running svg { color: var(--accent-strong); } .step--failed svg, .step--blocked svg { color: var(--err); } .step--stopped svg { color: var(--text-3); }
 .step small { margin-left: auto; color: var(--text-3); }
+.statusbar__update { display: inline-flex; align-items: center; gap: 5px; padding: 0 8px; border: 0; border-radius: 4px; background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+.statusbar__update:hover { background: #9a7fff; }
+.statusbar__update:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
 /* Timing: tabular figures so live counters do not jitter. */
 .step__time { margin-left: auto; padding-left: 10px; color: var(--text-3); font-size: 11.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .step small + .step__time { margin-left: 0; }
