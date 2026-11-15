@@ -25,7 +25,7 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run dist:win
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: pockpock-agent-windows
           path: desktop/release/*.exe
@@ -54,7 +54,7 @@ jobs:
       - run: npm run dist:mac
       - name: Check the app bundle is signed (ad hoc)
         run: codesign --verify --deep --strict --verbose=2 "release/mac-arm64/PockPock Agent.app"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: pockpock-agent-macos
           path: |
