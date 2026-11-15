@@ -5,6 +5,42 @@
 
 PockPock is a local AI workspace for Windows and macOS. Its desktop app, **PockPock Agent**, chats with models running on your own PC and runs agents that plan and carry out tasks: reading and writing files, researching public websites, driving a browser, and, with the OpenClaw engine, operating the PC itself. Everything runs locally through [Ollama](https://ollama.com); prompts and replies are not sent to a cloud service or written to telemetry.
 
+![PockPock Agent: chats on the left, the conversation in the middle, the open folder's files on the right](docs/images/home.png)
+
+---
+
+## Highlights
+
+**Four ways to work, one window.** Chat with the best local model for each message, or hand a task to an agent: **PockPock Agent** (plans first, works in a task folder), **OpenClaw** (works directly on your computer) or **NemoClaw** (OpenClaw inside a sandbox).
+
+**You approve the plan before anything runs.** PockPock Agent writes a plan with steps, success checks and the files it will deliver, and a reviewer checks it. You can approve it, edit it, or decline it.
+
+![Plan card with steps, success checks and Approve and run, Edit plan, Decline](docs/images/agent-plan.png)
+
+**Every change shows exactly what it does.** File changes come with their diff, commands with the exact command line. You allow them once or deny them, or pick a permission mode that allows them without asking.
+
+| PockPock Agent: review a file change | OpenClaw: approve a command |
+|---|---|
+| ![Approval card with the diff of a new file](docs/images/agent-approval.png) | ![OpenClaw asking before it runs a command](docs/images/openclaw-approval.png) |
+
+**The agent checks its own work.** Before reporting a task done, the agent validates the result against the plan's success checks and lists every file it changed or produced.
+
+![Finished task with validation results and the changed file](docs/images/agent-done.png)
+
+**Skills and MCP servers from a link.** Paste a GitHub skill link or an MCP server address. PockPock shows what it would install, adds it only after you approve, and lets you switch each one off without removing it.
+
+**One app runs everything.** Ollama, the backend services and the agent engines start with the app. Start, stop, restart, or read the logs of each one from the **Services** page.
+
+| Skills | Services |
+|---|---|
+| ![The Skills page](docs/images/skills.png) | ![The Services page with all eight services running](docs/images/services.png) |
+
+**Setup installs everything, then proves it works.** One setup screen installs Python, Ollama and the models, OpenClaw and NemoClaw. It then starts every service, checks each one, and asks a model for a test reply.
+
+![Setup finished: every service running and checked](docs/images/setup-done.png)
+
+More screenshots, a guide to every feature, and [example prompts for OpenClaw](https://github.com/PockPock9/PockPockAgent/wiki/OpenClaw-Examples) are in the [wiki](https://github.com/PockPock9/PockPockAgent/wiki).
+
 ---
 
 ## Install
