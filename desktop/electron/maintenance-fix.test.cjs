@@ -1,6 +1,23 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { planChecks, buildPrompt, parsePrFile, isDocPath, idleGuard } = require('./maintenance-fix.cjs')
+const { planChecks, buildPrompt, parsePrFile, isDocPath, idleGuard, agentCommand } = require('./maintenance-fix.cjs')
+
+test('report text never reaches a cmd.exe command line', () => {
+  const prompt = 'fix this & calc.exe | del *'
+  const claude = agentCommand('claude', 'C:\\Users\\a b\\npm\\claude.cmd', prompt)
+  assert.equal(claude.shell, true)
+  assert.equal(claude.input, prompt)
+  assert.ok(!claude.args.join(' ').includes('calc'), 'prompt is not an argument')
+  assert.equal(claude.file, '"C:\\Users\\a b\\npm\\claude.cmd"')
+  assert.ok(claude.args.at(-1).startsWith('"Read,') && claude.args.at(-1).endsWith('"'), 'tool list stays one argument')
+  const codex = agentCommand('codex', 'C:\\npm\\codex.cmd', prompt)
+  assert.deepEqual(codex.args, ['exec', '--full-auto', '-'])
+  assert.equal(codex.input, prompt)
+  const copilot = agentCommand('copilot', 'C:\\Copilot\\copilot.exe', prompt)
+  assert.equal(copilot.shell, false)
+  assert.equal(copilot.args[1], prompt, 'an .exe takes the prompt as a normal argument')
+  assert.throws(() => agentCommand('copilot', 'C:\\npm\\copilot.cmd', prompt), /cannot be started/)
+})
 
 test('the idle guard fires once after no activity, and activity postpones it', async () => {
   let clock = 0
