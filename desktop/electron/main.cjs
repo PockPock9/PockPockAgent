@@ -201,6 +201,8 @@ function registerIpc() {
   handle('maintenance:status', () => maintenance.status())
   handle('maintenance:agents', () => maintenance.agents())
   handle('maintenance:setAgent', (choice) => maintenance.setAgent(choice))
+  handle('maintenance:connectAgent', (id) => maintenance.connectAgent(String(id)))
+  handle('maintenance:cancelConnect', () => maintenance.cancelConnect())
   handle('maintenance:github', () => maintenance.github())
   handle('maintenance:githubLogin', () => maintenance.githubLogin())
   handle('maintenance:cancelLogin', () => { maintenance.cancelLogin(); return true })

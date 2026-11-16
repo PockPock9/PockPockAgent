@@ -1,7 +1,7 @@
 // Maintenance Manager setup: 1) choose the AI, 2) connect GitHub, 3) allow a copy of PockPock to be
 // cloned to a folder. Each step is an explicit choice; nothing is cloned or sent before the user acts.
 import { useCallback, useEffect, useState } from 'react'
-import { Check, ExternalLink, FolderOpen, GitBranch, LoaderCircle, RotateCcw, Sparkles } from 'lucide-react'
+import { Check, ExternalLink, FolderOpen, GitBranch, LoaderCircle, Plug, RotateCcw, Sparkles } from 'lucide-react'
 import { bridge } from '../lib/types'
 import type { GitHubAccount, MaintenanceAgent, MaintenanceStatus } from '../lib/types'
 
@@ -20,6 +20,9 @@ export function MaintenanceSetup({ status, onChange }: { status: MaintenanceStat
   const [cloneLog, setCloneLog] = useState<string[]>([])
   const [cloning, setCloning] = useState(false)
   const [error, setError] = useState('')
+  // Connect (install and sign in) for a cloud AI: which one is running, its progress lines and sign-in page.
+  const [connecting, setConnecting] = useState<MaintenanceAgent['id'] | null>(null)
+  const [connectLog, setConnectLog] = useState<{ id: MaintenanceAgent['id']; lines: string[]; url: string; error: string } | null>(null)
 
   const refresh = useCallback(() => {
     if (!desktop) return
@@ -33,7 +36,24 @@ export function MaintenanceSetup({ status, onChange }: { status: MaintenanceStat
   useEffect(() => desktop?.maintenance.onEvent((event) => {
     if (event.type === 'github-code') setDeviceCode({ code: event.code, url: event.url })
     if (event.type === 'clone-log') setCloneLog((lines) => [...lines.slice(-30), event.line])
+    if (event.type === 'agent-log') setConnectLog((log) => (log?.id === event.id ? { ...log, lines: [...log.lines.slice(-30), event.line] } : log))
+    if (event.type === 'agent-url') setConnectLog((log) => (log?.id === event.id ? { ...log, url: event.url } : log))
   }), [desktop])
+
+  const ready = (agent: MaintenanceAgent) => agent.installed && agent.signedIn !== false
+  const connect = async (agent: MaintenanceAgent) => {
+    if (!desktop) return
+    setConnecting(agent.id); setError(''); setConnectLog({ id: agent.id, lines: [], url: '', error: '' })
+    try {
+      const list = await desktop.maintenance.connectAgent(agent.id)
+      setAgents(list)
+      setConnectLog(null)
+      if (list.find((item) => item.id === agent.id && ready(item))) setChoice({ id: agent.id, model: '' })
+    } catch (reason) {
+      setConnectLog((log) => (log ? { ...log, error: clean(reason, `${agent.name} could not be connected.`) } : log))
+      void desktop.maintenance.agents().then(setAgents)
+    } finally { setConnecting(null) }
+  }
 
   const agentChosen = Boolean(status.agent)
   const githubReady = Boolean(github?.loggedIn)
@@ -92,14 +112,34 @@ export function MaintenanceSetup({ status, onChange }: { status: MaintenanceStat
               <legend className="visually-hidden">AI for maintenance</legend>
               {agents.map((agent) => (
                 <div key={agent.id} className="maint-agent">
-                  <label className={`${choice?.id === agent.id ? 'is-chosen' : ''}${agent.installed ? '' : ' is-disabled'}`}>
-                    <input type="radio" name="maint-agent" value={agent.id} disabled={!agent.installed} checked={choice?.id === agent.id}
+                  <label className={`${choice?.id === agent.id ? 'is-chosen' : ''}${ready(agent) ? '' : ' is-disabled'}`}>
+                    <input type="radio" name="maint-agent" value={agent.id} disabled={!ready(agent)} checked={choice?.id === agent.id}
                       onChange={() => setChoice({ id: agent.id, model: agent.id === 'local' ? (choice?.model || agent.suggested || '') : '', openclaw: agent.id === 'local' ? choice?.openclaw : undefined })} />
                     <span>
-                      <strong>{agent.name}{agent.installed ? <small className="badge badge--ok">{agent.version || 'Ready'}</small> : <small className="badge badge--off">Not installed</small>}</strong>
-                      <em>{agent.installed ? agent.dataNotice : agent.install}</em>
+                      <strong>{agent.name}{ready(agent) ? <small className="badge badge--ok">{agent.canConnect ? 'Connected' : agent.version || 'Ready'}</small> : agent.installed ? <small className="badge badge--warn">Not signed in</small> : <small className="badge badge--off">Not installed</small>}</strong>
+                      <em>{ready(agent) ? agent.dataNotice : agent.installed ? `Installed${agent.version ? ` (${agent.version})` : ''}, but not signed in. Connect opens the ${agent.vendor} sign-in page in your browser.` : agent.install}</em>
                     </span>
                   </label>
+                  {agent.canConnect && (!ready(agent) || connectLog?.id === agent.id) && (
+                    <div className="maint-agent__options maint-connect">
+                      {!ready(agent) && (
+                        <div className="card__actions">
+                          <button type="button" className="button" disabled={connecting !== null} onClick={() => void connect(agent)}>
+                            {connecting === agent.id ? <LoaderCircle size={13} className="spin" /> : <Plug size={13} />} {connecting === agent.id ? (agent.installed ? 'Signing in…' : 'Connecting…') : agent.installed ? `Sign in to ${agent.name}` : `Install and connect ${agent.name}`}
+                          </button>
+                          {connecting === agent.id && <button type="button" className="button" onClick={() => void desktop?.maintenance.cancelConnect()}>Cancel</button>}
+                        </div>
+                      )}
+                      {connectLog?.id === agent.id && connectLog.url && connecting === agent.id && (
+                        <div className="maint-code" role="status">
+                          <span>If your browser did not open, use the sign-in page:</span>
+                          <button type="button" className="button" onClick={() => void desktop?.openExternal(connectLog.url)}><ExternalLink size={13} /> Open sign-in page</button>
+                        </div>
+                      )}
+                      {connectLog?.id === agent.id && connectLog.lines.length > 0 && <pre className="setup-log" aria-live="polite">{connectLog.lines.join('\n')}</pre>}
+                      {connectLog?.id === agent.id && connectLog.error && <div className="banner banner--error" role="alert"><span>{connectLog.error}</span></div>}
+                    </div>
+                  )}
                   {agent.id === 'local' && agent.installed && choice?.id === 'local' && (
                     <div className="maint-agent__options">
                       <select className="input input--inline" aria-label="Local model" value={choice.model} onChange={(event) => setChoice({ ...choice, model: event.target.value })}>

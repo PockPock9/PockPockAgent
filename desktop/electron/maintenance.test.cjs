@@ -40,3 +40,35 @@ test('clone refuses relative folders and non-empty folders that are not a PockPo
   await assert.rejects(() => manager.clone(42), /Choose a folder/)
   fs.rmSync(dir, { recursive: true, force: true })
 })
+
+const { installPlan, parseUrl, plain } = require('./maintenance-connect.cjs')
+
+test('install plan: winget or Homebrew first, npm as the fallback, constants only', () => {
+  const win = installPlan('claude', { platform: 'win32', tools: { winget: 'C:\\w\\winget.exe', npm: 'C:\\Program Files\\nodejs\\npm.cmd' } })
+  assert.deepEqual(win.map((step) => step.label), ['winget', 'npm'])
+  assert.ok(win[0].args.includes('Anthropic.ClaudeCode'))
+  assert.equal(win[1].file, '"C:\\Program Files\\nodejs\\npm.cmd"', 'a .cmd path is quoted for cmd.exe')
+  assert.deepEqual(win[1].args, ['install', '-g', '@anthropic-ai/claude-code'])
+  const mac = installPlan('copilot', { platform: 'darwin', tools: { brew: '/opt/homebrew/bin/brew', npm: '/usr/local/bin/npm', winget: 'ignored' } })
+  assert.deepEqual(mac.map((step) => step.label), ['Homebrew', 'npm'])
+  assert.equal(mac[1].shell, false)
+  assert.deepEqual(installPlan('copilot', { platform: 'win32', tools: {} }), [])
+  assert.deepEqual(installPlan('codex', { platform: 'win32', tools: { npm: 'npm.cmd' } }), [], 'only Claude Code and Copilot connect from the app')
+})
+
+test('sign-in links and plain text are read from CLI output', () => {
+  assert.equal(parseUrl('Open https://claude.ai/oauth/authorize?code=1&x=2). to continue'), 'https://claude.ai/oauth/authorize?code=1&x=2')
+  assert.equal(parseUrl('no link, http://insecure.example'), '')
+  assert.equal(plain('\u001b[32mDone\u001b[0m\r'), 'Done\n')
+})
+
+test('connect refuses unknown AIs and a second run at the same time', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'maint-'))
+  const manager = new Maintenance({ userData: dir, emit: () => {} })
+  await assert.rejects(() => manager.connectAgent('codex'), /cannot be connected/)
+  await assert.rejects(() => manager.connectAgent('local'), /cannot be connected/)
+  manager.connecting = { id: 'claude', child: null }
+  await assert.rejects(() => manager.connectAgent('copilot'), /still running/)
+  assert.equal(manager.cancelConnect(), true)
+  fs.rmSync(dir, { recursive: true, force: true })
+})
