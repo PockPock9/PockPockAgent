@@ -360,4 +360,4 @@ ${result.stdout.split(String.fromCharCode(0)).join('')}${result.stderr.split(Str
   }
 }
 
-module.exports = { ServiceManager, DEFINITIONS, httpJson, portOpen }
+module.exports = { ServiceManager, DEFINITIONS, httpJson, portOpen, internalToken }

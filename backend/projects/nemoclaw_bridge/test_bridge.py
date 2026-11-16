@@ -185,5 +185,84 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(runner.calls, [])
 
 
+ROUTE_LOCAL = "Inference:\n\n  Workspace: default\n  Provider: compatible-endpoint\n  Model: qwen3.5:9b\n  Version: 1\n  Timeout: 180s\n\nSystem inference:\n\n  Not configured\n"
+ROUTE_CLOUD = ROUTE_LOCAL.replace("compatible-endpoint", "pockpock-cloud").replace("qwen3.5:9b", "nim/meta/llama-3.3-70b-instruct")
+
+
+class RouteRunner:
+    """Answers ``openshell inference get`` from a mutable route and records every script."""
+
+    def __init__(self, route=ROUTE_LOCAL, fail=None):
+        self.route = route
+        self.fail = fail
+        self.calls = []
+
+    def __call__(self, command, env, timeout):
+        script = command[-1]
+        self.calls.append((script, env))
+        if self.fail and self.fail in script:
+            return 1, "", "\x1b[31mError:\x1b[0m endpoint refused\n"
+        if "inference set" in script:
+            self.route = ROUTE_LOCAL.replace("compatible-endpoint", env["NC_PROVIDER"]).replace("qwen3.5:9b", env["NC_MODEL"])
+        return 0, self.route if "inference get" in script else "", ""
+
+
+class CloudModelTests(unittest.TestCase):
+    def test_route_text_is_parsed_and_ignores_the_system_route(self):
+        from projects.nemoclaw_bridge.bridge import parse_route_output
+        self.assertEqual(parse_route_output(ROUTE_LOCAL), {"provider": "compatible-endpoint", "model": "qwen3.5:9b", "timeout": 180})
+        self.assertEqual(parse_route_output("System inference:\n  Provider: x\n")["provider"], "")
+
+    def test_switching_to_a_cloud_model_and_back(self):
+        from projects.nemoclaw_bridge.bridge import CLOUD_BASE_URL, PROVIDER_SCRIPT, ROUTE_SET_SCRIPT
+        saved = []
+        runner = RouteRunner()
+        bridge = NemoClawBridge(NemoClawConfig(distro="Ubuntu-24.04"), runner=runner, load_state=lambda: saved[-1] if saved else "", save_state=saved.append)
+        self.assertEqual(bridge.route()["cloud"], False)
+
+        result = bridge.set_model("nim/meta/llama-3.3-70b-instruct", token="local-token")
+        self.assertEqual((result["cloud"], result["model"]), (True, "nim/meta/llama-3.3-70b-instruct"))
+        self.assertEqual(result["local"]["model"], "qwen3.5:9b")
+        self.assertEqual(json.loads(saved[-1]), {"provider": "compatible-endpoint", "model": "qwen3.5:9b", "timeout": 180})
+        provider_script, provider_env = next(call for call in runner.calls if call[0] == PROVIDER_SCRIPT)
+        self.assertEqual((provider_env["NC_TOKEN"], provider_env["NC_BASE_URL"]), ("local-token", CLOUD_BASE_URL))
+        # The token travels in the environment; no script text or argument contains it.
+        self.assertTrue(all("local-token" not in script for script, _ in runner.calls))
+        self.assertIn("NC_TOKEN/u", provider_env["WSLENV"])
+
+        # A second cloud model does not overwrite the remembered local route.
+        bridge.set_model("openrouter/qwen/qwen3-coder", token="local-token")
+        self.assertEqual(len(saved), 1)
+
+        back = bridge.set_model("")
+        self.assertEqual((back["cloud"], back["provider"], back["model"]), (False, "compatible-endpoint", "qwen3.5:9b"))
+        _, restore_env = [call for call in runner.calls if call[0] == ROUTE_SET_SCRIPT][-1]
+        self.assertEqual(restore_env["NC_ROUTE_TIMEOUT"], "180")
+        self.assertIn("--no-verify", ROUTE_SET_SCRIPT)
+
+    def test_bad_names_missing_token_and_failures_are_reported(self):
+        bridge = NemoClawBridge(NemoClawConfig(), runner=RouteRunner())
+        for bad in ("qwen3.5:9b", "nim/has space", "other/model", "nim/$(reboot)"):
+            with self.assertRaises(NemoClawError) as caught:
+                bridge.set_model(bad, token="t")
+            self.assertEqual(caught.exception.code, "invalid_model")
+        with self.assertRaises(NemoClawError) as caught:
+            bridge.set_model("nim/meta/llama-3.3-70b-instruct")
+        self.assertEqual(caught.exception.code, "cloud_not_ready")
+        failing = NemoClawBridge(NemoClawConfig(), runner=RouteRunner(fail="provider"))
+        with self.assertRaises(NemoClawError) as caught:
+            failing.set_model("nim/meta/llama-3.3-70b-instruct", token="t")
+        self.assertEqual(caught.exception.code, "provider_failed")
+        self.assertIn("endpoint refused", str(caught.exception))
+        # Already local: nothing is changed.
+        idle = RouteRunner()
+        NemoClawBridge(NemoClawConfig(), runner=idle).set_model("")
+        self.assertTrue(all("inference set" not in script for script, _ in idle.calls))
+        # In the cloud with no remembered local route: refuse instead of guessing.
+        with self.assertRaises(NemoClawError) as caught:
+            NemoClawBridge(NemoClawConfig(), runner=RouteRunner(route=ROUTE_CLOUD)).set_model("")
+        self.assertEqual(caught.exception.code, "no_local_route")
+
+
 if __name__ == "__main__":
     unittest.main()

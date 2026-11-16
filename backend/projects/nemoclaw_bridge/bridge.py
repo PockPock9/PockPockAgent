@@ -36,6 +36,38 @@ TURN_SCRIPT = (
 )
 STATUS_SCRIPT = 'export PATH="$HOME/.local/bin:$PATH"; exec nemoclaw "$NC_SANDBOX" status'
 
+# Cloud models: NemoClaw's inference route (OpenShell) is pointed at the PockPock gateway's local
+# cloud endpoint. The provider's credential is PockPock's local token, read from the environment so
+# it is never on a command line; the real cloud API key stays in the gateway.
+CLOUD_PROVIDER = "pockpock-cloud"
+CLOUD_MODEL = re.compile(r"^(nim|openrouter|alibaba)/[A-Za-z0-9][A-Za-z0-9._:/-]{0,87}$")
+CLOUD_BASE_URL = f"http://host.openshell.internal:{os.environ.get('POCKPOCK_PORT', '8766')}/cloud/v1"
+ROUTE_TIMEOUT_SECONDS = 90
+ROUTE_GET_SCRIPT = 'export PATH="$HOME/.local/bin:$PATH"; exec openshell inference get'
+PROVIDER_SCRIPT = (
+    'export PATH="$HOME/.local/bin:$PATH"; export OPENAI_API_KEY="$NC_TOKEN"; '
+    'if openshell provider get "$NC_PROVIDER" >/dev/null 2>&1; then '
+    'exec openshell provider update "$NC_PROVIDER" --credential OPENAI_API_KEY --config "OPENAI_BASE_URL=$NC_BASE_URL"; '
+    'else exec openshell provider create --name "$NC_PROVIDER" --type openai --credential OPENAI_API_KEY --config "OPENAI_BASE_URL=$NC_BASE_URL"; fi'
+)
+# --no-verify: the route is saved without a test request, so switching never loads a local model.
+ROUTE_SET_SCRIPT = (
+    'export PATH="$HOME/.local/bin:$PATH"; '
+    'exec openshell inference set --provider "$NC_PROVIDER" --model "$NC_MODEL" --timeout "$NC_ROUTE_TIMEOUT" --no-verify'
+)
+
+
+def parse_route_output(stdout: str) -> dict[str, Any]:
+    """Provider, model and timeout of the user-facing route from ``openshell inference get`` text."""
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", stdout).split("System inference", 1)[0]
+
+    def field(name: str) -> str:
+        match = re.search(rf"^\s*{re.escape(name)}:\s*(.+?)\s*$", plain, flags=re.MULTILINE)
+        return match.group(1) if match else ""
+
+    seconds = re.match(r"(\d+)", field("Timeout"))
+    return {"provider": field("Provider"), "model": field("Model"), "timeout": int(seconds.group(1)) if seconds else 0}
+
 
 class NemoClawError(Exception):
     """A turn or status check failed in a way the user can act on."""
@@ -183,16 +215,32 @@ def parse_status_output(stdout: str) -> dict[str, Any]:
     }
 
 
+def _last_line(text: str) -> str:
+    lines = [line.strip() for line in re.sub(r"\x1b\[[0-9;]*m", "", text or "").splitlines() if line.strip()]
+    return (lines[-1] if lines else "no details were given")[:240]
+
+
 Runner = Callable[[list[str], dict[str, str], int], tuple[int, str, str]]
 
 
 class NemoClawBridge:
     """Process-local bridge with a cached status check and one active turn at a time."""
 
-    def __init__(self, config: NemoClawConfig, runner: Runner | None = None, clock: Callable[[], float] = time.monotonic):
+    def __init__(
+        self,
+        config: NemoClawConfig,
+        runner: Runner | None = None,
+        clock: Callable[[], float] = time.monotonic,
+        load_state: Callable[[], str] | None = None,
+        save_state: Callable[[str], None] | None = None,
+    ):
         self.config = config
         self._runner = runner
         self._clock = clock
+        # The local route to return to after a cloud model, kept as JSON by the gateway's settings.
+        self._load_state = load_state or (lambda: "")
+        self._save_state = save_state or (lambda _value: None)
+        self._memory_state = ""
         self._status_cache: tuple[float, dict[str, Any]] | None = None
         self._status_lock = threading.Lock()
         self._turn_lock = threading.Lock()
@@ -267,6 +315,67 @@ class NemoClawBridge:
             result = {**base, "available": True, "checked": True, **parsed, "detail": detail}
             self._status_cache = (now, result)
             return result
+
+    def _script(self, script: str, values: dict[str, str], timeout: int = ROUTE_TIMEOUT_SECONDS) -> tuple[int, str, str]:
+        try:
+            return self._run(build_command(self.config, script), build_environment(values), timeout)
+        except OSError as err:
+            raise NemoClawError("unavailable", "Could not start WSL to reach NemoClaw." if sys.platform == "win32" else "Could not start a shell to reach NemoClaw.", 503) from err
+
+    def _saved_local_route(self) -> dict[str, Any]:
+        try:
+            saved = json.loads(self._load_state() or self._memory_state or "{}")
+        except ValueError:
+            saved = {}
+        return saved if isinstance(saved, dict) and saved.get("provider") and saved.get("model") else {}
+
+    def route(self) -> dict[str, Any]:
+        """The sandbox's current inference route, and the local route it returns to. Loads no model."""
+        if not self.available():
+            raise NemoClawError("unavailable", "NemoClaw is not available on this PC.", 503)
+        code, stdout, _ = self._script(ROUTE_GET_SCRIPT, {})
+        current = parse_route_output(stdout)
+        if code != 0 or not current["provider"]:
+            raise NemoClawError("route_unknown", "NemoClaw's model setting could not be read. Make sure Docker Desktop is running.")
+        cloud = current["provider"] == CLOUD_PROVIDER
+        return {"cloud": cloud, "model": current["model"], "provider": current["provider"], "local": current if not cloud else self._saved_local_route()}
+
+    def set_model(self, model: str | None, *, token: str = "") -> dict[str, Any]:
+        """Point the sandbox at a cloud model, or (empty model) back at its local model.
+
+        The setting belongs to the sandbox, so it applies to every NemoClaw chat.
+        """
+        wanted = (model or "").strip()
+        if wanted and not CLOUD_MODEL.fullmatch(wanted):
+            raise NemoClawError("invalid_model", "That model name is not valid.", 400)
+        if not self._turn_lock.acquire(blocking=False):
+            raise NemoClawError("busy", "Wait for the NemoClaw agent to finish before changing its model.", 409)
+        try:
+            current = self.route()
+            if wanted:
+                if not token:
+                    raise NemoClawError("cloud_not_ready", "Cloud models are not connected yet. Connect a provider on the Cloud page.", 409)
+                if not current["cloud"]:
+                    state = json.dumps({"provider": current["provider"], "model": current["model"], "timeout": current["local"].get("timeout") or 0})
+                    self._memory_state = state
+                    self._save_state(state)
+                code, _, stderr = self._script(PROVIDER_SCRIPT, {"NC_PROVIDER": CLOUD_PROVIDER, "NC_TOKEN": token, "NC_BASE_URL": CLOUD_BASE_URL})
+                if code != 0:
+                    raise NemoClawError("provider_failed", f"NemoClaw could not register PockPock's cloud endpoint: {_last_line(stderr)}")
+                target = {"provider": CLOUD_PROVIDER, "model": wanted, "timeout": 300}
+            else:
+                target = self._saved_local_route()
+                if not current["cloud"]:
+                    return current
+                if not target:
+                    raise NemoClawError("no_local_route", "The sandbox's earlier local model is not known. Run Setup to choose its model again.", 409)
+            code, _, stderr = self._script(ROUTE_SET_SCRIPT, {"NC_PROVIDER": str(target["provider"]), "NC_MODEL": str(target["model"]), "NC_ROUTE_TIMEOUT": str(int(target.get("timeout") or 0))})
+            if code != 0:
+                raise NemoClawError("route_failed", f"NemoClaw did not accept the model: {_last_line(stderr)}")
+            self._status_cache = None
+            return self.route()
+        finally:
+            self._turn_lock.release()
 
     def run_turn(self, session_id: str, message: str) -> TurnResult:
         if not self.available():

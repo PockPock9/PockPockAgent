@@ -337,7 +337,7 @@ class OpenClawBridge:
                     break
                 if event.get("type") == "status_result":
                     plugin = event.get("plugin") is True
-                    model = str(event.get("model") or "").removeprefix("ollama/")
+                    model = str(event.get("model") or "").removeprefix("ollama/").removeprefix("pockpock-cloud/")
                     detail = "Ready" if plugin else (
                         "OpenClaw is running, but the PockPock permission plugin is not loaded. Only Full access can run until it is installed."
                     )

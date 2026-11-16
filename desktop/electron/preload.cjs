@@ -58,6 +58,14 @@ contextBridge.exposeInMainWorld('pockpock', {
     browsers: () => ipcRenderer.invoke('openclaw:browsers'),
     setBrowser: (id) => ipcRenderer.invoke('openclaw:setBrowser', id),
   },
+  cloud: {
+    list: () => ipcRenderer.invoke('cloud:list'),
+    connect: (id, input) => ipcRenderer.invoke('cloud:connect', id, input),
+    available: (id) => ipcRenderer.invoke('cloud:available', id),
+    setModels: (id, models) => ipcRenderer.invoke('cloud:setModels', id, models),
+    disconnect: (id) => ipcRenderer.invoke('cloud:disconnect', id),
+    onChange: (callback) => subscribe('cloud:changed', callback),
+  },
   maintenance: {
     status: () => ipcRenderer.invoke('maintenance:status'),
     agents: () => ipcRenderer.invoke('maintenance:agents'),
