@@ -618,6 +618,16 @@ button.context-chip:hover { color: var(--text); background: var(--bg-raise); }
 .maint-folder { display: flex; align-items: center; gap: 10px; }
 .maint-folder code { flex: 1; min-width: 0; padding: 6px 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-code); color: var(--code-text); font-size: 12px; overflow-wrap: anywhere; }
 .maint-summary .setup-facts code { font-size: 12px; overflow-wrap: anywhere; }
+.fix-panel { display: grid; gap: 10px; margin-top: 12px; padding: 16px; }
+.fix-panel > header { display: flex; align-items: center; gap: 8px; color: var(--accent-strong); }
+.fix-panel > header strong { color: var(--text); font-size: 14px; }
+.fix-panel .banner { flex-wrap: wrap; margin: 0; }
+.fix-panel .working { color: var(--text-2); font-size: 13px; }
+.fix-log { max-height: 260px; }
+.fix-h { margin: 6px 0 0; font-size: 13px; }
+.fix-files { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.fix-files li { display: flex; align-items: center; gap: 7px; color: var(--text-2); font-size: 12.5px; }
+.fix-files code { font-size: 12px; }
 @media (max-width: 720px) { .report-edit__grid { grid-template-columns: 1fr; } }
 .rows { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .row { display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg-panel); }

@@ -68,6 +68,12 @@ contextBridge.exposeInMainWorld('pockpock', {
     chooseFolder: (current) => ipcRenderer.invoke('maintenance:chooseFolder', current),
     clone: (dir) => ipcRenderer.invoke('maintenance:clone', dir),
     forget: () => ipcRenderer.invoke('maintenance:forget'),
+    setAuto: (enabled) => ipcRenderer.invoke('maintenance:setAuto', enabled),
+    fixGet: (reportId) => ipcRenderer.invoke('maintenance:fixGet', reportId),
+    fixStart: (reportId) => ipcRenderer.invoke('maintenance:fixStart', reportId),
+    fixCancel: (reportId) => ipcRenderer.invoke('maintenance:fixCancel', reportId),
+    fixApprove: (reportId, text) => ipcRenderer.invoke('maintenance:fixApprove', reportId, text),
+    fixDiscard: (reportId) => ipcRenderer.invoke('maintenance:fixDiscard', reportId),
     onEvent: (callback) => subscribe('maintenance:event', callback),
   },
   reports: {

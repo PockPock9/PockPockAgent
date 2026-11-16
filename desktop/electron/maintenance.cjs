@@ -86,10 +86,10 @@ class Maintenance {
     const tags = await httpJson('http://127.0.0.1:11434/api/tags', 3000)
     const models = Array.isArray(tags?.json?.models) ? tags.json.models.map((model) => model.name) : []
     const local = {
-      id: 'local', name: 'Local model (OpenClaw)', vendor: '', installed: Boolean(paths.openclawEntry()) && models.length > 0,
+      id: 'local', name: 'PockPock itself', vendor: '', installed: models.length > 0,
       models, suggested: suggestLocalModel(models),
-      dataNotice: 'Everything stays on this PC. Local models are slower and fix fewer problems; a fix that fails the checks is not proposed.',
-      install: paths.openclawEntry() ? 'Ollama has no models. Run Setup to download one.' : 'OpenClaw is not installed. Run Setup and include OpenClaw.',
+      dataNotice: 'PockPock fixes itself with a model on this PC; nothing leaves it. Local models are slower and fix fewer problems, and a fix that fails the checks is not proposed.',
+      install: tags === null ? 'Ollama is not running. Start it on the Services page.' : 'Ollama has no models. Run Setup to download one.',
     }
     const others = await Promise.all(Object.entries(AGENTS).map(async ([id, agent]) => {
       const file = paths.findExecutable(agent.names, agent.dirs)
@@ -104,7 +104,14 @@ class Maintenance {
         install: agent.install,
       }
     }))
-    return [local, ...others]
+    const order = ['local', 'copilot', 'claude', 'codex']
+    return [local, ...others].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id))
+  }
+
+  /** The command-line tool of a cloud coding agent, or null when it is not installed. */
+  agentPath(id) {
+    const agent = AGENTS[id]
+    return agent ? paths.findExecutable(agent.names, agent.dirs) : null
   }
 
   setAgent(choice) {
@@ -213,7 +220,13 @@ class Maintenance {
       repo: config.repo ? { ...config.repo, present: repoOk } : null,
       defaultFolder: this.defaultFolder(),
       ready: Boolean(config.agent && config.repo && repoOk),
+      auto: config.auto === true,
     }
+  }
+
+  /** Automatic mode: work through open reports one at a time. Fixes still wait for the user's approval. */
+  setAuto(enabled) {
+    return this.save({ auto: enabled === true })
   }
 
   /** Forgets the setup. The clone is left on disk; the user can delete it in Explorer or Finder. */

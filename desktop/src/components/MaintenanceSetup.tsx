@@ -64,9 +64,13 @@ export function MaintenanceSetup({ status, onChange }: { status: MaintenanceStat
       <section className="card maint-summary" aria-labelledby="maint-title">
         <header><Sparkles size={15} /><strong id="maint-title">Maintenance Manager is set up</strong></header>
         <dl className="setup-facts">
-          <div><dt>AI</dt><dd>{status.agent?.id === 'local' ? `Local model ${status.agent.model}` : chosenAgent?.name ?? status.agent?.id}</dd></div>
+          <div><dt>AI</dt><dd>{status.agent?.id === 'local' ? `PockPock itself, with ${status.agent.model}` : chosenAgent?.name ?? status.agent?.id}</dd></div>
           <div><dt>Copy of PockPock</dt><dd><code>{status.repo?.dir}</code>{status.repo?.fork ? ` (your fork of ${UPSTREAM})` : ''}</dd></div>
         </dl>
+        <div className="row maint-auto">
+          <div className="row__text"><strong id="maint-auto-label">Keep fixing reports automatically</strong><span>PockPock works through open reports one at a time in the background. Each fix waits for your approval before a pull request is opened; a report whose fix failed is not retried automatically.</span></div>
+          <button type="button" role="switch" aria-checked={status.auto} aria-labelledby="maint-auto-label" className="switch" onClick={() => void desktop?.maintenance.setAuto(!status.auto).then(onChange)}><span /></button>
+        </div>
         <div className="card__actions">
           <button type="button" className="button" onClick={() => void desktop?.openPath(status.repo?.dir ?? '')}><FolderOpen size={13} /> Open folder</button>
           <button type="button" className="button" onClick={() => setEditing(true)}>Change setup</button>
