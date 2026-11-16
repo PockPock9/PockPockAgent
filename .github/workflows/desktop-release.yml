@@ -86,7 +86,7 @@ jobs:
             echo "The tag ${GITHUB_REF_NAME} does not match desktop/package.json version ${version}." >&2
             exit 1
           fi
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
