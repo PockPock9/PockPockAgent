@@ -54,6 +54,10 @@ contextBridge.exposeInMainWorld('pockpock', {
     install: () => ipcRenderer.invoke('updates:install'),
     onChange: (callback) => subscribe('updates:state', callback),
   },
+  openclaw: {
+    browsers: () => ipcRenderer.invoke('openclaw:browsers'),
+    setBrowser: (id) => ipcRenderer.invoke('openclaw:setBrowser', id),
+  },
   theme: {
     set: (id) => ipcRenderer.invoke('theme:set', id),
   },

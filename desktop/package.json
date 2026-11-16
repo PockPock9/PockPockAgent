@@ -14,7 +14,8 @@
     "dist": "npm run build && electron-builder",
     "dist:win": "npm run build && electron-builder --win nsis",
     "dist:mac": "npm run build && electron-builder --mac",
-    "check:contrast": "node scripts/check_contrast.mjs"
+    "check:contrast": "node scripts/check_contrast.mjs",
+    "test": "node --test electron/*.test.cjs"
   },
   "dependencies": {
     "@lydell/node-pty": "^1.2.0-beta.18",
@@ -52,7 +53,8 @@
       "dist/**",
       "electron/**",
       "public/icon.*",
-      "package.json"
+      "package.json",
+      "!electron/*.test.cjs"
     ],
     "asarUnpack": [
       "node_modules/@lydell/**"
@@ -65,7 +67,8 @@
           "**/*",
           "!**/__pycache__/**",
           "!**/test_*.py",
-          "!**/*.pyc"
+          "!**/*.pyc",
+          "!**/*.test.mjs"
         ]
       }
     ],

@@ -253,6 +253,10 @@ export type DesktopBridge = {
   theme: {
     set: (id: string) => Promise<string>
   }
+  openclaw: {
+    browsers: () => Promise<{ available: Array<{ id: string; name: string }>; current: string; currentPath: string }>
+    setBrowser: (id: string) => Promise<string>
+  }
   setLoginItem: (enabled: boolean) => Promise<boolean>
   openExternal: (url: string) => Promise<void>
   openPath: (target: string) => Promise<boolean>
