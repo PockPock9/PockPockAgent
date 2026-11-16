@@ -58,6 +58,18 @@ contextBridge.exposeInMainWorld('pockpock', {
     browsers: () => ipcRenderer.invoke('openclaw:browsers'),
     setBrowser: (id) => ipcRenderer.invoke('openclaw:setBrowser', id),
   },
+  maintenance: {
+    status: () => ipcRenderer.invoke('maintenance:status'),
+    agents: () => ipcRenderer.invoke('maintenance:agents'),
+    setAgent: (choice) => ipcRenderer.invoke('maintenance:setAgent', choice),
+    github: () => ipcRenderer.invoke('maintenance:github'),
+    githubLogin: () => ipcRenderer.invoke('maintenance:githubLogin'),
+    cancelLogin: () => ipcRenderer.invoke('maintenance:cancelLogin'),
+    chooseFolder: (current) => ipcRenderer.invoke('maintenance:chooseFolder', current),
+    clone: (dir) => ipcRenderer.invoke('maintenance:clone', dir),
+    forget: () => ipcRenderer.invoke('maintenance:forget'),
+    onEvent: (callback) => subscribe('maintenance:event', callback),
+  },
   reports: {
     preview: (capture) => ipcRenderer.invoke('reports:preview', capture),
     create: (input) => ipcRenderer.invoke('reports:create', input),

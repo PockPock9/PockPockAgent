@@ -10,6 +10,7 @@ const themes = require('./themes.cjs')
 const { syncGuidance } = require('./openclaw-guidance.cjs')
 const { installedBrowsers } = require('./browsers.cjs')
 const { ReportStore, prepareCapture } = require('./reports.cjs')
+const { Maintenance } = require('./maintenance.cjs')
 const { run } = require('./platform.cjs')
 const paths = require('./paths.cjs')
 
@@ -44,6 +45,7 @@ let updater = null
 let themeSetting = themes.DEFAULT // the saved choice, which may be "system"
 let setup = null // created once the app data folder is known
 let reports = null // problem reports, in <userData>/reports
+let maintenance = null // Maintenance Manager setup and runs
 
 /** The renderer's view of the backend: the gateway's state, or why it is not up. */
 function backendPhase(list = services.list()) {
@@ -193,6 +195,19 @@ function registerIpc() {
   handle('reports:get', (id) => reports.get(id))
   handle('reports:update', (id, change) => reports.update(id, change))
   handle('reports:delete', (id) => reports.remove(id))
+  // Maintenance Manager setup (maintenance.cjs): each step is an explicit user action.
+  handle('maintenance:status', () => maintenance.status())
+  handle('maintenance:agents', () => maintenance.agents())
+  handle('maintenance:setAgent', (choice) => maintenance.setAgent(choice))
+  handle('maintenance:github', () => maintenance.github())
+  handle('maintenance:githubLogin', () => maintenance.githubLogin())
+  handle('maintenance:cancelLogin', () => { maintenance.cancelLogin(); return true })
+  handle('maintenance:chooseFolder', async (current) => {
+    const result = await dialog.showOpenDialog(mainWindow, { title: 'Where should the copy of PockPock go?', properties: ['openDirectory', 'createDirectory'], defaultPath: typeof current === 'string' ? current : undefined })
+    return result.canceled ? '' : result.filePaths[0]
+  })
+  handle('maintenance:clone', (dir) => maintenance.clone(dir))
+  handle('maintenance:forget', () => maintenance.forget())
   handle('theme:set', (id) => {
     if (!themes.IDS.includes(id)) throw new Error('Unknown theme.')
     themeSetting = id
@@ -329,6 +344,7 @@ if (!app.requestSingleInstanceLock()) {
     Menu.setApplicationMenu(paths.IS_MAC ? Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { label: 'View', submenu: [{ role: 'reload' }, { role: 'toggleDevTools' }, { type: 'separator' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' }, { role: 'togglefullscreen' }] }, { role: 'windowMenu' }]) : null)
     setup = new Setup({ services, userData: app.getPath('userData'), emit: (event) => send('setup:event', event) })
     reports = new ReportStore(path.join(app.getPath('userData'), 'reports'))
+    maintenance = new Maintenance({ userData: app.getPath('userData'), emit: (event) => send('maintenance:event', event) })
     updater = new Updater({
       emit: (state) => send('updates:state', state),
       autoDownload: () => readSettings().updates?.autoDownload !== false,

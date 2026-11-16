@@ -91,7 +91,10 @@ Choose the first `Ready` task in this table. Priority order is computer/browser 
 | 40 | LRN-01 | Make OpenClaw turns more reliable (guidance, stall watchdog, readable errors, browser choice) | AUT-01 | Done |
 | 41 | LRN-02 | Learn lessons from failed-then-fixed steps and give them to agents | LRN-01, FND-04 | Ready |
 | 42 | LRN-03 | Report button on replies and a local report store | LRN-01 | Done |
-| 43 | LRN-04 | Maintenance Manager: reproduce, fix, validate and propose a draft PR from a report | LRN-03 | Ready |
+| 43 | LRN-04 | Maintenance Manager (tracking group) | LRN-03 | In progress |
+| 43.1 | LRN-04A | Setup: choose the AI, connect GitHub, permission to clone (fork when needed) | LRN-03 | In progress |
+| 43.2 | LRN-04B | Fix a report in an isolated worktree with the chosen AI; validate checks and documentation | LRN-04A | Not started |
+| 43.3 | LRN-04C | Show the diff and PR text; on approval commit, push and open a draft PR; discard on reject | LRN-04B | Not started |
 | 44 | LRN-05 | Turn tasks that worked into reusable skills or browser recipes | LRN-02, BRW-06C3 | Not started |
 ## Task definitions and acceptance checks
 
@@ -645,6 +648,8 @@ Every assistant reply gets **Report**. It captures that exchange (the user messa
 #### LRN-04 — Maintenance Manager
 
 A page that lists reports and resolves them. Setup, in order: (1) choose the AI that does the maintenance work: the largest local model by default, or Claude Code, OpenAI Codex or GitHub Copilot when installed and signed in; (2) connect GitHub (sign-in through the GitHub CLI); (3) ask permission to clone the PockPock repository into a folder the user can see and change (default under the app data folder), forking it to the user's GitHub account when they cannot push to it. Then, per report: reproduce the problem in an isolated git worktree of that clone, write a fix on a branch together with the matching documentation update (feature page, README or architecture as `AGENTS.md` requires), run the project's checks, and show the diff, check results and pull-request text. Only after the user approves does it push the branch and open a **draft** pull request against `PockPock9/PockPockAgent`; it never merges. If a fix does not pass the checks it says so and leaves a write-up instead. The project owner reviews the open PRs weekly and merges or rejects them.
+
+Split (2026-11-15): **LRN-04A** setup (AI detection and choice with a data notice for cloud agents, GitHub sign-in through the GitHub CLI, explicit clone permission and folder, fork when the user cannot push, local git identity using the GitHub no-reply email); **LRN-04B** per-report fix run (git worktree on a `fix/report-…` branch from the latest `main`, the chosen AI edits the worktree, the Manager runs the matching checks itself and requires a documentation change); **LRN-04C** review and approval (diff, check results and PR text; on approval commit, push and `gh pr create --draft`; on reject remove the worktree and branch; report status and PR link updated).
 
 **Done when:** setup asks for each step explicitly (AI, GitHub, clone permission and location) and can be undone; external coding agents are opt-in with a clear notice of what is sent; all edits stay in a worktree until approved; every proposed fix includes a documentation change or states why none is needed; the PR text is redacted and shown before pushing; PRs from users without push rights come from their fork; tests and an end-to-end check against a sample report pass.
 

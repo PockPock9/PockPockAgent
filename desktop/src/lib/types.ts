@@ -184,6 +184,15 @@ export type UpdateState = {
   canInstall: boolean // Windows installs updates itself; macOS links to the download page
   releaseUrl: string
 }
+export type MaintenanceAgent = { id: 'local' | 'claude' | 'codex' | 'copilot'; name: string; vendor: string; installed: boolean; version?: string; models?: string[]; suggested?: string; dataNotice: string; install: string }
+export type GitHubAccount = { installed: boolean; loggedIn: boolean; login?: string; id?: number; canPush?: boolean; install?: string }
+export type MaintenanceStatus = {
+  agent: { id: MaintenanceAgent['id']; model: string; chosenAt: string } | null
+  repo: { dir: string; fork: boolean; owner: string; upstream: string; clonedAt: string; present: boolean } | null
+  defaultFolder: string
+  ready: boolean
+}
+export type MaintenanceEvent = { type: 'github-code'; code: string; url: string } | { type: 'clone-log'; line: string }
 export type ReportCategory = 'hang' | 'failed' | 'wrong' | 'other'
 export type ReportStatus = 'open' | 'in-progress' | 'fixed' | 'wont-fix'
 export type Redactions = { path: number; user: number; email: number; token: number }
@@ -263,6 +272,18 @@ export type DesktopBridge = {
     download: () => Promise<UpdateState>
     install: () => Promise<boolean>
     onChange: (callback: (state: UpdateState) => void) => () => void
+  }
+  maintenance: {
+    status: () => Promise<MaintenanceStatus>
+    agents: () => Promise<MaintenanceAgent[]>
+    setAgent: (choice: { id: MaintenanceAgent['id']; model?: string }) => Promise<unknown>
+    github: () => Promise<GitHubAccount>
+    githubLogin: () => Promise<GitHubAccount>
+    cancelLogin: () => Promise<boolean>
+    chooseFolder: (current?: string) => Promise<string>
+    clone: (dir: string) => Promise<unknown>
+    forget: () => Promise<boolean>
+    onEvent: (callback: (event: MaintenanceEvent) => void) => () => void
   }
   reports: {
     preview: (capture: ReportCapture) => Promise<{ capture: ReportCapture; redactions: Redactions }>
