@@ -79,6 +79,7 @@ export function FixPanel({ reportId, setup, onOpenSetup }: { reportId: string; s
       {run?.state === 'ready' && (
         <>
           <div className="banner" role="status"><Check size={14} /><span>A fix is ready for your review on branch <code>{run.branch}</code>. {run.checks.length ? `Checks passed: ${run.checks.map((check) => check.name).join(', ')}.` : 'Only documentation changed.'}</span></div>
+          {run.warning && <div className="banner banner--error" role="alert"><span>{run.warning}</span></div>}
           <h3 className="fix-h">Changed files</h3>
           <ul className="fix-files">{run.changed?.map((file) => <li key={file}><FileText size={13} /><code>{file}</code></li>)}</ul>
           <details className="report-preview"><summary>Show the changes</summary><pre>{run.diff}</pre></details>

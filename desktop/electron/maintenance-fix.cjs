@@ -128,6 +128,12 @@ function agentCommand(id, file, prompt) {
   return shell ? { file: quote(file), args: spec.args.map(quote), input: spec.input, shell } : { file, args: spec.args, input: spec.input, shell }
 }
 
+/** The warning for a fix whose AI stopped with an error, quoting the last thing the AI's tool said. */
+function stoppedEarlyWarning(output) {
+  const last = String(output || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean).pop() || ''
+  return `The AI stopped before it finished${last ? `: ${redactText(last.slice(0, 200)).text}` : '.'} The change may be incomplete; read it carefully before approving.`
+}
+
 /** Calls onIdle once when touch() has not been called for idleMs. stop() ends the guard. */
 function idleGuard(idleMs, onIdle, { now = Date.now, every = 15_000 } = {}) {
   let last = now()
@@ -237,6 +243,9 @@ class FixRunner {
     const agentResult = await this.runAgent(run, prompt)
     if (this.cancelled?.has(run.reportId)) { this.cancelled.delete(run.reportId); return this.finish(run, 'cancelled', 'Stopped by you.') }
     this.log(run, agentResult.ok ? 'The AI finished.' : `The AI stopped with an error (exit code ${agentResult.code}).`)
+    // An AI that stopped early (usage limit, crash) may leave a half-finished change. It is still shown
+    // when it passes the checks, but with a warning so it is reviewed as possibly unfinished.
+    if (!agentResult.ok) run.warning = stoppedEarlyWarning(agentResult.output)
 
     // What the AI wrote for the pull request, then what it changed.
     const prPath = path.join(run.worktree, PR_FILE)
@@ -396,4 +405,4 @@ class FixRunner {
   }
 }
 
-module.exports = { FixRunner, planChecks, buildPrompt, parsePrFile, isDocPath, idleGuard, agentCommand }
+module.exports = { FixRunner, planChecks, buildPrompt, parsePrFile, isDocPath, idleGuard, agentCommand, stoppedEarlyWarning }

@@ -2,6 +2,14 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const { planChecks, buildPrompt, parsePrFile, isDocPath, idleGuard, agentCommand } = require('./maintenance-fix.cjs')
 
+test('an AI that stopped early leaves a warning quoting its last line', () => {
+  const { stoppedEarlyWarning } = require('./maintenance-fix.cjs')
+  const warning = stoppedEarlyWarning("Working…\r\nYou've hit your 5-hour limit · resets 11:40pm\r\n\r\n")
+  assert.ok(warning.includes("You've hit your 5-hour limit"), warning)
+  assert.ok(warning.includes('may be incomplete'))
+  assert.ok(stoppedEarlyWarning('').startsWith('The AI stopped before it finished. '))
+})
+
 test('report text never reaches a cmd.exe command line', () => {
   const prompt = 'fix this & calc.exe | del *'
   const claude = agentCommand('claude', 'C:\\Users\\a b\\npm\\claude.cmd', prompt)

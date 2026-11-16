@@ -8,6 +8,7 @@ const { spawn } = require('node:child_process')
 const paths = require('./paths.cjs')
 const { run } = require('./platform.cjs')
 const { httpJson } = require('./services.cjs')
+const { INSTALLERS, LOGIN, installPlan, parseUrl, stream } = require('./maintenance-connect.cjs')
 
 const UPSTREAM = 'PockPock9/PockPockAgent'
 const AGENT_IDS = ['local', 'claude', 'codex', 'copilot']
@@ -15,25 +16,34 @@ const AGENT_IDS = ['local', 'claude', 'codex', 'copilot']
 const home = os.homedir()
 const env = (name) => process.env[name] || ''
 
+// winget puts portable tools (such as Claude Code) here; a running app does not see the new PATH entry.
+const WINGET_LINKS = path.join(env('LOCALAPPDATA'), 'Microsoft', 'WinGet', 'Links')
+/** Folders of winget "portable" packages whose name starts with `id`. Without Developer Mode winget
+ * makes no link in Links; it only adds the package folder to PATH, which a running app does not see. */
+function wingetPackageDirs(id) {
+  const root = path.join(env('LOCALAPPDATA'), 'Microsoft', 'WinGet', 'Packages')
+  try { return fs.readdirSync(root).filter((name) => name.toLowerCase().startsWith(`${id.toLowerCase()}_`)).map((name) => path.join(root, name)) } catch { return [] }
+}
+
 /** Where each coding agent's command-line tool is usually installed. */
 const AGENTS = {
   claude: {
     name: 'Claude Code', vendor: 'Anthropic',
     names: paths.IS_WIN ? ['claude.exe', 'claude.cmd'] : ['claude'],
-    dirs: [path.join(home, '.local', 'bin'), path.join(home, '.claude', 'local'), path.join(env('APPDATA'), 'npm'), '/opt/homebrew/bin', '/usr/local/bin'],
-    install: 'Install Claude Code (https://claude.com/claude-code), then run `claude` once in a terminal to sign in.',
+    dirs: () => [path.join(home, '.local', 'bin'), path.join(home, '.claude', 'local'), WINGET_LINKS, ...wingetPackageDirs('Anthropic.ClaudeCode'), path.join(env('APPDATA'), 'npm'), '/opt/homebrew/bin', '/usr/local/bin'],
+    install: 'Not on this PC yet. Connect installs Claude Code and opens the Anthropic sign-in page. It needs a Claude subscription or API account.',
   },
   codex: {
     name: 'OpenAI Codex', vendor: 'OpenAI',
     names: paths.IS_WIN ? ['codex.exe', 'codex.cmd'] : ['codex'],
-    dirs: [path.join(env('APPDATA'), 'npm'), path.join(home, '.local', 'bin'), '/opt/homebrew/bin', '/usr/local/bin'],
+    dirs: () => [path.join(env('APPDATA'), 'npm'), path.join(home, '.local', 'bin'), '/opt/homebrew/bin', '/usr/local/bin'],
     install: 'Install the Codex CLI (`npm install -g @openai/codex`), then run `codex` once in a terminal to sign in.',
   },
   copilot: {
     name: 'GitHub Copilot', vendor: 'GitHub',
     names: paths.IS_WIN ? ['copilot.exe', 'copilot.cmd'] : ['copilot'],
-    dirs: [path.join(env('LOCALAPPDATA'), 'GitHubCopilotCLI'), path.join(env('APPDATA'), 'npm'), path.join(home, '.local', 'bin'), '/opt/homebrew/bin', '/usr/local/bin'],
-    install: 'Install the GitHub Copilot CLI (https://github.com/features/copilot/cli), then run `copilot` once in a terminal to sign in. It needs a Copilot subscription.',
+    dirs: () => [path.join(env('LOCALAPPDATA'), 'GitHubCopilotCLI'), WINGET_LINKS, ...wingetPackageDirs('GitHub.Copilot'), path.join(env('APPDATA'), 'npm'), path.join(home, '.local', 'bin'), '/opt/homebrew/bin', '/usr/local/bin'],
+    install: 'Not on this PC yet. Connect installs the GitHub Copilot CLI and opens the GitHub sign-in page. It needs a Copilot subscription.',
   },
 }
 
@@ -55,6 +65,7 @@ class Maintenance {
     this.file = path.join(userData, 'maintenance.json')
     this.emit = emit
     this.loginChild = null
+    this.connecting = null // { id, child } while Connect is installing or signing in
   }
 
   config() {
@@ -92,26 +103,100 @@ class Maintenance {
       install: tags === null ? 'Ollama is not running. Start it on the Services page.' : 'Ollama has no models. Run Setup to download one.',
     }
     const others = await Promise.all(Object.entries(AGENTS).map(async ([id, agent]) => {
-      const file = paths.findExecutable(agent.names, agent.dirs)
+      const file = paths.findExecutable(agent.names, agent.dirs())
       let version = ''
       if (file) {
         const result = await run(file, ['--version'], { timeout: 20000, shell: /\.cmd$/i.test(file) })
         version = (result.stdout || result.stderr).trim().split('\n')[0].slice(0, 80)
       }
+      const canConnect = Boolean(INSTALLERS[id])
       return {
-        id, name: agent.name, vendor: agent.vendor, installed: Boolean(file), version,
+        id, name: agent.name, vendor: agent.vendor, installed: Boolean(file), version, canConnect,
+        signedIn: file && canConnect ? await this.signedIn(id, file) : null,
         dataNotice: `Sends the report, the parts of the PockPock code it reads, and its changes to ${agent.vendor}. Uses your own ${agent.name} account.`,
         install: agent.install,
       }
     }))
-    const order = ['local', 'copilot', 'claude', 'codex']
+    const order = ['local', 'claude', 'copilot', 'codex']
     return [local, ...others].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id))
   }
 
   /** The command-line tool of a cloud coding agent, or null when it is not installed. */
   agentPath(id) {
     const agent = AGENTS[id]
-    return agent ? paths.findExecutable(agent.names, agent.dirs) : null
+    return agent ? paths.findExecutable(agent.names, agent.dirs()) : null
+  }
+
+  /**
+   * Is the agent's CLI signed in? Claude Code answers through `claude auth status` (exit code 0).
+   * The Copilot CLI has no status command: it is signed in after `copilot login` here, or when the
+   * GitHub CLI is signed in, whose token it uses.
+   */
+  async signedIn(id, file = this.agentPath(id)) {
+    if (!file) return false
+    if (id === 'claude') return (await run(/\.cmd$/i.test(file) ? `"${file}"` : file, ['auth', 'status'], { timeout: 30000, shell: /\.cmd$/i.test(file) })).ok
+    if (id === 'copilot') {
+      if (this.config().connected?.copilot || env('COPILOT_GITHUB_TOKEN') || env('GH_TOKEN')) return true
+      const gh = this.gh()
+      return Boolean(gh) && (await run(gh, ['auth', 'token'], { timeout: 20000 })).ok
+    }
+    return null
+  }
+
+  /**
+   * Connect: install the agent's CLI when it is missing, then sign in when needed. Started only by
+   * the user's Connect button. Progress goes out as `agent-log` events; sign-in pages as `agent-url`.
+   */
+  async connectAgent(id) {
+    if (!INSTALLERS[id]) throw new Error('This AI cannot be connected from here.')
+    if (this.connecting) throw new Error('Another connection is still running.')
+    const agent = AGENTS[id]
+    const say = (line) => this.emit({ type: 'agent-log', id, line })
+    this.connecting = { id, child: null, cancelled: false }
+    const state = this.connecting
+    const onSpawn = (child) => { state.child = child }
+    try {
+      if (!this.agentPath(id)) {
+        const plan = installPlan(id, { tools: { winget: paths.IS_WIN ? paths.findExecutable(['winget.exe']) : null, brew: paths.IS_MAC ? paths.findExecutable(['brew'], ['/opt/homebrew/bin', '/usr/local/bin']) : null, npm: paths.npmCmd() } })
+        if (!plan.length) throw new Error(`${agent.name} could not be installed: ${paths.IS_WIN ? 'winget and npm are' : 'Homebrew and npm are'} both missing. Run Setup first.`)
+        for (const step of plan) {
+          say(`Installing ${agent.name} with ${step.label}…`)
+          const result = await stream(step.file, step.args, { onLine: say, onSpawn, shell: step.shell })
+          if (state.cancelled) throw new Error('Cancelled.')
+          if (this.agentPath(id)) break
+          say(`${step.label} did not install it${result.ok ? '' : ` (exit code ${result.code})`}.`)
+        }
+        if (!this.agentPath(id)) throw new Error(`${agent.name} could not be installed. See the lines above.`)
+        say(`${agent.name} is installed.`)
+      }
+      const file = this.agentPath(id)
+      // A fresh Copilot install is signed in explicitly, so it does not depend on the GitHub CLI's token.
+      const needsLogin = id === 'copilot' ? !this.config().connected?.copilot && !(await this.signedIn(id, file)) : !(await this.signedIn(id, file))
+      if (needsLogin) {
+        say(`Signing in to ${agent.vendor}. Finish in your browser…`)
+        let announced = false
+        const shell = /\.cmd$/i.test(file)
+        const result = await stream(shell ? `"${file}"` : file, LOGIN[id], { onSpawn, shell, timeout: 10 * 60 * 1000, onLine: (line) => {
+          say(line)
+          const url = parseUrl(line)
+          if (url && !announced) { announced = true; this.emit({ type: 'agent-url', id, url }) }
+        } })
+        if (state.cancelled) throw new Error('Cancelled.')
+        if (!result.ok && !(await this.signedIn(id, file))) throw new Error(`Sign-in did not finish. You can also run \`${id === 'claude' ? 'claude' : 'copilot login'}\` in a terminal, then press Check again.`)
+        say('Signed in.')
+      }
+      this.save({ connected: { ...this.config().connected, [id]: new Date().toISOString() } })
+      return this.agents()
+    } finally {
+      this.connecting = null
+    }
+  }
+
+  cancelConnect() {
+    if (!this.connecting) return false
+    this.connecting.cancelled = true
+    this.connecting.child?.kill()
+    return true
   }
 
   setAgent(choice) {

@@ -184,7 +184,7 @@ export type UpdateState = {
   canInstall: boolean // Windows installs updates itself; macOS links to the download page
   releaseUrl: string
 }
-export type MaintenanceAgent = { id: 'local' | 'claude' | 'codex' | 'copilot'; name: string; vendor: string; installed: boolean; version?: string; models?: string[]; suggested?: string; openclaw?: boolean; dataNotice: string; install: string }
+export type MaintenanceAgent = { id: 'local' | 'claude' | 'codex' | 'copilot'; name: string; vendor: string; installed: boolean; canConnect?: boolean; signedIn?: boolean | null; version?: string; models?: string[]; suggested?: string; openclaw?: boolean; dataNotice: string; install: string }
 export type GitHubAccount = { installed: boolean; loggedIn: boolean; login?: string; id?: number; canPush?: boolean; install?: string }
 export type MaintenanceStatus = {
   agent: { id: MaintenanceAgent['id']; model: string; openclaw?: boolean; chosenAt: string } | null
@@ -197,11 +197,11 @@ export type FixRun = {
   reportId: string
   state: 'running' | 'ready' | 'failed' | 'cancelled' | 'proposed' | 'none'
   agent: { id: MaintenanceAgent['id']; model: string; openclaw?: boolean }
-  branch: string; worktree: string; startedAt: number; endedAt?: number; reason?: string
+  branch: string; worktree: string; startedAt: number; endedAt?: number; reason?: string; warning?: string
   log: string[]; checks: Array<{ name: string; ok: boolean; output: string }>
   changed?: string[]; diff?: string; docsChanged?: boolean; title?: string; body?: string; prUrl?: string
 }
-export type MaintenanceEvent = { type: 'github-code'; code: string; url: string } | { type: 'clone-log'; line: string } | { type: 'fix'; run: FixRun } | { type: 'fix-log'; reportId: string; line: string }
+export type MaintenanceEvent = { type: 'github-code'; code: string; url: string } | { type: 'clone-log'; line: string } | { type: 'agent-log'; id: MaintenanceAgent['id']; line: string } | { type: 'agent-url'; id: MaintenanceAgent['id']; url: string } | { type: 'fix'; run: FixRun } | { type: 'fix-log'; reportId: string; line: string }
 export type ReportCategory = 'hang' | 'failed' | 'wrong' | 'other'
 export type ReportStatus = 'open' | 'in-progress' | 'fixed' | 'wont-fix'
 export type Redactions = { path: number; user: number; email: number; token: number }
@@ -286,6 +286,8 @@ export type DesktopBridge = {
     status: () => Promise<MaintenanceStatus>
     agents: () => Promise<MaintenanceAgent[]>
     setAgent: (choice: { id: MaintenanceAgent['id']; model?: string; openclaw?: boolean }) => Promise<unknown>
+    connectAgent: (id: MaintenanceAgent['id']) => Promise<MaintenanceAgent[]>
+    cancelConnect: () => Promise<boolean>
     github: () => Promise<GitHubAccount>
     githubLogin: () => Promise<GitHubAccount>
     cancelLogin: () => Promise<boolean>
