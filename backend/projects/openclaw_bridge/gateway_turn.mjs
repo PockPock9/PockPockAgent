@@ -135,19 +135,23 @@ function approvalEvent(kind, payload) {
   }
 }
 
-/** The default model and the tool-capable Ollama models in OpenClaw's config. */
+/** The provider PockPock adds for cloud models: its ids are "<provider>/<model>" (see docs/features/cloud-models.md). */
+const CLOUD_PROVIDER = 'pockpock-cloud'
+
+/** The default model, the tool-capable Ollama models and the cloud models in OpenClaw's config. */
 function localModels() {
   try {
     const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'))
-    const listed = config?.models?.providers?.ollama?.models
+    const usable = (listed) => (Array.isArray(listed) ? listed : [])
+      .filter((entry) => entry && typeof entry.id === 'string' && entry.compat?.supportsTools !== false)
+      .map((entry) => entry.id)
     return {
       model: String(config?.agents?.defaults?.model?.primary ?? ''),
-      models: (Array.isArray(listed) ? listed : [])
-        .filter((entry) => entry && typeof entry.id === 'string' && entry.compat?.supportsTools !== false)
-        .map((entry) => entry.id),
+      models: usable(config?.models?.providers?.ollama?.models),
+      cloud: usable(config?.models?.providers?.[CLOUD_PROVIDER]?.models),
     }
   } catch {
-    return { model: '', models: [] } // Status still reports the gateway as reachable.
+    return { model: '', models: [], cloud: [] } // Status still reports the gateway as reachable.
   }
 }
 
@@ -159,8 +163,8 @@ async function run(start) {
   if (start.statusOnly) {
     let plugin = false
     try { plugin = (await gateway.call(PLUGIN_STATUS_METHOD, {}))?.ok === true } catch { plugin = false }
-    const { model, models } = localModels()
-    finish({ type: 'status_result', gateway: true, plugin, model, models })
+    const { model, models, cloud } = localModels()
+    finish({ type: 'status_result', gateway: true, plugin, model, models: [...models, ...cloud] })
     return
   }
 
@@ -281,11 +285,12 @@ async function run(start) {
 
   // OpenClaw's own session mode is opened fully; the permission plugin applies
   // the PockPock mode to every tool call instead (see pockpock-permissions.ts).
-  // A conversation may pick one of the local models OpenClaw already knows; anything else is refused.
+  // A conversation may pick one of the local or cloud models OpenClaw already knows; anything else is refused.
   const available = localModels()
   const requested = String(start.model || '')
-  if (requested && !available.models.includes(requested)) return fail('unknown_model', `OpenClaw has no local model named "${requested}".`)
-  const sessionModel = requested ? `ollama/${requested}` : available.model
+  const isCloud = available.cloud.includes(requested)
+  if (requested && !isCloud && !available.models.includes(requested)) return fail('unknown_model', `OpenClaw has no model named "${requested}".`)
+  const sessionModel = requested ? `${isCloud ? CLOUD_PROVIDER : 'ollama'}/${requested}` : available.model
   await gateway.call('sessions.patch', { key: sessionKey, permissionMode: 'full', ...(sessionModel ? { model: sessionModel } : {}) })
   const sent = await gateway.call('chat.send', { sessionKey, message: start.message, idempotencyKey: crypto.randomUUID() })
   runId = String(sent?.runId ?? '')

@@ -40,6 +40,7 @@ from projects.model_router import (
     ChatCompletionRequest,
     ModelProviderError,
 )
+from projects.model_router.cloud import is_cloud_model
 from projects.planner.replanning import ReplanningBudget, incomplete_success_checks
 from projects.run_store.contracts import (
     DelegationContract, DelegationResult, bounded_dependency_results, build_delegate_context,
@@ -431,6 +432,11 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                 selected = None
                 checked = set()
                 timeout = aiohttp.ClientTimeout(total=10)
+                # A cloud model the user chose (and the approved plan names) is used as is; the model
+                # client refuses it if its provider is no longer connected.
+                if is_cloud_model(payload.preferred_model):
+                    selected = payload.preferred_model
+                    candidates = []
                 async with aiohttp.ClientSession(timeout=timeout) as session:
                     for candidate in candidates:
                         if not candidate or candidate in checked or candidate not in installed or candidate not in enabled:

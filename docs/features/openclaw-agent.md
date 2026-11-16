@@ -101,6 +101,8 @@ Skills and MCP servers can be added to this engine by pasting a link; see [Skill
 
 With the OpenClaw engine selected, the model picker lists **Default** (OpenClaw's configured model) and the other tool-capable Ollama models in OpenClaw's config. The choice is saved in the app's settings (`clawModel`) and sent with each message; PockPock sets it on the conversation's OpenClaw session before the turn. Choosing **Default** resets the session to OpenClaw's default. A name that is not in OpenClaw's list is refused.
 
+Cloud models chosen on the **Cloud models** page are listed below the local ones, under **Cloud models · sent to the provider**. They belong to the `pockpock-cloud` provider that PockPock writes into OpenClaw's configuration; its address is the PockPock gateway's local endpoint and its key is a local token, so no cloud API key is stored by OpenClaw. A chosen cloud model is set on the session as `pockpock-cloud/<provider>/<model>`. See [Cloud models](cloud-models.md).
+
 A model is loaded by Ollama when a turn first uses it and unloaded after Ollama's idle period (five minutes unless `OLLAMA_KEEP_ALIVE` is set). Status checks do not load a model. Switching to a model that does not fit beside the loaded one makes Ollama unload the other first.
 
 Large models that only partly fit on the GPU are slow, and OpenClaw's defaults assume a fast model. On this PC (RTX 4070 SUPER 12 GB, 31 GB RAM) `qwen3.5:27b` runs about half on the GPU at roughly 4 tokens per second, and reading a long conversation back in can take several minutes. Three settings in `~/.openclaw/openclaw.json` make that workable:

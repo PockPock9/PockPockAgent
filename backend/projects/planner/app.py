@@ -19,10 +19,16 @@ from planner.critic import review_plan
 from planner.contracts import normalized_plan_steps, normalized_subtask_plan, normalized_task_brief
 from planner.routing import choose_candidate
 from projects.model_router import ChatCompletionRequest, ModelProviderError, OllamaChatCompletionAdapter
+from projects.model_router.cloud import OpenAICompatibleAdapter, RoutingChatCompletionProvider
 
 app = FastAPI(title="PockPock Planner", docs_url=None, redoc_url=None)
 OLLAMA_URL = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
-MODEL_CLIENT = OllamaChatCompletionAdapter(OLLAMA_URL)
+# Cloud models ("<provider>/<model>") go through the gateway's local endpoint, which holds the keys.
+GATEWAY_URL = os.environ.get("POCKPOCK_GATEWAY_URL", "http://127.0.0.1:8766").rstrip("/")
+MODEL_CLIENT = RoutingChatCompletionProvider(
+    OllamaChatCompletionAdapter(OLLAMA_URL),
+    OpenAICompatibleAdapter(f"{GATEWAY_URL}/cloud/v1", os.environ.get("POCKPOCK_INTERNAL_TOKEN", "")),
+)
 LARGE_MODEL_BILLIONS = 20.0
 
 

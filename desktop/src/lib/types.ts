@@ -131,12 +131,27 @@ export type AppState = {
   router_enabled: boolean
   classifier?: string
   models: Array<Model & { calls?: number; successes?: number; avg_ms?: number | null }>
+  cloud_models?: CloudModelRef[]
   active: Array<{ model: string; role: string }>
   events?: Trace[]
   totals?: { requests?: number; calls?: number; avg_ms?: number | null }
 }
 
 export type ClawStatus = { available: boolean; ready: boolean; detail: string; plugin?: boolean; model?: string; models?: string[] }
+/** A cloud model as a provider lists it. `tools` is null when the provider does not say. */
+export type CloudModel = { id: string; name: string; contextWindow: number | null; tools?: boolean | null; free?: boolean }
+export type CloudProviderId = 'nim' | 'openrouter' | 'alibaba'
+/** A cloud provider on the Cloud page. The API key itself never reaches the page. */
+export type CloudProvider = {
+  id: CloudProviderId; name: string; about: string; keyUrl: string; keyHint: string
+  regions: Array<{ id: string; name: string }>; region: string
+  connected: boolean; needsKey: boolean; keyEnding: string; connectedAt: string | null
+  models: CloudModel[]
+}
+/** A chosen cloud model in the gateway's state: `name` is "<provider>/<model id>". */
+export type CloudModelRef = { name: string; provider: CloudProviderId; provider_label: string; context_window: number | null }
+/** NemoClaw's sandbox-wide model: a cloud model, or the sandbox's own local model. */
+export type NemoRoute = { cloud: boolean; model: string; provider: string; local: { provider?: string; model?: string }; cloud_models: string[] }
 export type NemoStatus = { available: boolean; ready: boolean; checked?: boolean; detail: string; model?: string; sandbox?: string }
 
 export type BackendPhase = { phase: 'checking' | 'starting' | 'ready' | 'missing' | 'failed' | 'stopped'; detail: string; startedByApp: boolean }
@@ -281,6 +296,14 @@ export type DesktopBridge = {
     download: () => Promise<UpdateState>
     install: () => Promise<boolean>
     onChange: (callback: (state: UpdateState) => void) => () => void
+  }
+  cloud: {
+    list: () => Promise<CloudProvider[]>
+    connect: (id: CloudProviderId, input: { key: string; region?: string }) => Promise<{ providers: CloudProvider[]; offered: CloudModel[] }>
+    available: (id: CloudProviderId) => Promise<CloudModel[]>
+    setModels: (id: CloudProviderId, models: CloudModel[]) => Promise<CloudProvider[]>
+    disconnect: (id: CloudProviderId) => Promise<CloudProvider[]>
+    onChange: (callback: (providers: CloudProvider[]) => void) => () => void
   }
   maintenance: {
     status: () => Promise<MaintenanceStatus>

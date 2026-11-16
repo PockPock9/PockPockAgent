@@ -2,10 +2,11 @@
 // workspace context, and the skill/MCP link approval flow.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { ArrowDown, ArrowUp, Box, Bot, ChevronDown, FileText, Folder, Image as ImageIcon, LoaderCircle, MessageSquare, Monitor, Paperclip, Plug, Plus, Puzzle, Shield, Sparkles, Square, Terminal, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, Box, Bot, ChevronDown, Cloud, FileText, Folder, Image as ImageIcon, LoaderCircle, MessageSquare, Monitor, Paperclip, Plug, Plus, Puzzle, Shield, Sparkles, Square, Terminal, X } from 'lucide-react'
 import type { Status } from '../lib/status'
 import { ENGINE_LABEL } from '../lib/types'
-import type { AgentPermission, AppState, Attachment, ClawPermission, Engine, Message, Session, Settings } from '../lib/types'
+import type { AgentPermission, AppState, Attachment, ClawPermission, Engine, Message, NemoRoute, Session, Settings } from '../lib/types'
+import { getJson, sendJson } from '../lib/api'
 import { ExtensionCard, inspectLink, linkFromMessage } from './ExtensionCard'
 import type { Proposal } from './ExtensionCard'
 import { EngineIcon, MessageView } from './MessageView'
@@ -48,7 +49,9 @@ function readinessError(engine: Engine, status: Status, settings: Settings, stat
   if (engine === 'chat' || engine === 'agent') {
     if (!state) return 'The PockPock backend is not answering.'
     if (!state.router_enabled) return 'The Smart Router is paused. Start it in Settings.'
-    if (!state.connected) return 'Ollama is not running. Start it in Settings.'
+    // A chat with a chosen cloud model needs nothing from Ollama. The agent still does: it classifies the task locally.
+    const cloudChat = engine === 'chat' && Boolean(state.cloud_models?.some((model) => model.name === settings.chatModel))
+    if (!state.connected && !cloudChat) return 'Ollama is not running. Start it in Settings.'
   }
   if (engine === 'openclaw') {
     if (!status.claw?.ready) return status.claw?.detail ? `OpenClaw is not ready: ${status.claw.detail}` : 'OpenClaw is still being checked.'
@@ -65,6 +68,23 @@ export function ChatPane(props: Props) {
   const agentPermission = settings.agentPermission ?? 'auto-review'
   const [draft, setDraft] = useState('')
   const [menu, setMenu] = useState<'attach' | 'engine' | 'permission' | 'model' | null>(null)
+  // NemoClaw's model belongs to its sandbox, not to a chat: it is read when NemoClaw is the engine
+  // and changed with one call. `nemoBusy` is the model being switched to ('' = the local model).
+  const [nemoRoute, setNemoRoute] = useState<NemoRoute | null>(null)
+  const [nemoBusy, setNemoBusy] = useState<string | null>(null)
+  const [nemoError, setNemoError] = useState('')
+  const nemoEngine = settings.engine === 'nemoclaw'
+  const nemoAvailable = status.nemo?.available === true
+  useEffect(() => {
+    if (!nemoEngine || !nemoAvailable) return
+    let live = true
+    getJson<NemoRoute>('/api/nemoclaw/model').then((route) => { if (live) setNemoRoute(route) }, () => undefined)
+    return () => { live = false }
+  }, [nemoEngine, nemoAvailable])
+  const chooseNemoModel = async (name: string) => {
+    setNemoBusy(name); setNemoError('')
+    try { setNemoRoute(await sendJson<NemoRoute>('/api/nemoclaw/model', { model: name }, 'PUT')); setMenu(null) } catch (reason) { setNemoError(reason instanceof Error ? reason.message : 'The sandbox model could not be changed.') } finally { setNemoBusy(null) }
+  }
   const [reporting, setReporting] = useState<Message | null>(null)
   const [error, setError] = useState('')
   const [uploading, setUploading] = useState(false)
@@ -169,11 +189,20 @@ export function ChatPane(props: Props) {
   }
 
   const models = (status.state?.models ?? []).filter((model) => model.enabled).map((model) => model.name)
-  const clawModels = status.claw?.models ?? []
+  // Cloud models are named "<provider>/<model id>"; the menus show the model id and the provider.
+  const cloudModels = status.state?.cloud_models ?? []
+  const cloudNames = new Set(cloudModels.map((model) => model.name))
+  const cloudTitle = (name: string) => name.slice(name.indexOf('/') + 1)
+  const cloudDetail = (name: string) => cloudModels.find((model) => model.name === name)?.provider_label ?? 'Cloud'
+  const clawAll = status.claw?.models ?? []
+  const clawModels = clawAll.filter((name) => !cloudNames.has(name))
+  const clawCloud = clawAll.filter((name) => cloudNames.has(name))
+  const chatModelKnown = settings.chatModel && settings.chatModel !== 'auto' && (models.includes(settings.chatModel) || cloudNames.has(settings.chatModel))
+  const shortName = (name: string) => (cloudNames.has(name) ? cloudTitle(name) : name)
   const modelLabel = engine === 'openclaw'
-    ? (settings.clawModel && clawModels.includes(settings.clawModel) ? settings.clawModel : `${status.claw?.model?.replace('ollama/', '') || 'Default'}`)
-    : engine === 'nemoclaw' ? (status.nemo?.model || 'Sandbox model')
-      : settings.chatModel && settings.chatModel !== 'auto' ? settings.chatModel : 'Smart route'
+    ? (settings.clawModel && clawAll.includes(settings.clawModel) ? shortName(settings.clawModel) : `${status.claw?.model?.replace('ollama/', '') || 'Default'}`)
+    : engine === 'nemoclaw' ? (nemoRoute?.cloud ? shortName(nemoRoute.model) : nemoRoute?.model || status.nemo?.model || 'Sandbox model')
+      : chatModelKnown ? shortName(settings.chatModel as string) : 'Smart route'
   const folderName = settings.workspace?.split(/[\\/]/).filter(Boolean).at(-1)
   const engineTone = engine === 'openclaw' ? (status.claw?.ready ? 'ok' : 'off') : engine === 'nemoclaw' ? (status.nemoChecking ? 'busy' : status.nemo?.ready ? 'ok' : 'off') : (status.state?.connected ? 'ok' : 'off')
 
@@ -277,22 +306,38 @@ export function ChatPane(props: Props) {
               )}
             </div>
             <div className="composer__right">
-              {engine !== 'nemoclaw' && (
+              {(engine !== 'nemoclaw' || cloudModels.length > 0 || nemoRoute?.cloud) && (
                 <div className="anchor">
                   <button type="button" className="pill pill--quiet" data-popover-toggle={menu === 'model' ? 'open' : undefined} onClick={() => setMenu(menu === 'model' ? null : 'model')} aria-label={`Model: ${modelLabel}`}>
                     <Sparkles size={13} /> <span className="pill__text">{modelLabel}</span> <ChevronDown size={12} />
                   </button>
                   <Popover open={menu === 'model'} onClose={() => setMenu(null)} align="right" className="popover--wide popover--scroll">
-                    {engine === 'openclaw' ? <>
+                    {engine === 'nemoclaw' ? <>
+                      <div className="popover__label">Sandbox model · applies to every NemoClaw chat</div>
+                      {nemoError && <div className="popover__note" role="alert">{nemoError}</div>}
+                      <MenuItem icon={nemoBusy === '' ? <LoaderCircle size={14} className="spin" /> : <Bot size={14} />} title={nemoRoute?.local?.model || status.nemo?.model || 'Local model'} detail="On this PC" disabled={nemoBusy !== null} selected={nemoRoute ? !nemoRoute.cloud : true} onSelect={() => void chooseNemoModel('')} />
+                      {cloudModels.length > 0 && <div className="popover__label">Cloud models · sent to the provider</div>}
+                      {cloudModels.map((model) => (
+                        <MenuItem key={model.name} icon={nemoBusy === model.name ? <LoaderCircle size={14} className="spin" /> : <Cloud size={14} />} title={cloudTitle(model.name)} detail={model.provider_label} disabled={nemoBusy !== null} selected={nemoRoute?.cloud === true && nemoRoute.model === model.name} onSelect={() => void chooseNemoModel(model.name)} />
+                      ))}
+                    </> : engine === 'openclaw' ? <>
                       <div className="popover__label">OpenClaw model · loads when used</div>
-                      <MenuItem icon={<Sparkles size={14} />} title="Default" detail={status.claw?.model?.replace('ollama/', '') || 'OpenClaw default'} selected={!settings.clawModel || !clawModels.includes(settings.clawModel)} onSelect={() => { patchSettings({ clawModel: '' }); setMenu(null) }} />
+                      <MenuItem icon={<Sparkles size={14} />} title="Default" detail={status.claw?.model?.replace('ollama/', '') || 'OpenClaw default'} selected={!settings.clawModel || !clawAll.includes(settings.clawModel)} onSelect={() => { patchSettings({ clawModel: '' }); setMenu(null) }} />
                       {clawModels.filter((name) => `ollama/${name}` !== status.claw?.model && name !== status.claw?.model).map((name) => (
                         <MenuItem key={name} icon={<Bot size={14} />} title={name} selected={settings.clawModel === name} onSelect={() => { patchSettings({ clawModel: name }); setMenu(null) }} />
                       ))}
+                      {clawCloud.length > 0 && <div className="popover__label">Cloud models · sent to the provider</div>}
+                      {clawCloud.map((name) => (
+                        <MenuItem key={name} icon={<Cloud size={14} />} title={cloudTitle(name)} detail={cloudDetail(name)} selected={settings.clawModel === name} onSelect={() => { patchSettings({ clawModel: name }); setMenu(null) }} />
+                      ))}
                     </> : <>
                       <div className="popover__label">Local models · load when used</div>
-                      <MenuItem icon={<Sparkles size={14} />} title="Smart route" detail="Pick a model for each request" selected={!settings.chatModel || settings.chatModel === 'auto'} onSelect={() => { patchSettings({ chatModel: 'auto' }); setMenu(null) }} />
+                      <MenuItem icon={<Sparkles size={14} />} title="Smart route" detail="Pick a local model for each request" selected={!chatModelKnown} onSelect={() => { patchSettings({ chatModel: 'auto' }); setMenu(null) }} />
                       {models.map((name) => <MenuItem key={name} icon={<Bot size={14} />} title={name} selected={settings.chatModel === name} onSelect={() => { patchSettings({ chatModel: name }); setMenu(null) }} />)}
+                      {cloudModels.length > 0 && <div className="popover__label">Cloud models · sent to the provider</div>}
+                      {cloudModels.map((model) => (
+                        <MenuItem key={model.name} icon={<Cloud size={14} />} title={cloudTitle(model.name)} detail={model.provider_label} selected={settings.chatModel === model.name} onSelect={() => { patchSettings({ chatModel: model.name }); setMenu(null) }} />
+                      ))}
                     </>}
                   </Popover>
                 </div>

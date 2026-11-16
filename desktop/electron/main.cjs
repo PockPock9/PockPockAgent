@@ -1,9 +1,9 @@
 // PockPock Agent desktop app: window, local server, service supervision, first-run setup, and the
 // narrow IPC surface the renderer may use (storage, services, setup, workspace files, terminal).
-const { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell, Menu } = require('electron')
+const { app, BrowserWindow, dialog, ipcMain, nativeTheme, safeStorage, shell, Menu } = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')
-const { ServiceManager } = require('./services.cjs')
+const { ServiceManager, httpJson, internalToken } = require('./services.cjs')
 const { Setup } = require('./setup.cjs')
 const { Updater } = require('./updater.cjs')
 const themes = require('./themes.cjs')
@@ -11,6 +11,8 @@ const { syncGuidance } = require('./openclaw-guidance.cjs')
 const { installedBrowsers } = require('./browsers.cjs')
 const { ReportStore, prepareCapture } = require('./reports.cjs')
 const { Maintenance } = require('./maintenance.cjs')
+const { Cloud } = require('./cloud.cjs')
+const { syncOpenClaw } = require('./cloud-openclaw.cjs')
 const { FixRunner } = require('./maintenance-fix.cjs')
 const { run } = require('./platform.cjs')
 const paths = require('./paths.cjs')
@@ -38,8 +40,34 @@ let appOrigin = ''
 let server = null
 let quitting = false
 const services = new ServiceManager({
-  onChange: (list) => { send('services:changed', list); send('backend:status', backendPhase(list)) },
+  onChange: (list) => { send('services:changed', list); send('backend:status', backendPhase(list)); cloudFollowServices(list) },
 })
+let cloud = null // cloud model providers and their encrypted keys (cloud.cjs)
+let gatewayWasUp = false
+let openclawWasUp = false
+/** The gateway keeps cloud keys only in memory, so they are sent again each time it comes up;
+ * OpenClaw's copy of the model list is refreshed when it comes up. */
+function cloudFollowServices(list) {
+  const up = (id) => list.find((item) => item.id === id)?.status === 'running'
+  const gatewayUp = up('gateway')
+  const openclawUp = up('openclaw')
+  if (cloud && gatewayUp && (!gatewayWasUp || !cloud.pushed)) void cloud.push()
+  if (cloud && openclawUp && !openclawWasUp) void syncCloudToOpenClaw()
+  gatewayWasUp = gatewayUp
+  openclawWasUp = openclawUp
+}
+let openclawSync = Promise.resolve()
+/** Writes the chosen cloud models into OpenClaw's configuration (one run at a time). */
+function syncCloudToOpenClaw() {
+  openclawSync = openclawSync.then(async () => {
+    const entry = paths.openclawEntry()
+    if (!cloud || !entry) return
+    const models = cloud.chosenModels()
+    const cli = (args) => run(entry.node, [entry.script, ...args], { timeout: 60000 })
+    try { await syncOpenClaw(cli, models, models.length ? cloud.proxyToken() : '') } catch (error) { console.error('Cloud models could not be written to OpenClaw:', error.message) }
+  })
+  return openclawSync
+}
 let autoStarting = false
 let startingDetail = '' // shown while services start, e.g. while packages are updated after an app update
 let updater = null
@@ -198,6 +226,12 @@ function registerIpc() {
   handle('reports:update', (id, change) => reports.update(id, change))
   handle('reports:delete', (id) => reports.remove(id))
   // Maintenance Manager setup (maintenance.cjs): each step is an explicit user action.
+  // Cloud model providers (cloud.cjs). API keys go in, encrypted, and never come back out.
+  handle('cloud:list', () => cloud.list())
+  handle('cloud:connect', (id, input) => cloud.connect(String(id), { key: input?.key, region: typeof input?.region === 'string' ? input.region : undefined }))
+  handle('cloud:available', (id) => cloud.available(String(id)))
+  handle('cloud:setModels', (id, models) => cloud.setModels(String(id), models))
+  handle('cloud:disconnect', (id) => cloud.disconnect(String(id)))
   handle('maintenance:status', () => maintenance.status())
   handle('maintenance:agents', () => maintenance.agents())
   handle('maintenance:setAgent', (choice) => maintenance.setAgent(choice))
@@ -358,6 +392,19 @@ if (!app.requestSingleInstanceLock()) {
     setup = new Setup({ services, userData: app.getPath('userData'), emit: (event) => send('setup:event', event) })
     reports = new ReportStore(path.join(app.getPath('userData'), 'reports'))
     maintenance = new Maintenance({ userData: app.getPath('userData'), emit: (event) => send('maintenance:event', event) })
+    cloud = new Cloud({
+      userData: app.getPath('userData'),
+      crypt: { available: () => safeStorage.isEncryptionAvailable(), encrypt: (text) => safeStorage.encryptString(text), decrypt: (data) => safeStorage.decryptString(data) },
+      internalToken,
+      onChange: () => { void syncCloudToOpenClaw(); send('cloud:changed', cloud.list()) },
+    })
+    // A gateway that restarted by itself has lost the keys it held in memory: send them again.
+    setInterval(async () => {
+      const wanted = cloud.chosenModels().length
+      if (!wanted || !gatewayWasUp) return
+      const reply = await httpJson('http://127.0.0.1:8766/api/cloud/models', 3000)
+      if (reply?.status === 200 && Array.isArray(reply.json?.models) && reply.json.models.length !== wanted) void cloud.push()
+    }, 60_000).unref()
     fixes = new FixRunner({ maintenance, reports, userData: app.getPath('userData'), emit: (event) => send('maintenance:event', event) })
     updater = new Updater({
       emit: (state) => send('updates:state', state),

@@ -8,7 +8,7 @@ import logging
 import time
 from typing import Any, Callable
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -23,12 +23,23 @@ class NemoClawChatPayload(BaseModel):
     message: str = Field(min_length=1, max_length=MAX_MESSAGE_CHARS + 2000)
 
 
+class NemoClawModelPayload(BaseModel):
+    # Empty: back to the sandbox's local model. Otherwise a connected cloud model, "<provider>/<model>".
+    model: str = Field(default="", max_length=100)
+
+
 def _sse(data: dict[str, Any]) -> str:
     return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-def create_router(bridge: NemoClawBridge, require_local: Callable[[Request], None]) -> APIRouter:
-    """Build the router. ``require_local`` is the gateway's same-PC request check."""
+def create_router(
+    bridge: NemoClawBridge,
+    require_local: Callable[[Request], None],
+    cloud_models: Callable[[], list[str]] = lambda: [],
+    cloud_token: Callable[[], str] = lambda: "",
+) -> APIRouter:
+    """Build the router. ``require_local`` is the gateway's same-PC request check; ``cloud_models``
+    lists the connected cloud model names and ``cloud_token`` gives the local cloud endpoint's token."""
 
     def local_only(request: Request) -> None:
         require_local(request)
@@ -38,6 +49,22 @@ def create_router(bridge: NemoClawBridge, require_local: Callable[[Request], Non
     @router.get("/status")
     async def nemoclaw_status(refresh: int = 0, probe: int = 1):
         return await asyncio.to_thread(bridge.status, bool(refresh), bool(probe) or bool(refresh))
+
+    @router.get("/model")
+    async def nemoclaw_model():
+        try:
+            return {**await asyncio.to_thread(bridge.route), "cloud_models": cloud_models()}
+        except NemoClawError as err:
+            raise HTTPException(status_code=err.status_code, detail=str(err)) from err
+
+    @router.put("/model")
+    async def set_nemoclaw_model(payload: NemoClawModelPayload):
+        if payload.model and payload.model not in cloud_models():
+            raise HTTPException(status_code=409, detail="That cloud model is not connected. Choose it on the Cloud page.")
+        try:
+            return {**await asyncio.to_thread(lambda: bridge.set_model(payload.model, token=cloud_token())), "cloud_models": cloud_models()}
+        except NemoClawError as err:
+            raise HTTPException(status_code=err.status_code, detail=str(err)) from err
 
     @router.post("/chat")
     async def nemoclaw_chat(payload: NemoClawChatPayload):

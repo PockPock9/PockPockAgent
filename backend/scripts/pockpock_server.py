@@ -113,6 +113,8 @@ from projects.model_router import (
     ModelProviderError,
     OllamaChatCompletionAdapter,
 )
+from projects.model_router.cloud import CloudRegistry, RegistryCloudProvider, RoutingChatCompletionProvider, is_cloud_model
+from projects.model_router.cloud_api import create_cloud_router
 from projects.observability import PromptFreeTraceAdapter, TraceSink
 from projects.run_store.contracts import (
     DelegationContract,
@@ -140,7 +142,10 @@ from smart_router import Pipe
 
 logger = logging.getLogger("pockpock")
 OLLAMA_URL = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
-MODEL_CLIENT = OllamaChatCompletionAdapter(OLLAMA_URL)
+# Cloud providers are pushed by the desktop app (keys in memory only). A model named
+# "<provider>/<model>" goes to its cloud provider; every other name is a local Ollama model.
+CLOUD_REGISTRY = CloudRegistry(extra_hosts=[host for host in os.environ.get("POCKPOCK_CLOUD_TEST_HOSTS", "").split(",") if host])
+MODEL_CLIENT = RoutingChatCompletionProvider(OllamaChatCompletionAdapter(OLLAMA_URL), RegistryCloudProvider(CLOUD_REGISTRY))
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 MAX_DOCUMENT_CHARS = 100_000
 MODEL_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$")
@@ -775,8 +780,17 @@ try:
 except ValueError as err:
     logger.warning("NemoClaw integration disabled: %s", err)
     NEMOCLAW_CONFIG = NemoClawConfig(enabled=False)
-NEMOCLAW_BRIDGE = NemoClawBridge(NEMOCLAW_CONFIG)
-api.include_router(create_nemoclaw_router(NEMOCLAW_BRIDGE, require_local_agent_request))
+NEMOCLAW_BRIDGE = NemoClawBridge(
+    NEMOCLAW_CONFIG,
+    load_state=lambda: read_setting("nemoclaw_local_route", ""),
+    save_state=lambda value: write_setting("nemoclaw_local_route", value),
+)
+api.include_router(create_nemoclaw_router(
+    NEMOCLAW_BRIDGE,
+    require_local_agent_request,
+    cloud_models=lambda: [item["name"] for item in CLOUD_REGISTRY.models()],
+    cloud_token=lambda: CLOUD_REGISTRY.proxy_token,
+))
 
 try:
     OPENCLAW_CONFIG = OpenClawConfig.from_env()
@@ -786,6 +800,7 @@ except ValueError as err:
 OPENCLAW_BRIDGE = OpenClawBridge(OPENCLAW_CONFIG)
 api.include_router(create_openclaw_router(OPENCLAW_BRIDGE, require_local_agent_request))
 api.include_router(create_extensions_router(ExtensionService(), require_local_agent_request))
+api.include_router(create_cloud_router(CLOUD_REGISTRY))
 
 
 def validate_model_name(name: str) -> str:
@@ -1180,6 +1195,7 @@ async def state():
         "router_enabled": read_setting("frog_router_enabled", "1") == "1",
         "classifier": router.valves.router_model,
         "models": inventory,
+        "cloud_models": CLOUD_REGISTRY.models(),
         "events": stats.get("events", []),
         "active": stats.get("active", []),
         "totals": stats.get("totals", {}),
@@ -1216,7 +1232,17 @@ async def plan_agent_task(payload: AgentPlanPayload, request: Request):
     if not task:
         raise HTTPException(status_code=422, detail="Describe the task before asking the agent to plan it.")
 
-    model_profiles, _ = await tool_capable_models()
+    cloud_profile = CLOUD_REGISTRY.profile(payload.preferred_model) if is_cloud_model(payload.preferred_model) else None
+    if is_cloud_model(payload.preferred_model) and cloud_profile is None:
+        raise HTTPException(status_code=409, detail="That cloud model is not connected. Choose it again on the Cloud page.")
+    try:
+        model_profiles, _ = await tool_capable_models()
+    except HTTPException:
+        if cloud_profile is None:
+            raise
+        model_profiles = []  # Ollama is not running; the chosen cloud model does not need it.
+    if cloud_profile is not None:
+        model_profiles = [*model_profiles, cloud_profile]
     if not model_profiles:
         raise HTTPException(status_code=503, detail="No enabled local model supports agent tool calls. Enable a tool-capable model in Model Room.")
     planner_url = os.environ.get("POCKPOCK_PLANNER_URL", "http://127.0.0.1:8771").rstrip("/")
@@ -2438,10 +2464,15 @@ async def chat(payload: ChatPayload):
             })
             if payload.model and payload.model != "auto":
                 model = validate_model_name(payload.model)
-                available = await installed_names()
-                if model not in available or model in disabled_models():
-                    yield sse({"type": "error", "message": "Selected model is unavailable or disabled"})
-                    return
+                if is_cloud_model(model):
+                    if not CLOUD_REGISTRY.has(model):
+                        yield sse({"type": "error", "message": "That cloud model is not connected. Choose it again on the Cloud page."})
+                        return
+                else:
+                    available = await installed_names()
+                    if model not in available or model in disabled_models():
+                        yield sse({"type": "error", "message": "Selected model is unavailable or disabled"})
+                        return
                 decision = {
                     "category": "manual",
                     "confidence": 1.0,
@@ -2449,17 +2480,20 @@ async def chat(payload: ChatPayload):
                     "reason": "Model selected manually in chat",
                     "model": model,
                 }
-                source = "manual"
+                source = "cloud" if is_cloud_model(model) else "manual"
             else:
                 heuristic = router._heuristic_check(messages[-1]["content"], messages)
                 source = "heuristic" if heuristic else "semantic"
                 decision = heuristic or await router._deep_classify(messages, request_id)
                 model = decision["model"]
 
-            installed = await ollama_json("/api/tags")
+            # A chosen cloud model needs nothing from Ollama, and is never replaced by another model.
+            installed = {"models": []} if source == "cloud" else await ollama_json("/api/tags")
             available_names = {item.get("name") for item in installed.get("models", [])}
             enabled = active_model_names(installed.get("models", []))
-            if source != "manual" and model not in enabled:
+            if source == "cloud":
+                available_names = {model}
+            elif source != "manual" and model not in enabled:
                 candidates = [name for name in enabled if name != router.valves.router_model]
                 if not candidates:
                     yield sse({"type": "error", "message": "Enable at least one response model in Model management."})
@@ -2553,6 +2587,10 @@ async def chat(payload: ChatPayload):
                 "duration_ms": round((time.monotonic() - call_started) * 1000),
             })
 
+            if not succeeded and source == "cloud":
+                # No silent switch to a local model: the user chose this cloud model.
+                yield sse({"type": "error", "message": primary_error or "The cloud model did not answer."})
+                return
             if not succeeded:
                 fallback_candidates = [name for name in enabled if name != model and name != router.valves.router_model]
                 if not fallback_candidates:
