@@ -409,6 +409,8 @@ class ExtensionService:
                 })
             configured = self.gateway.run({"op": "mcp_list"}).get("servers") or {}
             for name, server in configured.items():
+                if name == "pockpock-connectors":
+                    continue  # PockPock's own connector tools; managed on the Connectors page
                 servers.append({
                     "name": name,
                     "transport": server.get("transport"),

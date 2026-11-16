@@ -624,6 +624,41 @@ button.context-chip:hover { color: var(--text); background: var(--bg-raise); }
 .maint-openclaw em { color: var(--text-2); font-size: 12px; font-style: normal; }
 .maint-code { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--accent-border); border-radius: 8px; background: var(--accent-bg); }
 .maint-code code { font-size: 18px; font-weight: 700; letter-spacing: .08em; color: var(--text); }
+/* Connectors page */
+.connectors-search { max-width: 420px; margin-bottom: 12px; }
+.connectors-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text); font: inherit; font-size: 12.5px; }
+.connectors-search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-bg); }
+.tabs { display: flex; gap: 4px; margin-bottom: 14px; border-bottom: 1px solid var(--border); }
+.tabs button { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; margin-bottom: -1px; padding: 0 12px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--text-2); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.tabs button:hover { color: var(--text); }
+.tabs button.is-active { border-bottom-color: var(--accent); color: var(--text); }
+.tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 4px; }
+.tabs small { padding: 1px 6px; border-radius: 999px; background: var(--bg-raise); color: var(--text-2); font-size: 11px; font-weight: 600; }
+.connector-tile { display: inline-grid; flex: none; place-items: center; width: 36px; height: 36px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg-raise); color: var(--text); }
+.connectors-featured { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; margin: 0 0 6px; padding: 0; list-style: none; }
+.connector-card { display: grid; grid-template-columns: auto 1fr; gap: 10px 12px; align-items: start; width: 100%; height: 100%; padding: 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-panel); color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.connector-card:hover { border-color: var(--border-strong); }
+.connector-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.connector-card__text { display: grid; gap: 3px; min-width: 0; }
+.connector-card__text strong { font-size: 13.5px; font-weight: 650; }
+.connector-card__text > span { color: var(--text-2); font-size: 12px; line-height: 1.45; }
+.connector-action { grid-column: 2; justify-self: start; display: inline-flex; align-items: center; gap: 5px; padding: 4px 11px; border: 1px solid var(--accent-border); border-radius: 999px; color: var(--text); font-size: 12px; font-weight: 600; }
+.connector-action.is-connected { border-color: var(--border); color: var(--text-2); }
+.connector-row { align-items: center; }
+.connector-row .button { flex: none; min-width: 76px; justify-content: center; }
+.connectors-foot { margin-top: 16px; }
+.connector-detail { display: grid; gap: 12px; }
+.connector-detail > .banner, .connector-detail .card__actions { margin: 0; }
+.connector-detail__head { display: flex; align-items: center; gap: 12px; }
+.connector-detail__head .row__text { flex: 1; min-width: 0; }
+.connector-h { margin: 0 0 8px; font-size: 13px; font-weight: 650; }
+.connector-tools { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; font-size: 12.5px; }
+.connector-tools li { display: flex; align-items: center; gap: 8px; color: var(--text); }
+.connector-tools li svg { flex: none; color: var(--text-3); }
+.connector-tools li.is-write svg { color: var(--warn-text); }
+.connector-tools small { color: var(--text-2); font-size: 11.5px; }
+.connector-steps { display: grid; gap: 5px; margin: 0 0 12px; padding-left: 20px; color: var(--text-2); font-size: 12.5px; line-height: 1.5; }
+.connector-help { color: var(--text-2); font-size: 11.5px; }
 /* Cloud models page */
 .cloud-list { display: grid; gap: 14px; }
 .cloud-card { display: grid; gap: 10px; }

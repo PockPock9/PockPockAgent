@@ -115,6 +115,10 @@ from projects.model_router import (
 )
 from projects.model_router.cloud import CloudRegistry, RegistryCloudProvider, RoutingChatCompletionProvider, is_cloud_model
 from projects.model_router.cloud_api import create_cloud_router
+from projects.connectors import ConnectorService
+from projects.connectors.api import create_connectors_router
+from projects.connectors import openclaw as connector_tools
+from projects.agent_extensions.service import GatewayConfig
 from projects.observability import PromptFreeTraceAdapter, TraceSink
 from projects.run_store.contracts import (
     DelegationContract,
@@ -801,6 +805,16 @@ OPENCLAW_BRIDGE = OpenClawBridge(OPENCLAW_CONFIG)
 api.include_router(create_openclaw_router(OPENCLAW_BRIDGE, require_local_agent_request))
 api.include_router(create_extensions_router(ExtensionService(), require_local_agent_request))
 api.include_router(create_cloud_router(CLOUD_REGISTRY))
+
+# Connected apps (GitHub, email, Telegram, ...). Credentials are pushed by the desktop app and kept
+# in memory; their tools are offered to OpenClaw as the MCP server "pockpock-connectors".
+CONNECTORS = ConnectorService()
+api.include_router(create_connectors_router(CONNECTORS, on_change=lambda service: connector_tools.sync_in_background(
+    GatewayConfig().run,
+    connected=bool(service.connected_ids()),
+    port=int(os.environ.get("POCKPOCK_PORT", "8766")),
+    tool_token=service.tool_token,
+)))
 
 
 def validate_model_name(name: str) -> str:

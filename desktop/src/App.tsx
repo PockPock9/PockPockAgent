@@ -10,6 +10,7 @@ import { TerminalPanel } from './components/TerminalPanel'
 import { McpPage, MemoryPage, ModelsPage, SettingsPage, SkillsPage } from './pages/Pages'
 import { MaintenancePage } from './pages/MaintenancePage'
 import { CloudPage } from './pages/CloudPage'
+import { ConnectorsPage } from './pages/ConnectorsPage'
 import { ActivityPage } from './pages/ActivityPage'
 import { RecipesPage } from './pages/RecipesPage'
 import { ResearchPage } from './pages/ResearchPage'
@@ -210,6 +211,7 @@ export default function App() {
         {page === 'mcp' && <McpPage status={status} />}
         {page === 'models' && <ModelsPage status={status} />}
         {page === 'cloud' && <CloudPage status={status} />}
+        {page === 'connectors' && <ConnectorsPage />}
         {page === 'memory' && <MemoryPage />}
         {page === 'settings' && <SettingsPage status={status} info={info} onOpen={(next) => setPage(next)} updates={updates} settings={settings} patchSettings={patch} />}
         {page === 'recipes' && <RecipesPage />}

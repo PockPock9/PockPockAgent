@@ -1,6 +1,6 @@
 // Window chrome: title bar, sidebar (chats and customizations), and status bar.
 import { useMemo, useState } from 'react'
-import { Activity, Brain, Cloud, Download, Folder, Wrench, Globe, Globe2, MessageSquarePlus, PanelBottom, PanelLeft, PanelRight, Plug, Puzzle, Search, Server, ServerCog, Settings as SettingsIcon, Trash2 } from 'lucide-react'
+import { Activity, Brain, Cable, Cloud, Download, Folder, Wrench, Globe, Globe2, MessageSquarePlus, PanelBottom, PanelLeft, PanelRight, Plug, Puzzle, Search, Server, ServerCog, Settings as SettingsIcon, Trash2 } from 'lucide-react'
 import { relativeTime } from '../lib/api'
 import type { Status } from '../lib/status'
 import type { Session, Settings } from '../lib/types'
@@ -9,7 +9,7 @@ import { Dot, IconButton } from './ui'
 import { Mark } from './Mark'
 import { mod } from '../lib/platform'
 
-export type Page = 'chat' | 'skills' | 'mcp' | 'models' | 'cloud' | 'memory' | 'research' | 'recipes' | 'activity' | 'maintenance' | 'services' | 'settings'
+export type Page = 'chat' | 'skills' | 'mcp' | 'connectors' | 'models' | 'cloud' | 'memory' | 'research' | 'recipes' | 'activity' | 'maintenance' | 'services' | 'settings'
 
 export function TitleBar({ settings, onToggle, onChooseFolder }: {
   settings: Settings
@@ -76,6 +76,7 @@ export function Sidebar({ overlay, sessions, activeId, page, running, status, on
     { page: 'activity', icon: <Activity size={15} />, label: 'Activity' },
     { page: 'skills', icon: <Puzzle size={15} />, label: 'Skills', count: status.counts?.skills },
     { page: 'mcp', icon: <Plug size={15} />, label: 'MCP servers', count: status.counts?.mcp },
+    { page: 'connectors', icon: <Cable size={15} />, label: 'Connectors' },
     { page: 'models', icon: <Server size={15} />, label: 'Models', count: enabledModels },
     { page: 'cloud', icon: <Cloud size={15} />, label: 'Cloud models', count: status.state?.cloud_models?.length || undefined },
     { page: 'memory', icon: <Brain size={15} />, label: 'Memory' },
