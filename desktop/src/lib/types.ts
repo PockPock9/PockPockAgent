@@ -184,6 +184,20 @@ export type UpdateState = {
   canInstall: boolean // Windows installs updates itself; macOS links to the download page
   releaseUrl: string
 }
+export type ReportCategory = 'hang' | 'failed' | 'wrong' | 'other'
+export type ReportStatus = 'open' | 'in-progress' | 'fixed' | 'wont-fix'
+export type Redactions = { path: number; user: number; email: number; token: number }
+/** One reported exchange, as captured by lib/reports.ts and redacted by electron/reports.cjs. */
+export type ReportCapture = {
+  appVersion: string; platform: string; engine: string; model: string; chatTitle: string; createdAt?: number
+  userMessage: string; attachments: string[]; reply: string; status: string; notice: string
+  plan?: { goal: string; steps: string[]; status: string }
+  steps: Array<{ label: string; status: string; detail: string; ms?: number }>
+  approvals: Array<{ title: string; description: string; status: string }>
+  timing: Array<{ label: string; ms?: number }>
+}
+export type Report = { id: string; createdAt: number; updatedAt: number; category: ReportCategory; description: string; status: ReportStatus; capture: ReportCapture; redactions: Redactions }
+export type ReportSummary = Omit<Report, 'capture'> & { engine: string; chatTitle: string }
 export type ModelChoice = { name: string; downloadGB: number; summary: string }
 export type SetupStatus = {
   platform: string
@@ -249,6 +263,14 @@ export type DesktopBridge = {
     download: () => Promise<UpdateState>
     install: () => Promise<boolean>
     onChange: (callback: (state: UpdateState) => void) => () => void
+  }
+  reports: {
+    preview: (capture: ReportCapture) => Promise<{ capture: ReportCapture; redactions: Redactions }>
+    create: (input: { category: ReportCategory; description: string; capture: ReportCapture }) => Promise<Report>
+    list: () => Promise<ReportSummary[]>
+    get: (id: string) => Promise<Report>
+    update: (id: string, change: Partial<Pick<Report, 'category' | 'description' | 'status'>>) => Promise<Report>
+    delete: (id: string) => Promise<boolean>
   }
   theme: {
     set: (id: string) => Promise<string>

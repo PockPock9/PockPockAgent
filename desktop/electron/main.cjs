@@ -9,6 +9,7 @@ const { Updater } = require('./updater.cjs')
 const themes = require('./themes.cjs')
 const { syncGuidance } = require('./openclaw-guidance.cjs')
 const { installedBrowsers } = require('./browsers.cjs')
+const { ReportStore, prepareCapture } = require('./reports.cjs')
 const { run } = require('./platform.cjs')
 const paths = require('./paths.cjs')
 
@@ -42,6 +43,7 @@ let startingDetail = '' // shown while services start, e.g. while packages are u
 let updater = null
 let themeSetting = themes.DEFAULT // the saved choice, which may be "system"
 let setup = null // created once the app data folder is known
+let reports = null // problem reports, in <userData>/reports
 
 /** The renderer's view of the backend: the gateway's state, or why it is not up. */
 function backendPhase(list = services.list()) {
@@ -183,6 +185,14 @@ function registerIpc() {
     await openclawCli(['browser', 'stop'], 30000).catch(() => undefined)
     return id
   })
+  // Problem reports (see reports.cjs). The store validates ids, categories and sizes and redacts
+  // personal details; preview shows the user exactly what would be saved.
+  handle('reports:preview', (capture) => prepareCapture(capture))
+  handle('reports:create', (input) => reports.create(input && typeof input === 'object' ? input : {}))
+  handle('reports:list', () => reports.list())
+  handle('reports:get', (id) => reports.get(id))
+  handle('reports:update', (id, change) => reports.update(id, change))
+  handle('reports:delete', (id) => reports.remove(id))
   handle('theme:set', (id) => {
     if (!themes.IDS.includes(id)) throw new Error('Unknown theme.')
     themeSetting = id
@@ -318,6 +328,7 @@ if (!app.requestSingleInstanceLock()) {
     // Windows uses the app's own title bar. macOS needs a menu bar for Cmd+C/V/X/A/Z, Cmd+Q and Cmd+W.
     Menu.setApplicationMenu(paths.IS_MAC ? Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { label: 'View', submenu: [{ role: 'reload' }, { role: 'toggleDevTools' }, { type: 'separator' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' }, { role: 'togglefullscreen' }] }, { role: 'windowMenu' }]) : null)
     setup = new Setup({ services, userData: app.getPath('userData'), emit: (event) => send('setup:event', event) })
+    reports = new ReportStore(path.join(app.getPath('userData'), 'reports'))
     updater = new Updater({
       emit: (state) => send('updates:state', state),
       autoDownload: () => readSettings().updates?.autoDownload !== false,

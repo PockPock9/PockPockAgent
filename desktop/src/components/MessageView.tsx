@@ -1,7 +1,7 @@
 // One message in the conversation: the user's prompt, or an assistant turn with its activity,
 // plan review, approvals, reply, and produced files.
 import { useState } from 'react'
-import { AlertTriangle, Bookmark, Box, Bot, Check, ChevronRight, CircleSlash, Copy, FileText, FolderOpen, Globe, Image as ImageIcon, LoaderCircle, MessageSquare, Pencil, RefreshCw, Shield, Terminal, X } from 'lucide-react'
+import { AlertTriangle, Bookmark, Flag, Box, Bot, Check, ChevronRight, CircleSlash, Copy, FileText, FolderOpen, Globe, Image as ImageIcon, LoaderCircle, MessageSquare, Pencil, RefreshCw, Shield, Terminal, X } from 'lucide-react'
 import { relativeTime, sendJson } from '../lib/api'
 import { decideApproval, decidePlan } from '../lib/engines'
 import { bridge, ENGINE_LABEL } from '../lib/types'
@@ -190,7 +190,7 @@ function ResearchCard({ block }: { block: ResearchBlock }) {
   )
 }
 
-export function MessageView({ message, live, onChange }: { message: Message; live: boolean; onChange: (next: Message) => void }) {
+export function MessageView({ message, live, onChange, onReport }: { message: Message; live: boolean; onChange: (next: Message) => void; onReport?: () => void }) {
   const [copied, setCopied] = useState(false)
   const now = useNow(live)
   if (message.role === 'user') {
@@ -247,6 +247,7 @@ export function MessageView({ message, live, onChange }: { message: Message; liv
       {!live && (
         <div className="message__footer">
           {message.content && <button type="button" className="icon-button icon-button--small" onClick={copy} aria-label="Copy reply" title="Copy reply">{copied ? <Check size={13} /> : <Copy size={13} />}</button>}
+          {onReport && <button type="button" className="icon-button icon-button--small" onClick={onReport} aria-label="Report a problem with this reply" title="Report a problem with this reply"><Flag size={13} /></button>}
           <span>{message.status === 'stopped' ? 'Stopped · ' : ''}{relativeTime(message.createdAt)}</span>
           {phases && (
             <span className="message__timing" aria-label="Time taken">
