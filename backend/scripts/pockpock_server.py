@@ -133,6 +133,8 @@ from projects.run_store.delegation_scheduler import (
 )
 from projects.agent_extensions.api import create_router as create_extensions_router
 from projects.agent_extensions.service import ExtensionService
+from projects.integrations.api import create_router as create_integrations_router
+from projects.integrations.service import IntegrationService
 from projects.nemoclaw_bridge.api import create_router as create_nemoclaw_router
 from projects.nemoclaw_bridge.bridge import NemoClawBridge, NemoClawConfig
 from projects.openclaw_bridge.api import create_router as create_openclaw_router
@@ -182,6 +184,10 @@ async def protect_api_requests(request, call_next):
     route_key = (request.method, request.url.path)
     if request.url.path.startswith("/api/models/") and request.method == "PUT":
         route_key = ("PUT", "/api/models")
+    elif request.url.path.startswith("/api/integrations/"):
+        suffix = request.url.path[len("/api/integrations/"):]
+        action = suffix.split("/", 1)[1] if "/" in suffix else ""
+        route_key = (request.method, f"/api/integrations/:id/{action}" if action else "/api/integrations/:id")
     elif route_key not in RATE_LIMITS:
         route_key = (request.method, "/api/other")
     limit, window_seconds = RATE_LIMITS.get(route_key, (300, 60))
@@ -569,6 +575,11 @@ RATE_LIMITS = {
     ("POST", "/api/extensions/cancel"): (30, 60),
     ("POST", "/api/extensions/remove"): (20, 60),
     ("POST", "/api/extensions/toggle"): (60, 60),
+    ("GET", "/api/integrations"): (60, 60),
+    ("GET", "/api/integrations/:id"): (60, 60),
+    ("POST", "/api/integrations/:id/toggle"): (30, 60),
+    ("POST", "/api/integrations/:id/connect"): (10, 60),
+    ("POST", "/api/integrations/:id/disconnect"): (30, 60),
     ("POST", "/api/files"): (20, 60),
     ("POST", "/api/agents/run"): (3, 60),
     ("GET", "/api/agents/status"): (30, 60),
@@ -799,7 +810,103 @@ except ValueError as err:
     OPENCLAW_CONFIG = OpenClawConfig(enabled=False)
 OPENCLAW_BRIDGE = OpenClawBridge(OPENCLAW_CONFIG)
 api.include_router(create_openclaw_router(OPENCLAW_BRIDGE, require_local_agent_request))
-api.include_router(create_extensions_router(ExtensionService(), require_local_agent_request))
+EXTENSION_SERVICE = ExtensionService()
+api.include_router(create_extensions_router(EXTENSION_SERVICE, require_local_agent_request))
+
+
+class _IntegrationEnabledStore:
+    """Per-integration on/off flags, persisted in gateway settings."""
+
+    @staticmethod
+    def get_enabled(integration_id: str) -> bool:
+        return read_setting(f"integration_{integration_id}_enabled", "1") != "0"
+
+    @staticmethod
+    def set_enabled(integration_id: str, enabled: bool) -> None:
+        write_setting(f"integration_{integration_id}_enabled", "1" if enabled else "0")
+
+
+class _IntegrationAccountStore:
+    """External-connector accounts, persisted in gateway settings.
+
+    Keys are ``integration_<id>_account``, ``integration_<id>_auth_method``
+    and ``integration_<id>_credential``; clearing writes empty strings (the
+    settings table has no delete). ``get`` never returns the credential.
+    ``verified`` is derived, not stored: only GitHub is live-verified, and
+    its credential is stored only after a successful token check, so a
+    stored GitHub credential means verified.
+    """
+
+    @staticmethod
+    def get(integration_id: str) -> dict[str, object] | None:
+        account = read_setting(f"integration_{integration_id}_account", "")
+        if not account:
+            return None
+        credential = read_setting(f"integration_{integration_id}_credential", "")
+        return {
+            "account": account,
+            "auth_method": read_setting(f"integration_{integration_id}_auth_method", ""),
+            "verified": integration_id == "github" and bool(credential),
+        }
+
+    @staticmethod
+    def get_credential(integration_id: str) -> str | None:
+        credential = read_setting(f"integration_{integration_id}_credential", "")
+        return credential or None
+
+    @staticmethod
+    def set(
+        integration_id: str,
+        account: str,
+        auth_method: str,
+        credential: str | None = None,
+        verified: bool = False,
+    ) -> None:
+        write_setting(f"integration_{integration_id}_account", account)
+        write_setting(f"integration_{integration_id}_auth_method", auth_method)
+        write_setting(f"integration_{integration_id}_credential", credential or "")
+
+    @staticmethod
+    def clear(integration_id: str) -> None:
+        write_setting(f"integration_{integration_id}_account", "")
+        write_setting(f"integration_{integration_id}_auth_method", "")
+        write_setting(f"integration_{integration_id}_credential", "")
+
+
+async def _integration_ollama_tags() -> dict[str, Any] | None:
+    try:
+        return await ollama_json("/api/tags")
+    except Exception:
+        return None
+
+
+async def _integration_browser_health() -> dict[str, Any] | None:
+    # Cheap GET on the browser-automation service; None when it is not
+    # configured or does not answer, which the service reports as needs_setup.
+    try:
+        return await proxy_browser_recipe("GET", "/health", timeout_seconds=3)
+    except Exception:
+        return None
+
+
+api.include_router(create_integrations_router(
+    IntegrationService(
+        ollama_tags=_integration_ollama_tags,
+        # NemoClaw status with probe=False: listing integrations must not load
+        # a sandbox model; the sandbox is checked when NemoClaw is selected.
+        openclaw_status=lambda: asyncio.to_thread(OPENCLAW_BRIDGE.status),
+        nemoclaw_status=lambda: asyncio.to_thread(NEMOCLAW_BRIDGE.status, False, False),
+        extensions_list=EXTENSION_SERVICE.list,
+        research_provider=research_provider,
+        set_research_provider=lambda value: write_setting("frog_research_provider", value),
+        cloud_models=lambda: [item["name"] for item in CLOUD_REGISTRY.models()],
+        enabled_store=_IntegrationEnabledStore(),
+        account_store=_IntegrationAccountStore(),
+        ollama_start=lambda: start_ollama(),
+        browser_health=_integration_browser_health,
+    ),
+    require_local_agent_request,
+))
 api.include_router(create_cloud_router(CLOUD_REGISTRY))
 
 

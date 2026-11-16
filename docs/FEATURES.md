@@ -24,6 +24,7 @@ This index points to detailed feature contracts. Every new feature or change to 
 - [NemoClaw agent mode](features/nemoclaw-agent.md)
 - [OpenClaw agent mode and permission modes](features/openclaw-agent.md)
 - [Agent engines, skills, and MCP servers](features/agent-extensions.md)
+- [Integration Management](features/integration-management.md)
 - [PockPock Agent desktop app](features/desktop-app.md)
 
 ## Desktop app and setup

@@ -717,6 +717,47 @@ button.context-chip:hover { color: var(--text); background: var(--bg-raise); }
 .page__actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .row__actions { display: flex; align-items: center; gap: 6px; flex: none; }
 .row__error { color: var(--err-text) !important; }
+/* Integrations: the row header is a button that expands the detail panel. */
+.integration-row { display: flex; align-items: flex-start; gap: 12px; width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.integration-row__text { display: grid; gap: 2px; flex: 1; min-width: 0; }
+.integration-row__text strong { font-weight: 500; }
+.integration-row__text > span { color: var(--text-3); font-size: 12px; overflow-wrap: anywhere; }
+.integration-row__chevron { flex: none; margin-top: 3px; color: var(--text-3); transition: transform .15s ease; }
+.integration-row__chevron.is-open { transform: rotate(180deg); }
+.integration-detail { display: grid; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); color: var(--text-2); font-size: 12.5px; }
+.integration-detail strong { font-weight: 600; }
+.integration-detail ul { display: grid; gap: 2px; margin: 0; padding-left: 16px; }
+.integration-detail ol { display: grid; gap: 2px; margin: 0; padding-left: 18px; }
+.integration-detail p { margin: 0; }
+.integration-detail .row__actions { margin-top: 4px; }
+/* Connectors: back arrow, search, Available/Connected tabs, featured cards,
+   icon tiles (letter marks in token colours — no trademarked logos), group
+   "See all", and the external connect form. */
+.page__back { flex: none; margin-top: 2px; }
+.connectors-search { margin-bottom: 12px; }
+.connectors-search input { color: var(--text); }
+.segmented { display: inline-flex; gap: 2px; margin-bottom: 6px; padding: 2px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-panel); }
+.segmented button { min-height: 30px; padding: 0 12px; border: 0; border-radius: 6px; background: transparent; color: var(--text-2); font: inherit; font-size: 13px; cursor: pointer; }
+.segmented button:hover:not(.is-active) { color: var(--text); }
+.segmented button.is-active { background: var(--bg-active); color: var(--text); font-weight: 600; }
+.segmented button small { color: var(--text-3); font-weight: 400; }
+.tile { display: inline-grid; flex: none; place-items: center; width: 36px; height: 36px; border-radius: 10px; font-size: 13px; font-weight: 600; }
+.tile--lg { width: 56px; height: 56px; border-radius: 14px; font-size: 20px; }
+.tile--0 { background: var(--accent-bg); color: var(--accent-strong); }
+.tile--1 { background: var(--ok-bg); color: var(--ok-text); }
+.tile--2 { background: var(--warn-bg); color: var(--warn-text); }
+.tile--3 { background: var(--err-bg); color: var(--err-text); }
+.tile--4 { background: var(--bg-raise); color: var(--text-2); }
+.integration-row .tile { margin-top: 1px; }
+.connectors-featured { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.connector-featured { padding: 12px 14px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg-panel); }
+.connector-featured__head { display: flex; align-items: flex-start; gap: 12px; width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.connector-featured__text { display: grid; gap: 2px; flex: 1; min-width: 0; }
+.connector-featured__text strong { font-weight: 500; }
+.connector-featured__text > span { color: var(--text-3); font-size: 12px; overflow-wrap: anywhere; }
+.see-all { display: inline-flex; align-items: center; gap: 1px; min-height: 30px; margin-left: auto; padding: 0; border: 0; background: none; color: var(--accent-strong); font: inherit; font-size: 13px; cursor: pointer; }
+.connect-form { display: grid; gap: 8px; max-width: 520px; margin-top: 4px; }
+@media (max-width: 600px) { .connectors-featured { grid-template-columns: 1fr; } }
 .row--error { border-color: var(--err-border); }
 .row__icon--error { color: var(--err); }
 .service-row { align-items: center; }

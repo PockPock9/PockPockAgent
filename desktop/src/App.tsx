@@ -8,6 +8,7 @@ import { Sidebar, StatusBar, TitleBar } from './components/Shell'
 import type { Page } from './components/Shell'
 import { TerminalPanel } from './components/TerminalPanel'
 import { McpPage, MemoryPage, ModelsPage, SettingsPage, SkillsPage } from './pages/Pages'
+import { IntegrationsPage } from './pages/IntegrationsPage'
 import { MaintenancePage } from './pages/MaintenancePage'
 import { CloudPage } from './pages/CloudPage'
 import { ActivityPage } from './pages/ActivityPage'
@@ -206,6 +207,7 @@ export default function App() {
             onChangeMessage={changeMessage} onChooseFolder={() => void chooseFolder()} onOpenPage={openPage}
             pendingAttachments={attachments} setPendingAttachments={setAttachments} focusSignal={focusSignal} />
         )}
+        {page === 'integrations' && <IntegrationsPage status={status} onOpen={(next) => setPage(next)} onBack={() => setPage('chat')} />}
         {page === 'skills' && <SkillsPage status={status} />}
         {page === 'mcp' && <McpPage status={status} />}
         {page === 'models' && <ModelsPage status={status} />}

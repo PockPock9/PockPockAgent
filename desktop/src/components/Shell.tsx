@@ -9,7 +9,7 @@ import { Dot, IconButton } from './ui'
 import { Mark } from './Mark'
 import { mod } from '../lib/platform'
 
-export type Page = 'chat' | 'skills' | 'mcp' | 'models' | 'cloud' | 'memory' | 'research' | 'recipes' | 'activity' | 'maintenance' | 'services' | 'settings'
+export type Page = 'chat' | 'integrations' | 'skills' | 'mcp' | 'models' | 'cloud' | 'memory' | 'research' | 'recipes' | 'activity' | 'maintenance' | 'services' | 'settings'
 
 export function TitleBar({ settings, onToggle, onChooseFolder }: {
   settings: Settings
@@ -74,6 +74,7 @@ export function Sidebar({ overlay, sessions, activeId, page, running, status, on
   const nav: Array<{ page: Page; icon: React.ReactNode; label: string; count?: number | string; tone?: string }> = [
     { page: 'recipes', icon: <Globe size={15} />, label: 'Browser recipes' },
     { page: 'activity', icon: <Activity size={15} />, label: 'Activity' },
+    { page: 'integrations', icon: <Plug size={15} />, label: 'Connectors' },
     { page: 'skills', icon: <Puzzle size={15} />, label: 'Skills', count: status.counts?.skills },
     { page: 'mcp', icon: <Plug size={15} />, label: 'MCP servers', count: status.counts?.mcp },
     { page: 'models', icon: <Server size={15} />, label: 'Models', count: enabledModels },

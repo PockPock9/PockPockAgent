@@ -1,7 +1,7 @@
 // Customize pages: Skills, MCP servers, Models, Memory, Settings.
 import { useCallback, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Brain, ChevronDown, Download, Globe, LoaderCircle, Palette, Plug, Power, Puzzle, RefreshCw, Server, Trash2 } from 'lucide-react'
+import { ArrowLeft, Brain, ChevronDown, Download, Globe, LoaderCircle, Palette, Plug, Power, Puzzle, RefreshCw, Server, Trash2 } from 'lucide-react'
 import { ExtensionCard, inspectLink } from '../components/ExtensionCard'
 import type { Proposal } from '../components/ExtensionCard'
 import { Empty, MenuItem, Popover } from '../components/ui'
@@ -13,11 +13,12 @@ import { updateSummary } from '../lib/updates'
 import { THEMES, validTheme } from '../lib/theme'
 import type { Updates } from '../lib/updates'
 
-export function PageFrame({ title, eyebrow, intro, children, actions }: { title: string; eyebrow: string; intro: string; children: ReactNode; actions?: ReactNode }) {
+export function PageFrame({ title, eyebrow, intro, children, actions, onBack }: { title: string; eyebrow: string; intro: string; children: ReactNode; actions?: ReactNode; onBack?: () => void }) {
   return (
     <div className="page">
       <div className="page__inner">
         <header className="page__head">
+          {onBack && <button type="button" className="icon-button page__back" aria-label="Back" onClick={onBack}><ArrowLeft size={16} /></button>}
           <div><span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p>{intro}</p></div>
           {actions}
         </header>

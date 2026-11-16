@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 BACKEND = Path(__file__).resolve().parents[1]
-PACKAGES = ["agent_core", "agent_extensions", "agent_tools", "local_memory", "model_router", "nemoclaw_bridge", "observability", "openclaw_bridge"]
+PACKAGES = ["agent_core", "agent_extensions", "agent_tools", "integrations", "local_memory", "model_router", "nemoclaw_bridge", "observability", "openclaw_bridge"]
 SERVICES = ["planner", "run_store", "browser_automation", "validator"]
 
 
