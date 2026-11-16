@@ -1,3 +1,5 @@
+<p align="center"><img src="design-system/brand/png/pockpock-icon-128.png" width="96" height="96" alt=""></p>
+
 # PockPock Agent
 
 [![CI](https://github.com/PockPock9/PockPockAgent/actions/workflows/ci.yml/badge.svg)](https://github.com/PockPock9/PockPockAgent/actions/workflows/ci.yml)
@@ -25,11 +27,17 @@ PockPock is a local AI workspace for Windows and macOS. Its desktop app, **PockP
 |---|---|
 | ![Approval card with the diff of a new file](docs/images/agent-approval.png) | ![OpenClaw asking before it runs a command](docs/images/openclaw-approval.png) |
 
-**The agent checks its own work.** Before reporting a task done, the agent validates the result against the plan's success checks and lists every file it changed or produced.
+**The agent checks its own work.** Before reporting a task done, the agent validates the result against the plan's success checks and lists every file it changed or produced. Under every reply you see where the time went: planning, waiting for you, and working.
+
+**You can always see it working.** While an agent thinks, plans or runs a tool, the bolt of the PockPock mark pulses next to what it is doing, with a running timer, and a thin bar sweeps across the composer. It never just sits there.
 
 ![Finished task with validation results and the changed file](docs/images/agent-done.png)
 
 **Skills and MCP servers from a link.** Paste a GitHub skill link or an MCP server address. PockPock shows what it would install, adds it only after you approve, and lets you switch each one off without removing it.
+
+**Five themes.** **PockPock Dark** (the default), **Volt** and **Storm** in the brand's colours, **Feather** for light mode, and **System**, which follows your computer. Every theme meets WCAG AA contrast. Pick one in **Settings → Theme**.
+
+![The same plan review in PockPock Dark, Volt, Storm and Feather](docs/images/themes.png)
 
 **One app runs everything.** Ollama, the backend services and the agent engines start with the app. Start, stop, restart, or read the logs of each one from the **Services** page.
 
