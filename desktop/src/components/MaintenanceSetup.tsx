@@ -12,7 +12,7 @@ export function MaintenanceSetup({ status, onChange }: { status: MaintenanceStat
   const desktop = bridge()
   const [editing, setEditing] = useState(!status.ready)
   const [agents, setAgents] = useState<MaintenanceAgent[] | null>(null)
-  const [choice, setChoice] = useState<{ id: MaintenanceAgent['id']; model: string } | null>(status.agent ? { id: status.agent.id, model: status.agent.model } : null)
+  const [choice, setChoice] = useState<{ id: MaintenanceAgent['id']; model: string; openclaw?: boolean } | null>(status.agent ? { id: status.agent.id, model: status.agent.model, openclaw: status.agent.openclaw === true } : null)
   const [github, setGithub] = useState<GitHubAccount | null>(null)
   const [deviceCode, setDeviceCode] = useState<{ code: string; url: string } | null>(null)
   const [signingIn, setSigningIn] = useState(false)
@@ -64,7 +64,7 @@ export function MaintenanceSetup({ status, onChange }: { status: MaintenanceStat
       <section className="card maint-summary" aria-labelledby="maint-title">
         <header><Sparkles size={15} /><strong id="maint-title">Maintenance Manager is set up</strong></header>
         <dl className="setup-facts">
-          <div><dt>AI</dt><dd>{status.agent?.id === 'local' ? `PockPock itself, with ${status.agent.model}` : chosenAgent?.name ?? status.agent?.id}</dd></div>
+          <div><dt>AI</dt><dd>{status.agent?.id === 'local' ? `PockPock itself, with ${status.agent.model}${status.agent.openclaw ? ', running commands through OpenClaw' : ' (reads and edits files only)'}` : chosenAgent?.name ?? status.agent?.id}</dd></div>
           <div><dt>Copy of PockPock</dt><dd><code>{status.repo?.dir}</code>{status.repo?.fork ? ` (your fork of ${UPSTREAM})` : ''}</dd></div>
         </dl>
         <div className="row maint-auto">
@@ -91,19 +91,28 @@ export function MaintenanceSetup({ status, onChange }: { status: MaintenanceStat
             <fieldset className="report-categories">
               <legend className="visually-hidden">AI for maintenance</legend>
               {agents.map((agent) => (
-                <label key={agent.id} className={`${choice?.id === agent.id ? 'is-chosen' : ''}${agent.installed ? '' : ' is-disabled'}`}>
-                  <input type="radio" name="maint-agent" value={agent.id} disabled={!agent.installed} checked={choice?.id === agent.id}
-                    onChange={() => setChoice({ id: agent.id, model: agent.id === 'local' ? (choice?.model || agent.suggested || '') : '' })} />
-                  <span>
-                    <strong>{agent.name}{agent.installed ? <small className="badge badge--ok">{agent.version || 'Ready'}</small> : <small className="badge badge--off">Not installed</small>}</strong>
-                    <em>{agent.installed ? agent.dataNotice : agent.install}</em>
-                    {agent.id === 'local' && agent.installed && choice?.id === 'local' && (
-                      <select className="input input--inline" aria-label="Local model" value={choice.model} onChange={(event) => setChoice({ id: 'local', model: event.target.value })}>
+                <div key={agent.id} className="maint-agent">
+                  <label className={`${choice?.id === agent.id ? 'is-chosen' : ''}${agent.installed ? '' : ' is-disabled'}`}>
+                    <input type="radio" name="maint-agent" value={agent.id} disabled={!agent.installed} checked={choice?.id === agent.id}
+                      onChange={() => setChoice({ id: agent.id, model: agent.id === 'local' ? (choice?.model || agent.suggested || '') : '', openclaw: agent.id === 'local' ? choice?.openclaw : undefined })} />
+                    <span>
+                      <strong>{agent.name}{agent.installed ? <small className="badge badge--ok">{agent.version || 'Ready'}</small> : <small className="badge badge--off">Not installed</small>}</strong>
+                      <em>{agent.installed ? agent.dataNotice : agent.install}</em>
+                    </span>
+                  </label>
+                  {agent.id === 'local' && agent.installed && choice?.id === 'local' && (
+                    <div className="maint-agent__options">
+                      <select className="input input--inline" aria-label="Local model" value={choice.model} onChange={(event) => setChoice({ ...choice, model: event.target.value })}>
                         {agent.models?.map((model) => <option key={model} value={model}>{model}{model === agent.suggested ? ' (suggested)' : ''}</option>)}
                       </select>
-                    )}
-                  </span>
-                </label>
+                      <span className="maint-openclaw">
+                        <input type="checkbox" id="maint-openclaw" checked={choice.openclaw === true} disabled={!agent.openclaw} onChange={(event) => setChoice({ ...choice, openclaw: event.target.checked })} />
+                        <label htmlFor="maint-openclaw"><strong>Use OpenClaw, so PockPock can run commands</strong>
+                          <em>{agent.openclaw ? 'It can build, run the tests and try the app while fixing, with full access inside the working copy. Without OpenClaw it only reads and edits files; the checks still run afterwards either way.' : 'OpenClaw is not installed. Run Setup and include OpenClaw to allow this.'}</em></label>
+                      </span>
+                    </div>
+                  )}
+                </div>
               ))}
             </fieldset>
           )}

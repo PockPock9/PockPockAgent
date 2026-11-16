@@ -184,10 +184,10 @@ export type UpdateState = {
   canInstall: boolean // Windows installs updates itself; macOS links to the download page
   releaseUrl: string
 }
-export type MaintenanceAgent = { id: 'local' | 'claude' | 'codex' | 'copilot'; name: string; vendor: string; installed: boolean; version?: string; models?: string[]; suggested?: string; dataNotice: string; install: string }
+export type MaintenanceAgent = { id: 'local' | 'claude' | 'codex' | 'copilot'; name: string; vendor: string; installed: boolean; version?: string; models?: string[]; suggested?: string; openclaw?: boolean; dataNotice: string; install: string }
 export type GitHubAccount = { installed: boolean; loggedIn: boolean; login?: string; id?: number; canPush?: boolean; install?: string }
 export type MaintenanceStatus = {
-  agent: { id: MaintenanceAgent['id']; model: string; chosenAt: string } | null
+  agent: { id: MaintenanceAgent['id']; model: string; openclaw?: boolean; chosenAt: string } | null
   repo: { dir: string; fork: boolean; owner: string; upstream: string; clonedAt: string; present: boolean } | null
   defaultFolder: string
   ready: boolean
@@ -196,7 +196,7 @@ export type MaintenanceStatus = {
 export type FixRun = {
   reportId: string
   state: 'running' | 'ready' | 'failed' | 'cancelled' | 'proposed' | 'none'
-  agent: { id: MaintenanceAgent['id']; model: string }
+  agent: { id: MaintenanceAgent['id']; model: string; openclaw?: boolean }
   branch: string; worktree: string; startedAt: number; endedAt?: number; reason?: string
   log: string[]; checks: Array<{ name: string; ok: boolean; output: string }>
   changed?: string[]; diff?: string; docsChanged?: boolean; title?: string; body?: string; prUrl?: string
@@ -285,7 +285,7 @@ export type DesktopBridge = {
   maintenance: {
     status: () => Promise<MaintenanceStatus>
     agents: () => Promise<MaintenanceAgent[]>
-    setAgent: (choice: { id: MaintenanceAgent['id']; model?: string }) => Promise<unknown>
+    setAgent: (choice: { id: MaintenanceAgent['id']; model?: string; openclaw?: boolean }) => Promise<unknown>
     github: () => Promise<GitHubAccount>
     githubLogin: () => Promise<GitHubAccount>
     cancelLogin: () => Promise<boolean>

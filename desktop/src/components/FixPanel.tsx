@@ -36,7 +36,7 @@ export function FixPanel({ reportId, setup, onOpenSetup }: { reportId: string; s
     setBusy(name); setError('')
     try { await task() } catch (reason) { setError(clean(reason, 'That did not work.')) } finally { setBusy('') }
   }
-  const agentName = setup?.agent ? (setup.agent.id === 'local' ? `PockPock (with ${setup.agent.model})` : AGENT_NAME[setup.agent.id]) : ''
+  const agentName = setup?.agent ? (setup.agent.id === 'local' ? `PockPock (with ${setup.agent.model}${setup.agent.openclaw ? ' through OpenClaw' : ''})` : AGENT_NAME[setup.agent.id]) : ''
 
   return (
     <section className="card fix-panel" aria-labelledby="fix-title">
