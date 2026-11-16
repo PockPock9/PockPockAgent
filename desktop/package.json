@@ -13,7 +13,8 @@
     "typecheck": "tsc -b --noEmit",
     "dist": "npm run build && electron-builder",
     "dist:win": "npm run build && electron-builder --win nsis",
-    "dist:mac": "npm run build && electron-builder --mac"
+    "dist:mac": "npm run build && electron-builder --mac",
+    "check:contrast": "node scripts/check_contrast.mjs"
   },
   "dependencies": {
     "@lydell/node-pty": "^1.2.0-beta.18",
@@ -110,7 +111,7 @@
         }
       ],
       "category": "public.app-category.developer-tools",
-      "icon": "public/icon.png",
+      "icon": "public/icon.icns",
       "identity": null,
       "hardenedRuntime": false,
       "gatekeeperAssess": false,

@@ -54,6 +54,9 @@ contextBridge.exposeInMainWorld('pockpock', {
     install: () => ipcRenderer.invoke('updates:install'),
     onChange: (callback) => subscribe('updates:state', callback),
   },
+  theme: {
+    set: (id) => ipcRenderer.invoke('theme:set', id),
+  },
   setLoginItem: (enabled) => ipcRenderer.invoke('app:setLoginItem', enabled),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   openPath: (target) => ipcRenderer.invoke('shell:openPath', target),

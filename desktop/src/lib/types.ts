@@ -168,6 +168,7 @@ export type Settings = {
   useWorkspaceForAgent?: boolean
   services?: { autoStart?: boolean; stopOnQuit?: boolean; nemoclaw?: boolean }
   updates?: { autoDownload?: boolean }
+  theme?: string // a ThemeId from lib/theme.ts
 }
 
 export type AppInfo = { version: string; electron: string; platform: string; arch: string; repoRoot: string; backendRoot: string; python: string; packaged: boolean; backendUrl: string; terminal: boolean; backend: BackendPhase; loginItem: boolean }
@@ -248,6 +249,9 @@ export type DesktopBridge = {
     download: () => Promise<UpdateState>
     install: () => Promise<boolean>
     onChange: (callback: (state: UpdateState) => void) => () => void
+  }
+  theme: {
+    set: (id: string) => Promise<string>
   }
   setLoginItem: (enabled: boolean) => Promise<boolean>
   openExternal: (url: string) => Promise<void>
