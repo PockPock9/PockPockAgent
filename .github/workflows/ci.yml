@@ -60,3 +60,6 @@ jobs:
       - name: Main-process syntax check
         shell: bash
         run: for file in electron/*.cjs scripts/*.cjs; do node --check "$file"; done
+      - name: Main-process and OpenClaw bridge unit tests
+        shell: bash
+        run: npm test && node --test ../backend/projects/openclaw_bridge/*.test.mjs

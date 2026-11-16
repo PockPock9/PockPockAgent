@@ -13,6 +13,7 @@ const { spawn } = require('node:child_process')
 const { powerSaveBlocker } = require('electron')
 const paths = require('./paths.cjs')
 const hardware = require('./hardware.cjs')
+const { syncGuidance } = require('./openclaw-guidance.cjs')
 const platform = require('./platform.cjs')
 const { DEFINITIONS, httpJson } = require('./services.cjs')
 
@@ -440,12 +441,8 @@ class Setup {
     } catch { this.log('Could not adjust the model context window; OpenClaw keeps its default.') }
     this.liveSkills = null // now that OpenClaw is installed, use the skills it reports for this computer
     for (const skill of await this.skills()) await set(`skills.entries.${skill.key}.enabled`, !disabledSkills.includes(skill.key))
-    // Teach the agent how to use the browser and this computer.
-    const guidance = fs.readFileSync(path.join(paths.backendRoot(), 'projects', 'openclaw_bridge', 'workspace-guidance.md'), 'utf8')
-    const agentsFile = path.join(OPENCLAW_HOME, 'workspace', 'AGENTS.md')
-    fs.mkdirSync(path.dirname(agentsFile), { recursive: true })
-    const existing = fs.existsSync(agentsFile) ? fs.readFileSync(agentsFile, 'utf8') : ''
-    if (!existing.includes('## Using the browser on this PC')) fs.appendFileSync(agentsFile, `\n\n${guidance.trim()}\n`)
+    // Teach the agent how to use the browser and this computer (a managed block in AGENTS.md).
+    syncGuidance(paths.backendRoot(), OPENCLAW_HOME)
   }
 
   async installNemoClaw() {

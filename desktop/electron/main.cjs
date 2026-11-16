@@ -7,6 +7,9 @@ const { ServiceManager } = require('./services.cjs')
 const { Setup } = require('./setup.cjs')
 const { Updater } = require('./updater.cjs')
 const themes = require('./themes.cjs')
+const { syncGuidance } = require('./openclaw-guidance.cjs')
+const { installedBrowsers } = require('./browsers.cjs')
+const { run } = require('./platform.cjs')
 const paths = require('./paths.cjs')
 
 // An app opened from Finder or the Dock gets a minimal PATH; add the folders PockPock's tools live in.
@@ -153,6 +156,33 @@ function registerIpc() {
   handle('setup:cancel', () => { setup.cancel(); return true })
   // Theme: the renderer applies the colours; the main process keeps the window background, the
   // Windows caption buttons and Chromium's colour scheme in step. Only known theme ids are accepted.
+  // OpenClaw's browser: its default (Chrome/Edge as OpenClaw finds it) or an installed Chromium browser.
+  const openclawCli = async (args, timeout = 60000) => {
+    const entry = paths.openclawEntry()
+    if (!entry) throw new Error('OpenClaw is not installed. Run Setup.')
+    return run(entry.node, [entry.script, ...args], { timeout })
+  }
+  handle('openclaw:browsers', async () => {
+    const available = installedBrowsers()
+    const result = await openclawCli(['config', 'get', 'browser.executablePath', '--json'], 30000)
+    // A set value prints as its JSON (a quoted path); an unset one prints {"ok": false, ...}.
+    let currentPath = ''
+    try { const parsed = JSON.parse(result.stdout.trim().split('\n').pop()); currentPath = typeof parsed === 'string' ? parsed : '' } catch { currentPath = '' }
+    const current = available.find((browser) => browser.path.toLowerCase() === currentPath.toLowerCase())?.id || (currentPath ? 'custom' : 'default')
+    return { available: available.map(({ id, name }) => ({ id, name })), current, currentPath }
+  })
+  handle('openclaw:setBrowser', async (id) => {
+    const available = installedBrowsers()
+    const chosen = available.find((browser) => browser.id === id)
+    if (id !== 'default' && !chosen) throw new Error('That browser is not installed.')
+    const result = id === 'default'
+      ? await openclawCli(['config', 'unset', 'browser.executablePath'])
+      : await openclawCli(['config', 'set', 'browser.executablePath', JSON.stringify(chosen.path), '--strict-json'])
+    if (!result.ok && !/unset|not set/i.test(result.stderr + result.stdout)) throw new Error((result.stderr || result.stdout).trim().split('\n').slice(-2).join(' ') || 'OpenClaw did not accept the browser.')
+    // Close OpenClaw's running browser so the next browser action starts the chosen one.
+    await openclawCli(['browser', 'stop'], 30000).catch(() => undefined)
+    return id
+  })
   handle('theme:set', (id) => {
     if (!themes.IDS.includes(id)) throw new Error('Unknown theme.')
     themeSetting = id
@@ -256,6 +286,8 @@ async function createWindow() {
   // With "system", follow the OS switching between light and dark while the app is open.
   nativeTheme.on('updated', () => { if (themeSetting === 'system') applyWindowTheme() })
   services.watch()
+  // Bring PockPock's guidance in OpenClaw's AGENTS.md up to this version (a no-op when current).
+  try { syncGuidance(paths.backendRoot()) } catch (error) { console.warn('OpenClaw guidance not updated:', error?.message || error) }
   // Before setup has installed the backend there is nothing to start.
   const needsSetup = !fs.existsSync(paths.venvPython())
   if (!needsSetup && appSettings().autoStart) {

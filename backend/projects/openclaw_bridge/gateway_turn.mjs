@@ -10,6 +10,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import readline from 'node:readline'
+import { cleanToolError, DEFAULT_STALL_SECONDS, isStalled } from './turn_helpers.mjs'
 
 const DEBUG = process.env.POCKPOCK_OPENCLAW_DEBUG === '1'
 const STATE_DIR = process.env.OPENCLAW_STATE_DIR || path.join(os.homedir(), '.openclaw')
@@ -178,6 +179,8 @@ async function run(start) {
   const startedAt = Date.now()
   const pendingApprovals = new Map()
   let aborting = false
+  let lastActivity = Date.now()
+  const stallSeconds = Number(start.stallSeconds) > 0 ? Number(start.stallSeconds) : DEFAULT_STALL_SECONDS
 
   const abort = async (reason) => {
     if (aborting || finished) return
@@ -187,6 +190,7 @@ async function run(start) {
     }
     try { await gateway.call('chat.abort', runId ? { sessionKey, runId } : { sessionKey }, 5_000) } catch { /* The run may already be over. */ }
     if (reason === 'timeout') fail('timeout', `OpenClaw did not finish within ${start.timeoutSeconds} seconds, so the turn was stopped.`)
+    else if (reason === 'stalled') fail('stalled', `OpenClaw made no progress for ${Math.round(stallSeconds / 60)} minutes (no reply, tool activity or approval request), so the turn was stopped. Try again, or ask for a smaller step; a smaller model or a new chat can also help when the conversation is long.`)
     else finish({ type: 'error', code: 'aborted', message: 'The OpenClaw turn was stopped.' }, 0)
   }
 
@@ -200,16 +204,19 @@ async function run(start) {
       const approval = approvalEvent(kind, payload)
       if (!approval.id) return
       pendingApprovals.set(approval.id, kind)
+      lastActivity = Date.now()
       emit(approval)
       return
     }
     if (event === 'plugin.approval.resolved' || event === 'exec.approval.resolved') {
       if (typeof payload.id === 'string' && pendingApprovals.delete(payload.id)) {
+        lastActivity = Date.now()
         emit({ type: 'approval_resolved', id: payload.id, decision: String(payload.decision ?? '') })
       }
       return
     }
     if (payload.sessionKey !== sessionKey || (runId && payload.runId && payload.runId !== runId)) return
+    lastActivity = Date.now() // any event for this turn is progress (tokens, tools, status)
     if (event === 'agent') {
       const data = payload.data ?? {}
       if (payload.stream === 'lifecycle' && data.phase === 'model' && data.model) model = String(data.model)
@@ -223,7 +230,7 @@ async function run(start) {
           name: String(data.name ?? ''),
           title: String(data.title ?? data.name ?? ''),
           status: String(data.status ?? ''),
-          error: typeof data.error === 'string' ? data.error.slice(0, 400) : undefined,
+          error: cleanToolError(data.error),
         })
       }
       return
@@ -280,6 +287,13 @@ async function run(start) {
   runId = String(sent?.runId ?? '')
   emit({ type: 'started', runId })
   setTimeout(() => { void abort('timeout') }, start.timeoutSeconds * 1000).unref()
+  // Watchdog: a run that goes quiet (for example after a failed approval) would otherwise wait for the
+  // full timeout. Approvals waiting for the user never count as quiet.
+  lastActivity = Date.now()
+  setInterval(() => {
+    if (finished || aborting) return
+    if (isStalled({ now: Date.now(), lastActivity, pendingApprovals: pendingApprovals.size, stallMs: stallSeconds * 1000 })) void abort('stalled')
+  }, 15_000).unref()
 }
 
 // One reader owns stdin: the first line is the start request, later lines are commands.
