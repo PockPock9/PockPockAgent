@@ -88,6 +88,11 @@ Choose the first `Ready` task in this table. Priority order is computer/browser 
 | 37 | DOC-01 | Add bounded PDF, Office, spreadsheet, and optional OCR ingestion | TOL-02, FND-01 | Not started |
 | 38 | OPS-01 | Notify users about approvals and unattended run outcomes | MAG-06, AUT-05, FND-04 | Not started |
 | 39 | EVA-01 | Add privacy-safe tool evaluation and non-executing replay tests | FND-04, PLN-05, MAG-04C | Not started |
+| 40 | LRN-01 | Make OpenClaw turns more reliable (guidance, stall watchdog, readable errors, browser choice) | AUT-01 | Done |
+| 41 | LRN-02 | Learn lessons from failed-then-fixed steps and give them to agents | LRN-01, FND-04 | Ready |
+| 42 | LRN-03 | Report button on replies and a local report store | LRN-01 | Ready |
+| 43 | LRN-04 | Maintenance Manager: reproduce, fix, validate and propose a draft PR from a report | LRN-03 | Not started |
+| 44 | LRN-05 | Turn tasks that worked into reusable skills or browser recipes | LRN-02, BRW-06C3 | Not started |
 ## Task definitions and acceptance checks
 
 ### Foundation
@@ -615,6 +620,40 @@ Let users create schedules from saved, versioned, reviewed workflows with an exp
 
 **Done when:** users can inspect, pause, resume, edit, and delete schedules; each launch creates a durable run with replayable status and artifacts; pause/disable prevents future launches; retries cannot duplicate unsafe side effects; a required approval pauses and notifies rather than proceeding; time-zone, missed-run, restart, and overlapping-run behavior is documented and tested.
 
+### Learning and maintenance
+
+The user asked (2026-11-15) for agents that learn from use and errors, and for a Maintenance Manager that turns user reports into validated draft pull requests. Decisions recorded with the user: learning covers lessons, self-fixes through PRs, and reusable skills; a fix is written and tested locally and pushed as a **draft PR only after the user approves**, never merged automatically; fixes are attempted with the largest local model first, and the Maintenance Manager can connect Claude Code, OpenAI Codex or GitHub Copilot; it asks the user to connect GitHub. Any user can set it up (2026-11-15 clarification): choose the AI, connect GitHub, then give permission to clone the PockPock repository to a folder on the PC; the Maintenance Manager works in that clone. Users without push rights open PRs from a fork in their own GitHub account. The project owner reviews the open PRs weekly and merges or rejects them. Every fix includes the matching documentation update.
+
+#### LRN-01 — Make OpenClaw turns more reliable
+
+Evidence (user's OpenClaw chats and OpenClaw logs, 2026-11-15): invalid browser tool arguments with no retry, bash syntax sent to Windows PowerShell 5.1, a non-existent tool called, a turn ending after announcing the next step, a prompt of about 67K tokens against a 49K budget for `qwen3.5:9b`, a plugin approval failing with "requester authority changed" followed by a 15-minute stall, and tool errors whose shown detail is OpenClaw's external-content preamble.
+
+**Done when:** the OpenClaw workspace guidance is versioned and refreshed on existing installs (not only at first setup) and covers PowerShell 5.1 syntax, the browser tool's actions, correcting and retrying a failed call, using only listed tools, finishing the task, and keeping browser output compact; a turn with no OpenClaw activity for a bounded time and no pending approval stops with a clear message instead of waiting for the 30-minute timeout; tool error details shown in the app omit the external-content preamble; OpenClaw's browser can use Brave or another installed Chromium browser when the user chooses it; tests cover the guidance refresh, the watchdog and error cleanup; a real OpenClaw turn is checked on this PC.
+
+#### LRN-02 — Learn lessons from failed-then-fixed steps
+
+When a tool step fails and a later step in the same turn succeeds with a corrected call (or the user's correction fixes it), record a short, generalised lesson (no personal data, paths or page content), deduplicated, with a count and last-used date. Give the relevant lessons to OpenClaw and PockPock Agent as guidance. Show, disable and delete lessons on the Memory page.
+
+**Done when:** lesson extraction is deterministic and tested; lessons are bounded in number and size and never include secrets, prompts or file contents; users can review, disable and delete them; agents receive at most a small, relevant set; docs describe the data flow.
+
+#### LRN-03 — Report button and local report store
+
+Every assistant reply gets **Report**. It captures that exchange (the user message, reply, steps, approvals, errors, timing, engine, model and app version) plus the user's own description and category (hang, failed, wrong result, other), and stores it locally. The user can review, edit and delete reports before anything is shared.
+
+**Done when:** reports are stored in the app data folder with a size limit; attachments and personal paths are excluded or redacted by default and shown to the user; reports can be listed, viewed, edited and deleted; nothing leaves the PC; tests cover capture and redaction.
+
+#### LRN-04 — Maintenance Manager
+
+A page that lists reports and resolves them. Setup, in order: (1) choose the AI that does the maintenance work: the largest local model by default, or Claude Code, OpenAI Codex or GitHub Copilot when installed and signed in; (2) connect GitHub (sign-in through the GitHub CLI); (3) ask permission to clone the PockPock repository into a folder the user can see and change (default under the app data folder), forking it to the user's GitHub account when they cannot push to it. Then, per report: reproduce the problem in an isolated git worktree of that clone, write a fix on a branch together with the matching documentation update (feature page, README or architecture as `AGENTS.md` requires), run the project's checks, and show the diff, check results and pull-request text. Only after the user approves does it push the branch and open a **draft** pull request against `PockPock9/PockPockAgent`; it never merges. If a fix does not pass the checks it says so and leaves a write-up instead. The project owner reviews the open PRs weekly and merges or rejects them.
+
+**Done when:** setup asks for each step explicitly (AI, GitHub, clone permission and location) and can be undone; external coding agents are opt-in with a clear notice of what is sent; all edits stay in a worktree until approved; every proposed fix includes a documentation change or states why none is needed; the PR text is redacted and shown before pushing; PRs from users without push rights come from their fork; tests and an end-to-end check against a sample report pass.
+
+#### LRN-05 — Turn tasks that worked into reusable skills or recipes
+
+Offer to save a successful multi-step OpenClaw task as an OpenClaw skill, or a successful browser workflow as a browser recipe, reviewed and edited by the user before it is saved.
+
+**Done when:** the saved skill or recipe is generalised (inputs instead of hard-coded values), reviewed by the user, and can be listed, edited and removed like other skills and recipes.
+
 ### Planned expansion — Agent platform supporting tools
 
 The inventory and boundaries are documented in [Agent platform supporting tools](features/agent-platform-expansion.md). MAG-06 is the prerequisite for durable recurring work; these tasks add connectors, document ingestion, notifications, and an integrated evaluation/replay harness.
@@ -655,6 +694,7 @@ TOL-01, FND-01, TOL-02, FND-02, FND-04, PLN-01, PLN-02, PLN-03, BRW-01, BRW-02, 
 
 | Date | Task ID | Agent/owner | Result and verification | Changed files |
 | --- | --- | --- | --- | --- |
+| 2026-11-15 | LRN-01 | Claude Code (user session) | Versioned OpenClaw guidance block refreshed at app start and setup (`openclaw-guidance.cjs`, 6 node tests); stall watchdog and readable tool errors in the turn bridge (`turn_helpers.mjs`, 4 node tests; both run in CI); OpenClaw browser choice (Settings, `browsers.cjs`, IPC validated against installed browsers). Real turns on `qwen3.5:9b` before/after the new guidance: checking a global npm package went from 2 min 16 s and a script-policy failure to 32 s with `npm.cmd` and a correct answer; reading the heading of example.com went from three invalid browser calls and a wrong answer to three valid calls and "Example Domain" (in Brave). Backend suite, typecheck and build pass. Not covered: reproducing OpenClaw's "requester authority changed" approval failure itself; the watchdog limits its effect to 8 minutes. | `backend/projects/openclaw_bridge/` (`workspace-guidance.md`, `gateway_turn.mjs`, `turn_helpers.mjs`), `desktop/electron/` (`openclaw-guidance.cjs`, `browsers.cjs`, `main.cjs`, `setup.cjs`, `preload.cjs`), `desktop/src/pages/Pages.tsx`, `.github/workflows/ci.yml`, `docs/features/openclaw-agent.md` |
 | 2026-11-11 | TOL-01 | Primary agent | Moved the current tool catalog/tests into the dedicated project; Python compilation passed; 20 focused unit tests passed. | `backend/projects/agent_tools/`, `backend/projects/validator/`, `backend/scripts/pockpock_server.py`, `docs/`, `README.md` |
 | 2026-11-11 | FND-01 | Primary agent | Added versioned per-tool runtime contracts and run-event/error compatibility; Python compilation passed; all 29 focused/current agent and event-contract tests passed. | `backend/projects/agent_tools/contracts.py`, `backend/scripts/agent_run_store.py`, `backend/scripts/pockpock_server.py`, `backend/projects/run_store/`, `docs/`, `README.md` |
 | 2026-11-11 | TOL-02 | Primary agent | Split tool implementation and focused tests into capability modules behind a compatibility facade; Python compilation passed; all 29 focused/current agent and event-contract tests passed. | `backend/projects/agent_tools/`, `backend/projects/validator/`, `backend/scripts/pockpock_server.py`, `docs/`, `README.md` |

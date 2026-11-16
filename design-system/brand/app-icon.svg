@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="PockPock">
+  <rect width="256" height="256" rx="56" fill="#14111C"/>
+  <g transform="translate(43.5 43.5) scale(0.66)">
+    <path d="M116 73 L51 119 L26 216 L73 137 L132 95 Z" fill="#FFF4D6"/>
+    <path d="M140 73 L205 119 L230 216 L183 137 L124 95 Z" fill="#FFF4D6"/>
+    <path d="M138 28 L92 130 L122 130 L108 230 L172 108 L140 108 L168 28 Z" fill="#FFD60A" stroke="#14111C" stroke-width="12" stroke-linejoin="round" paint-order="stroke"/>
+  </g>
+</svg>

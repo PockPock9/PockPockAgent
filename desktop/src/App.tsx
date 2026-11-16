@@ -18,6 +18,7 @@ import { cancelActiveRun, runTurn } from './lib/engines'
 import { useStatus } from './lib/status'
 import { titleFrom, useSessions, useSettings } from './lib/store'
 import { useUpdates } from './lib/updates'
+import { useTheme } from './lib/theme'
 import { bridge } from './lib/types'
 import type { AppInfo, Attachment, Message } from './lib/types'
 import { hasMod } from './lib/platform'
@@ -36,7 +37,8 @@ function useNarrow(query: string) {
 }
 
 export default function App() {
-  const { settings, patch } = useSettings()
+  const { settings, patch, loaded: settingsLoaded } = useSettings()
+  useTheme(settings.theme, settingsLoaded)
   const updates = useUpdates()
   const sessions = useSessions()
   const engine = settings.engine ?? 'agent'

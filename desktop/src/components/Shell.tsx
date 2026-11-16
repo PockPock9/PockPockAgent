@@ -6,6 +6,7 @@ import type { Status } from '../lib/status'
 import type { Session, Settings } from '../lib/types'
 import type { Updates } from '../lib/updates'
 import { Dot, IconButton } from './ui'
+import { Mark } from './Mark'
 import { mod } from '../lib/platform'
 
 export type Page = 'chat' | 'skills' | 'mcp' | 'models' | 'memory' | 'research' | 'recipes' | 'activity' | 'services' | 'settings'
@@ -20,7 +21,7 @@ export function TitleBar({ settings, onToggle, onChooseFolder }: {
     <header className="titlebar">
       <div className="titlebar__left">
         <IconButton label={`Toggle sidebar (${mod}B)`} active={settings.sidebar !== false} onClick={() => onToggle('sidebar')}><PanelLeft size={16} /></IconButton>
-        <span className="brand"><span className="brand__mark">P</span>PockPock <b>Agent</b></span>
+        <span className="brand"><Mark size={20} className="brand__mark" />PockPock <b>Agent</b></span>
       </div>
       <button type="button" className="titlebar__folder" onClick={onChooseFolder} title={settings.workspace || 'Open a folder'}>
         <Folder size={13} /><span>{folder || 'Open a folder'}</span>

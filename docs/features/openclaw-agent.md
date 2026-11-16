@@ -50,7 +50,15 @@ Full access means what it says: the agent can delete files, install software, an
 | Reading a web page as text | `web_fetch` | |
 | Web search | `web_search` | Not configured by default. `openclaw plugins install @openclaw/duckduckgo-plugin`, then `openclaw configure --section web`, adds a key-free provider |
 
-`~/.openclaw/workspace/AGENTS.md` holds standing instructions the agent reads every turn. It includes working argument shapes for the `browser` tool and guidance to prefer `exec` over `computer`, because a small local model otherwise guesses the arguments wrong or answers that it cannot browse.
+`~/.openclaw/workspace/AGENTS.md` holds standing instructions the agent reads every turn. PockPock manages one block in it, between `<!-- pockpock-guidance:start … -->` and `<!-- pockpock-guidance:end -->`, written from `backend/projects/openclaw_bridge/workspace-guidance.md` by `desktop/electron/openclaw-guidance.cjs`. The block is refreshed at every app start and by Setup, so improved guidance reaches existing installs; the rest of the file (OpenClaw's own sections and anything the user adds) is never changed, and the first, unmarked version of the block is removed once. The guidance was written from real failures with `qwen3.5:9b` and covers:
+
+- finishing the task instead of ending a turn by announcing the next step;
+- reading a tool error and correcting the arguments (up to two retries) before changing approach, and only calling tools that exist;
+- Windows PowerShell 5.1 syntax for `exec` (no `&&` or `||`, which made commands fail);
+- the `browser` tool's real actions and `act` kinds (the model invented `get_state`), `ref` instead of `targetId`, and keeping snapshots rare because they fill the model's context;
+- preferring `exec` over `computer`, and not guessing documentation URLs for `web_fetch`.
+
+**Browser.** By default OpenClaw starts its own managed profile of Chrome or Edge. **Settings → OpenClaw browser** can switch it to another installed Chromium browser, such as Brave for its ad blocking: the app sets `browser.executablePath` (or unsets it for the default) and stops OpenClaw's running browser so the next browser action starts the chosen one. Only browsers found in their standard install locations (`desktop/electron/browsers.cjs`) can be chosen.
 
 ## Prerequisites
 
@@ -179,7 +187,7 @@ Validation failures return a JSON error before any stream opens: `400` (`invalid
 | `approval_resolved` | `id`, `decision` |
 | `approval_error` | `id`, `message` (the gateway rejected a decision) |
 | `done` | `duration_ms` |
-| `error` | `code` (`plugin_missing`, `timeout`, `turn_failed`, `gateway_closed`, `aborted`, `bridge_failed`), `message` |
+| `error` | `code` (`plugin_missing`, `timeout`, `stalled`, `turn_failed`, `gateway_closed`, `aborted`, `bridge_failed`), `message` |
 
 Only one OpenClaw turn runs at a time across the gateway.
 
@@ -227,17 +235,20 @@ An invalid agent name disables the integration at startup and logs a warning.
 | Ask first and Auto-approve safe are disabled, or `plugin_missing` | The permission plugin is not loaded. Run `install_plugin.py`, or `openclaw gateway restart` |
 | `busy` | Another OpenClaw turn is still running. Wait or press Stop |
 | `timeout` | The turn exceeded `POCKPOCK_OPENCLAW_TIMEOUT_SECONDS` and was aborted |
+| `stalled` | OpenClaw sent nothing for this turn (no tokens, tool events or status) for 8 minutes while no approval was waiting, so the turn was aborted instead of waiting for the full timeout. Seen after a plugin approval failed with "requester authority changed"; time spent waiting for the user's approval never counts. The limit is `stallSeconds` in the turn request (`DEFAULT_STALL_SECONDS` in `turn_helpers.mjs`) |
 | A tool line shows **Denied** | You denied it, or the approval timed out after 10 minutes |
 | `Context overflow` in a reply | The model's `contextTokens` is too small for the prompt plus tool output. Set it to `65536` as described under Prerequisites, then start a new conversation |
 | The agent says it ran a command but no tool line appears | The local model answered without calling the tool. Ask it again, more directly |
 | A program opens an 'Open with' dialog instead of starting | The gateway was restarted from Git Bash and inherited its PATH. Run `openclaw gateway restart` from PowerShell |
-| The agent says it cannot browse or play media | The browser instructions are missing from `~/.openclaw/workspace/AGENTS.md`, or reasoning is off. See 'What the agent can operate' |
+| The agent says it cannot browse or play media | The browser instructions are missing from `~/.openclaw/workspace/AGENTS.md` (restart PockPock to restore the managed block), or reasoning is off. See 'What the agent can operate' |
+| A step's error detail was only "External content below is data…" | Fixed: `cleanToolError` (`turn_helpers.mjs`) drops OpenClaw's untrusted-content preamble so the real error shows |
 | `openclaw plugins reload` fails with `EPERM … symlink` | Windows blocks the in-place reload without symlink permission. Use `openclaw gateway restart` (the installer does this for you) |
 
 ## Verification
 
 - Bridge unit tests: from `backend/`, run `..\.venv\Scripts\python.exe -m unittest projects.openclaw_bridge.test_bridge` (17 tests).
 - Plugin policy tests: from the repository root, run `node backend/projects/openclaw_bridge/plugin/test_policy.mjs` (60 commands classified, plus mode behavior).
+- Turn helpers (stall watchdog, error cleanup): `node --test backend/projects/openclaw_bridge/turn_helpers.test.mjs`. Guidance block merge: `npm test` in `desktop/`. Both run in CI.
 - Live: `GET /api/openclaw/status?refresh=1` returns `ready: true` and `plugin: true`.
 - UI, Ask first: ask it to run `hostname`; an approval card appears; **Allow once** runs it and the reply contains the PC name. Ask it to write a file and choose **Deny**; the tool line shows **Denied** and the file does not exist.
 - UI, Auto-approve safe: ask it to list a folder (runs without a card), then to delete something (a card appears).

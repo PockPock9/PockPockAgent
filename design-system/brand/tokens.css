@@ -1,0 +1,10 @@
+/* PockPock brand colors for brand surfaces (icon, marketing, docs).
+   The desktop app's themes use them through their own tokens in desktop/src/styles.css:
+   PockPock Dark keeps its violet accent; Volt, Storm and Feather are built from this palette. */
+:root {
+  --brand-volt: #ffd60a;     /* the bolt */
+  --brand-ink: #14111c;      /* icon tile, text on volt */
+  --brand-feather: #fff4d6;  /* toes, text on ink */
+  --brand-storm: #5b4bf0;    /* secondary */
+  --brand-comb: #ff4b3e;     /* errors and warnings only */
+}
