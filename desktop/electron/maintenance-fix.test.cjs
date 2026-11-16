@@ -1,6 +1,24 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { planChecks, buildPrompt, parsePrFile, isDocPath } = require('./maintenance-fix.cjs')
+const { planChecks, buildPrompt, parsePrFile, isDocPath, idleGuard } = require('./maintenance-fix.cjs')
+
+test('the idle guard fires once after no activity, and activity postpones it', async () => {
+  let clock = 0
+  let fired = 0
+  const guard = idleGuard(100, () => { fired += 1 }, { now: () => clock, every: 5 })
+  clock = 90; guard.touch()
+  clock = 150
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  assert.equal(fired, 0, 'touched 60 ms ago')
+  clock = 200
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  assert.equal(fired, 1)
+  assert.equal(guard.fired, true)
+  clock = 1000
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  assert.equal(fired, 1, 'fires only once')
+  guard.stop()
+})
 
 test('documentation paths are recognised', () => {
   for (const file of ['docs/features/x.md', 'README.md', 'desktop/README.md', 'design-system/pockpock-desktop.md']) assert.equal(isDocPath(file), true, file)

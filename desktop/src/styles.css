@@ -613,6 +613,13 @@ button.context-chip:hover { color: var(--text); background: var(--bg-raise); }
 .maint-steps li.is-current .maint-steps__n { background: var(--accent-fill); color: var(--on-accent); }
 .report-categories label.is-disabled { opacity: .6; cursor: not-allowed; }
 .report-categories select { margin-top: 6px; }
+.maint-agent { display: grid; gap: 6px; }
+.maint-agent__options { display: grid; gap: 4px; padding: 0 10px 4px 35px; }
+.maint-openclaw { display: flex; align-items: flex-start; gap: 8px; margin-top: 8px; }
+.maint-openclaw input { margin-top: 3px; width: 15px; height: 15px; accent-color: var(--accent); }
+.maint-openclaw label { display: grid; gap: 1px; cursor: pointer; }
+.maint-openclaw strong { font-size: 12.5px; font-weight: 600; }
+.maint-openclaw em { color: var(--text-2); font-size: 12px; font-style: normal; }
 .maint-code { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--accent-border); border-radius: 8px; background: var(--accent-bg); }
 .maint-code code { font-size: 18px; font-weight: 700; letter-spacing: .08em; color: var(--text); }
 .maint-folder { display: flex; align-items: center; gap: 10px; }

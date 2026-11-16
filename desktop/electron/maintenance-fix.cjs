@@ -13,6 +13,9 @@ const { redactText } = require('./reports.cjs')
 const { runPockPockAgent } = require('./maintenance-agent.cjs')
 
 const AGENT_TIMEOUT_MS = 45 * 60 * 1000
+// OpenClaw counts every finished model call as progress, so a small model can "think" in circles for
+// half an hour without touching a file. Real work means tool calls: stop after this long without one.
+const OPENCLAW_IDLE_MS = 10 * 60 * 1000
 const CHECK_TIMEOUT_MS = 20 * 60 * 1000
 const PR_FILE = '.pockpock-pr.md'
 const MAX_DIFF = 200_000
@@ -105,6 +108,17 @@ function spawnLogged(file, args, { cwd, input, timeout, onLine, onSpawn, shell =
     else if (input !== undefined) child.stdin.end(input)
     else child.stdin.end()
   })
+}
+
+/** Calls onIdle once when touch() has not been called for idleMs. stop() ends the guard. */
+function idleGuard(idleMs, onIdle, { now = Date.now, every = 15_000 } = {}) {
+  let last = now()
+  let fired = false
+  const timer = setInterval(() => {
+    if (!fired && now() - last >= idleMs) { fired = true; clearInterval(timer); onIdle() }
+  }, every)
+  timer.unref?.()
+  return { touch: () => { last = now() }, stop: () => clearInterval(timer), get fired() { return fired } }
 }
 
 class FixRunner {
@@ -240,6 +254,7 @@ class FixRunner {
     const onSpawn = (child) => this.active.set(run.reportId, child)
     const cwd = run.worktree
     const id = run.agent.id
+    if (id === 'local' && run.agent.openclaw) return this.runOpenClaw(run, prompt, onLine, onSpawn)
     if (id === 'local') {
       // PockPock itself: its own small tool loop on the local model (maintenance-agent.cjs).
       const controller = new AbortController()
@@ -257,6 +272,44 @@ class FixRunner {
       copilot: ['-p', prompt, '--allow-all-tools', '--deny-tool', 'shell(git push)', '--deny-tool', 'shell(git commit)', '--deny-tool', 'shell(gh)', '--deny-tool', 'shell(git reset)', '-s'],
     }[id]
     return spawnLogged(file, args, { cwd, timeout: AGENT_TIMEOUT_MS, onLine, onSpawn, shell })
+  }
+
+  /**
+   * PockPock itself through OpenClaw: an OpenClaw turn with Full access on the local model, told to
+   * work only in the worktree. It can run commands (build, tests, the app), unlike the file-only loop.
+   * It is stopped after 10 minutes without a tool call (idleGuard), on top of gateway_turn.mjs's watchdog.
+   */
+  async runOpenClaw(run, prompt, onLine, onSpawn) {
+    const entry = paths.openclawEntry()
+    if (!entry) return { ok: false, code: -1, output: 'OpenClaw is not installed.' }
+    const cwd = run.worktree
+    const script = path.join(paths.backendRoot(), 'projects', 'openclaw_bridge', 'gateway_turn.mjs')
+    const message = [
+      `Work only in this folder, a separate working copy of PockPock: ${cwd}`,
+      `Start every command with: Set-Location -LiteralPath '${cwd}';`,
+      'Use absolute paths inside that folder for every file you read or change. You may run commands to build, test and try the fix (for example `npm.cmd ci`, `npm.cmd run typecheck`, `npm.cmd test`, `npm.cmd run build` in desktop, and Python tests); stop any program you start.',
+      `When done, write the PR text to ${path.join(cwd, PR_FILE)} as described below.`,
+      '',
+      prompt,
+    ].join('\n')
+    const start = JSON.stringify({ type: 'start', agent: 'main', sessionId: `pockpock-maintenance-${run.reportId}-${Date.now().toString(36)}`, message, mode: 'full', model: run.agent.model, timeoutSeconds: AGENT_TIMEOUT_MS / 1000 })
+    let child = null
+    const guard = idleGuard(OPENCLAW_IDLE_MS, () => {
+      onLine(`Stopped: OpenClaw made no tool call for ${OPENCLAW_IDLE_MS / 60_000} minutes, so it was going in circles.`)
+      child?.kill()
+    })
+    const result = await spawnLogged(entry.node, [script], { cwd, input: `${start}\n`, timeout: AGENT_TIMEOUT_MS + 60_000, keepStdinOpen: true, onSpawn: (spawned) => { child = spawned; onSpawn?.(spawned) }, onLine: (line) => {
+      try {
+        const event = JSON.parse(line)
+        if (event.type === 'tool') guard.touch()
+        if (event.type === 'tool' && event.phase === 'start') onLine(`· ${event.title || event.name}`)
+        else if (event.type === 'tool' && event.phase === 'end' && event.error) onLine(`  ${event.error}`)
+        else if (event.type === 'error') onLine(`OpenClaw: ${event.message}`)
+      } catch { /* not an event line */ }
+    } })
+    guard.stop()
+    const failed = guard.fired || result.output.split('\n').some((line) => /"type":"error"/.test(line))
+    return { ...result, ok: result.ok && !failed }
   }
 
   async runCheck(check, run) {
@@ -331,4 +384,4 @@ class FixRunner {
   }
 }
 
-module.exports = { FixRunner, planChecks, buildPrompt, parsePrFile, isDocPath }
+module.exports = { FixRunner, planChecks, buildPrompt, parsePrFile, isDocPath, idleGuard }

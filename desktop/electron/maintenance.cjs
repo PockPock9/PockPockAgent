@@ -86,7 +86,7 @@ class Maintenance {
     const tags = await httpJson('http://127.0.0.1:11434/api/tags', 3000)
     const models = Array.isArray(tags?.json?.models) ? tags.json.models.map((model) => model.name) : []
     const local = {
-      id: 'local', name: 'PockPock itself', vendor: '', installed: models.length > 0,
+      id: 'local', name: 'PockPock itself', vendor: '', installed: models.length > 0, openclaw: Boolean(paths.openclawEntry()),
       models, suggested: suggestLocalModel(models),
       dataNotice: 'PockPock fixes itself with a model on this PC; nothing leaves it. Local models are slower and fix fewer problems, and a fix that fails the checks is not proposed.',
       install: tags === null ? 'Ollama is not running. Start it on the Services page.' : 'Ollama has no models. Run Setup to download one.',
@@ -119,7 +119,10 @@ class Maintenance {
     if (!AGENT_IDS.includes(id)) throw new Error('Unknown AI.')
     const model = id === 'local' ? String(choice.model || '').slice(0, 120) : ''
     if (id === 'local' && !model) throw new Error('Choose a local model.')
-    return this.save({ agent: { id, model, chosenAt: new Date().toISOString() } })
+    // PockPock itself can work through OpenClaw, which lets it run commands (build, test, automate).
+    const openclaw = id === 'local' && choice.openclaw === true
+    if (openclaw && !paths.openclawEntry()) throw new Error('OpenClaw is not installed. Run Setup and include OpenClaw.')
+    return this.save({ agent: { id, model, openclaw, chosenAt: new Date().toISOString() } })
   }
 
   /** GitHub CLI and account state, and whether the account can push to the PockPock repository. */
