@@ -13,7 +13,7 @@ import { updateSummary } from '../lib/updates'
 import { THEMES, validTheme } from '../lib/theme'
 import type { Updates } from '../lib/updates'
 
-function PageFrame({ title, eyebrow, intro, children, actions }: { title: string; eyebrow: string; intro: string; children: ReactNode; actions?: ReactNode }) {
+export function PageFrame({ title, eyebrow, intro, children, actions }: { title: string; eyebrow: string; intro: string; children: ReactNode; actions?: ReactNode }) {
   return (
     <div className="page">
       <div className="page__inner">

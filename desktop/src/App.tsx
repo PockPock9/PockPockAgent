@@ -8,6 +8,7 @@ import { Sidebar, StatusBar, TitleBar } from './components/Shell'
 import type { Page } from './components/Shell'
 import { TerminalPanel } from './components/TerminalPanel'
 import { McpPage, MemoryPage, ModelsPage, SettingsPage, SkillsPage } from './pages/Pages'
+import { MaintenancePage } from './pages/MaintenancePage'
 import { ActivityPage } from './pages/ActivityPage'
 import { RecipesPage } from './pages/RecipesPage'
 import { ResearchPage } from './pages/ResearchPage'
@@ -174,7 +175,7 @@ export default function App() {
     sessions.remove(id)
   }
 
-  const openPage = (next: 'skills' | 'mcp') => setPage(next)
+  const openPage = (next: 'skills' | 'mcp' | 'maintenance') => setPage(next)
   const sidebarOverlay = narrowSidebar && overlay === 'sidebar'
   const filesOverlay = narrowFiles && overlay === 'files' && page === 'chat'
   const showSidebar = narrowSidebar ? sidebarOverlay : settings.sidebar !== false
@@ -212,6 +213,7 @@ export default function App() {
         {page === 'recipes' && <RecipesPage />}
         {page === 'activity' && <ActivityPage status={status} />}
         {page === 'research' && <ResearchPage />}
+        {page === 'maintenance' && <MaintenancePage />}
         {page === 'services' && <ServicesPage status={status} settings={settings} patchSettings={patch} loginItem={loginItem} setLoginItem={setLoginItem} />}
         {page === 'setup' && <SetupPage onDone={() => setPage('chat')} />}
       </main>

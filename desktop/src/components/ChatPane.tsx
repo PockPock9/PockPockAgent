@@ -9,6 +9,7 @@ import type { AgentPermission, AppState, Attachment, ClawPermission, Engine, Mes
 import { ExtensionCard, inspectLink, linkFromMessage } from './ExtensionCard'
 import type { Proposal } from './ExtensionCard'
 import { EngineIcon, MessageView } from './MessageView'
+import { ReportDialog } from './ReportDialog'
 import { Dot, MenuItem, Popover } from './ui'
 import { computer, isMac } from '../lib/platform'
 
@@ -36,7 +37,7 @@ type Props = {
   onStop: () => void
   onChangeMessage: (message: Message) => void
   onChooseFolder: () => void
-  onOpenPage: (page: 'skills' | 'mcp') => void
+  onOpenPage: (page: 'skills' | 'mcp' | 'maintenance') => void
   pendingAttachments: Attachment[]
   setPendingAttachments: (change: (previous: Attachment[]) => Attachment[]) => void
   focusSignal: number
@@ -64,6 +65,7 @@ export function ChatPane(props: Props) {
   const agentPermission = settings.agentPermission ?? 'auto-review'
   const [draft, setDraft] = useState('')
   const [menu, setMenu] = useState<'attach' | 'engine' | 'permission' | 'model' | null>(null)
+  const [reporting, setReporting] = useState<Message | null>(null)
   const [error, setError] = useState('')
   const [uploading, setUploading] = useState(false)
   const [proposal, setProposal] = useState<Proposal | null>(null)
@@ -195,7 +197,8 @@ export function ChatPane(props: Props) {
             </div>
           )}
           {messages.map((message) => (
-            <MessageView key={message.id} message={message} live={Boolean(runningHere && running?.messageId === message.id)} onChange={onChangeMessage} />
+            <MessageView key={message.id} message={message} live={Boolean(runningHere && running?.messageId === message.id)} onChange={onChangeMessage}
+              onReport={message.role === 'assistant' ? () => setReporting(message) : undefined} />
           ))}
           {proposal && (
             <ExtensionCard key={proposal.id} proposal={proposal} onClose={() => { setProposal(null); void status.refreshCounts() }} onSwitch={(kind) => void preview(proposal.source, kind)} onInstalled={() => void status.refreshCounts()} />
@@ -304,6 +307,7 @@ export function ChatPane(props: Props) {
         </div>
         <input ref={fileRef} type="file" multiple hidden accept="image/*,.pdf,.docx,.xlsx,.pptx,.txt,.md,.csv,.json,.xml,.html,.log,.py,.ts,.tsx,.js" onChange={(event) => void upload(event.target.files ?? [])} />
       </div>
+      {reporting && session && <ReportDialog session={session} message={reporting} onClose={() => setReporting(null)} onOpenMaintenance={() => { setReporting(null); onOpenPage('maintenance') }} />}
     </div>
   )
 }

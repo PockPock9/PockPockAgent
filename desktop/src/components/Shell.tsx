@@ -1,6 +1,6 @@
 // Window chrome: title bar, sidebar (chats and customizations), and status bar.
 import { useMemo, useState } from 'react'
-import { Activity, Brain, Download, Folder, Globe, Globe2, MessageSquarePlus, PanelBottom, PanelLeft, PanelRight, Plug, Puzzle, Search, Server, ServerCog, Settings as SettingsIcon, Trash2 } from 'lucide-react'
+import { Activity, Brain, Download, Folder, Wrench, Globe, Globe2, MessageSquarePlus, PanelBottom, PanelLeft, PanelRight, Plug, Puzzle, Search, Server, ServerCog, Settings as SettingsIcon, Trash2 } from 'lucide-react'
 import { relativeTime } from '../lib/api'
 import type { Status } from '../lib/status'
 import type { Session, Settings } from '../lib/types'
@@ -9,7 +9,7 @@ import { Dot, IconButton } from './ui'
 import { Mark } from './Mark'
 import { mod } from '../lib/platform'
 
-export type Page = 'chat' | 'skills' | 'mcp' | 'models' | 'memory' | 'research' | 'recipes' | 'activity' | 'services' | 'settings'
+export type Page = 'chat' | 'skills' | 'mcp' | 'models' | 'memory' | 'research' | 'recipes' | 'activity' | 'maintenance' | 'services' | 'settings'
 
 export function TitleBar({ settings, onToggle, onChooseFolder }: {
   settings: Settings
@@ -79,6 +79,7 @@ export function Sidebar({ overlay, sessions, activeId, page, running, status, on
     { page: 'models', icon: <Server size={15} />, label: 'Models', count: enabledModels },
     { page: 'memory', icon: <Brain size={15} />, label: 'Memory' },
     { page: 'research', icon: <Globe2 size={15} />, label: 'Research' },
+    { page: 'maintenance', icon: <Wrench size={15} />, label: 'Maintenance' },
     { page: 'services', icon: <ServerCog size={15} />, label: 'Services', count: installed ? `${servicesUp}/${installed}` : undefined, tone: installed && servicesUp < installed ? 'warn' : undefined },
     { page: 'settings', icon: <SettingsIcon size={15} />, label: 'Settings' },
   ]
