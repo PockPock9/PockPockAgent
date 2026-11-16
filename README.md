@@ -104,6 +104,7 @@ The window has chats on the left, the conversation in the middle, the open folde
 - **Browser recipes** saves web tasks you repeat; each step asks for approval when it runs.
 - **Activity** shows which model handled each request and how long it took (no prompt text is stored).
 - **Models**, **Memory** and **Research** control which local models are used, learned preferences, and whether agents may read public websites.
+- **Connectors**: connect **GitHub**, **email**, **Telegram**, **Slack**, **Discord** or **Notion** with a key you create in that app. PockPock checks the key with the app, stores it encrypted, and gives the OpenClaw agent tools for it (read issues, search mail, read messages; sending, posting and creating ask you first). See [Connectors](docs/features/connectors.md).
 - **Cloud models**: connect **NVIDIA NIM**, **OpenRouter** or **Alibaba Cloud Model Studio** with your own API key, choose which of their models you want, and pick them in the model menu of Chat, PockPock Agent, OpenClaw or NemoClaw. A cloud model is used only when you pick it; **Smart route** keeps choosing local models. A chat that uses a cloud model sends its messages, files and tool results to that service. See [Cloud models](docs/features/cloud-models.md).
 - **Updates** (Windows): new versions download in the background and install when you press **Restart to update** or quit PockPock; your chats and settings are kept. On a Mac, PockPock tells you when a new version is available and links to its download.
 - **Services** starts, stops and restarts everything (Ollama, the backend services, OpenClaw, NemoClaw) all at once or one by one, shows their logs, and sets startup options. All services start when the app opens; a model loads into memory only when a message uses it.
@@ -226,6 +227,7 @@ Planned work is in the [roadmap](docs/ROADMAP.md) and the [task tracker](docs/TA
 | Models | `%USERPROFILE%\.ollama` |
 | OpenClaw config, skills and MCP servers | `%USERPROFILE%\.openclaw` |
 | Cloud API keys (encrypted by Windows or the macOS Keychain) and chosen cloud models | `%APPDATA%\PockPock Agent\cloud.json` |
+| Connector keys (encrypted the same way) | `%APPDATA%\PockPock Agent\connectors.json` |
 
 Uninstalling the app keeps this data; delete the folders to remove it.
 

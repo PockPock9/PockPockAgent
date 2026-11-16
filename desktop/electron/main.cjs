@@ -12,6 +12,7 @@ const { installedBrowsers } = require('./browsers.cjs')
 const { ReportStore, prepareCapture } = require('./reports.cjs')
 const { Maintenance } = require('./maintenance.cjs')
 const { Cloud } = require('./cloud.cjs')
+const { Connectors } = require('./connectors.cjs')
 const { syncOpenClaw } = require('./cloud-openclaw.cjs')
 const { FixRunner } = require('./maintenance-fix.cjs')
 const { run } = require('./platform.cjs')
@@ -43,6 +44,7 @@ const services = new ServiceManager({
   onChange: (list) => { send('services:changed', list); send('backend:status', backendPhase(list)); cloudFollowServices(list) },
 })
 let cloud = null // cloud model providers and their encrypted keys (cloud.cjs)
+let connectors = null // connected apps and their encrypted credentials (connectors.cjs)
 let gatewayWasUp = false
 let openclawWasUp = false
 /** The gateway keeps cloud keys only in memory, so they are sent again each time it comes up;
@@ -52,6 +54,7 @@ function cloudFollowServices(list) {
   const gatewayUp = up('gateway')
   const openclawUp = up('openclaw')
   if (cloud && gatewayUp && (!gatewayWasUp || !cloud.pushed)) void cloud.push()
+  if (connectors && gatewayUp && (!gatewayWasUp || !connectors.pushed)) void connectors.push()
   if (cloud && openclawUp && !openclawWasUp) void syncCloudToOpenClaw()
   gatewayWasUp = gatewayUp
   openclawWasUp = openclawUp
@@ -226,6 +229,10 @@ function registerIpc() {
   handle('reports:update', (id, change) => reports.update(id, change))
   handle('reports:delete', (id) => reports.remove(id))
   // Maintenance Manager setup (maintenance.cjs): each step is an explicit user action.
+  // Connectors (connectors.cjs). Credentials go in, encrypted, and never come back out.
+  handle('connectors:list', () => connectors.list())
+  handle('connectors:connect', (id, values) => connectors.connect(id, values))
+  handle('connectors:disconnect', (id) => connectors.disconnect(id))
   // Cloud model providers (cloud.cjs). API keys go in, encrypted, and never come back out.
   handle('cloud:list', () => cloud.list())
   handle('cloud:connect', (id, input) => cloud.connect(String(id), { key: input?.key, region: typeof input?.region === 'string' ? input.region : undefined }))
@@ -398,6 +405,16 @@ if (!app.requestSingleInstanceLock()) {
       internalToken,
       onChange: () => { void syncCloudToOpenClaw(); send('cloud:changed', cloud.list()) },
     })
+    const crypt = { available: () => safeStorage.isEncryptionAvailable(), encrypt: (text) => safeStorage.encryptString(text), decrypt: (data) => safeStorage.decryptString(data) }
+    connectors = new Connectors({ userData: app.getPath('userData'), crypt, internalToken, onChange: () => send('connectors:changed') })
+    // The same for connected apps: the gateway holds their credentials in memory only.
+    setInterval(async () => {
+      const wanted = connectors.count()
+      if (!wanted || !gatewayWasUp) return
+      const reply = await httpJson('http://127.0.0.1:8766/api/connectors', 3000)
+      const live = Array.isArray(reply?.json?.connectors) ? reply.json.connectors.filter((item) => item.connected).length : wanted
+      if (reply?.status === 200 && live !== wanted) void connectors.push()
+    }, 60_000).unref()
     // A gateway that restarted by itself has lost the keys it held in memory: send them again.
     setInterval(async () => {
       const wanted = cloud.chosenModels().length

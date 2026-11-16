@@ -138,6 +138,15 @@ export type AppState = {
 }
 
 export type ClawStatus = { available: boolean; ready: boolean; detail: string; plugin?: boolean; model?: string; models?: string[] }
+/** One input of a connector's connect form. `only_when` is [other field, value]. */
+export type ConnectorField = { key: string; label: string; secret: boolean; placeholder: string; help: string; options: Array<{ value: string; label: string }>; required: boolean; only_when: [string, string] | null }
+/** An external app the agent can use as tools. Credentials never reach the page. */
+export type Connector = {
+  id: string; name: string; group: string; about: string; featured: boolean
+  fields: ConnectorField[]; steps: string[]; key_url: string
+  tools: Array<{ name: string; title: string; write: boolean }>
+  connected: boolean; needsReconnect: boolean; account: string; connectedAt: string | null
+}
 /** A cloud model as a provider lists it. `tools` is null when the provider does not say. */
 export type CloudModel = { id: string; name: string; contextWindow: number | null; tools?: boolean | null; free?: boolean }
 export type CloudProviderId = 'nim' | 'openrouter' | 'alibaba'
@@ -296,6 +305,12 @@ export type DesktopBridge = {
     download: () => Promise<UpdateState>
     install: () => Promise<boolean>
     onChange: (callback: (state: UpdateState) => void) => () => void
+  }
+  connectors: {
+    list: () => Promise<Connector[]>
+    connect: (id: string, values: Record<string, string>) => Promise<Connector[]>
+    disconnect: (id: string) => Promise<Connector[]>
+    onChange: (callback: () => void) => () => void
   }
   cloud: {
     list: () => Promise<CloudProvider[]>
