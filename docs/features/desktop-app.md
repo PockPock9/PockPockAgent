@@ -91,7 +91,7 @@ npm run dist:win       # Windows installer into desktop\release (on Windows)
 npm run dist:mac       # macOS .dmg and .zip for Apple silicon and Intel (on a Mac)
 ```
 
-macOS apps can only be built on a Mac. The **Desktop installers** GitHub Actions workflow (`.github/workflows/desktop-release.yml`) builds both installers on GitHub's runners: start it from the Actions tab or push a `v*` tag. The macOS job adds the Intel build of the terminal component next to the Apple silicon one and checks the ad-hoc signature with `codesign --verify`.
+macOS apps can only be built on a Mac. The **Desktop installers** GitHub Actions workflow (`.github/workflows/desktop-release.yml`) builds both installers on GitHub's runners: start it from the Actions tab or push a `v*` tag. The macOS job runs on an Intel Mac (`macos-15-intel`; GitHub's Apple silicon runners were too busy to pick up jobs in November 2026) and builds both the Apple silicon and the Intel version there. npm installs only the terminal component for the runner's own processor, so the job adds the other one, then checks the ad-hoc signature with `codesign --verify`. CI's macOS checks run on the same kind of machine.
 
 `npm run app` and `npm run dev` clear `ELECTRON_RUN_AS_NODE`, which VS Code sets in its terminals and which would make Electron run as plain Node.
 

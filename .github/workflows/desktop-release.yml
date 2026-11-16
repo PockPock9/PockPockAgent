@@ -37,7 +37,9 @@ jobs:
 
   macos:
     name: macOS disk images (Apple silicon and Intel)
-    runs-on: macos-latest
+    # An Intel Mac builds both versions. GitHub's Apple silicon runners (macos-latest) were too busy
+    # to pick up jobs, and the build does not depend on the runner's own processor.
+    runs-on: macos-15-intel
     defaults:
       run:
         working-directory: desktop
@@ -49,11 +51,12 @@ jobs:
           cache: npm
           cache-dependency-path: desktop/package-lock.json
       - run: npm ci
-      # npm installs only this runner's (arm64) terminal binary; the Intel build needs its own too.
-      - name: Add the Intel terminal binary
+      # npm installs only the terminal binary for this runner's processor; the other build needs its own.
+      - name: Add the other processor's terminal binary
         run: |
           version=$(node -p "require('./node_modules/@lydell/node-pty/package.json').version")
-          npm install --no-save --force "@lydell/node-pty-darwin-x64@${version}"
+          other=$([ "$(uname -m)" = "arm64" ] && echo x64 || echo arm64)
+          npm install --no-save --force "@lydell/node-pty-darwin-${other}@${version}"
       - run: npm run typecheck
       - run: npm run dist:mac -- --publish never # the release job publishes
       - name: Check the app bundle is signed (ad hoc)
