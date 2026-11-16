@@ -110,6 +110,24 @@ function spawnLogged(file, args, { cwd, input, timeout, onLine, onSpawn, shell =
   })
 }
 
+/**
+ * How to start a cloud agent's CLI. npm installs Claude Code and Codex as `.cmd` launchers, which
+ * only run through cmd.exe, and Node does not escape arguments there. So the prompt (which carries
+ * report text) goes in through stdin, never the command line, and the fixed arguments are quoted.
+ * Copilot is a real .exe and takes the prompt as an argument without a shell.
+ */
+function agentCommand(id, file, prompt) {
+  const shell = /\.(cmd|bat)$/i.test(file)
+  const spec = {
+    claude: { args: ['-p', '--permission-mode', 'acceptEdits', '--allowedTools', 'Read,Edit,Write,Glob,Grep,Bash(npm run *),Bash(npm test*),Bash(npm ci*),Bash(node *),Bash(python *),Bash(git diff*),Bash(git status*),Bash(git log*)'], input: prompt },
+    codex: { args: ['exec', '--full-auto', '-'], input: prompt },
+    copilot: shell ? null : { args: ['-p', prompt, '--allow-all-tools', '--deny-tool', 'shell(git push)', '--deny-tool', 'shell(git commit)', '--deny-tool', 'shell(gh)', '--deny-tool', 'shell(git reset)', '-s'] },
+  }[id]
+  if (!spec) throw new Error(`${id} cannot be started from ${path.basename(file || '')}.`)
+  const quote = (value) => (/[\s()*&|<>^%!"]/.test(value) ? `"${value.replace(/"/g, '')}"` : value)
+  return shell ? { file: quote(file), args: spec.args.map(quote), input: spec.input, shell } : { file, args: spec.args, input: spec.input, shell }
+}
+
 /** Calls onIdle once when touch() has not been called for idleMs. stop() ends the guard. */
 function idleGuard(idleMs, onIdle, { now = Date.now, every = 15_000 } = {}) {
   let last = now()
@@ -264,14 +282,8 @@ class FixRunner {
     const files = { claude: 'claude', codex: 'codex', copilot: 'copilot' }
     const agents = await this.maintenance.agents()
     if (!agents.find((agent) => agent.id === id)?.installed) return { ok: false, code: -1, output: `${files[id]} is not installed.` }
-    const file = this.maintenance.agentPath(id)
-    const shell = /\.cmd$/i.test(file)
-    const args = {
-      claude: ['-p', prompt, '--permission-mode', 'acceptEdits', '--allowedTools', 'Read,Edit,Write,Glob,Grep,Bash(npm run *),Bash(npm test*),Bash(npm ci*),Bash(node *),Bash(python *),Bash(git diff*),Bash(git status*),Bash(git log*)'],
-      codex: ['exec', '--full-auto', prompt],
-      copilot: ['-p', prompt, '--allow-all-tools', '--deny-tool', 'shell(git push)', '--deny-tool', 'shell(git commit)', '--deny-tool', 'shell(gh)', '--deny-tool', 'shell(git reset)', '-s'],
-    }[id]
-    return spawnLogged(file, args, { cwd, timeout: AGENT_TIMEOUT_MS, onLine, onSpawn, shell })
+    const command = agentCommand(id, this.maintenance.agentPath(id), prompt)
+    return spawnLogged(command.file, command.args, { cwd, timeout: AGENT_TIMEOUT_MS, onLine, onSpawn, shell: command.shell, input: command.input })
   }
 
   /**
@@ -384,4 +396,4 @@ class FixRunner {
   }
 }
 
-module.exports = { FixRunner, planChecks, buildPrompt, parsePrFile, isDocPath, idleGuard }
+module.exports = { FixRunner, planChecks, buildPrompt, parsePrFile, isDocPath, idleGuard, agentCommand }
