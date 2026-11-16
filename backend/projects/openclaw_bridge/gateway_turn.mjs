@@ -216,12 +216,15 @@ async function run(start) {
       return
     }
     if (payload.sessionKey !== sessionKey || (runId && payload.runId && payload.runId !== runId)) return
-    lastActivity = Date.now() // any event for this turn is progress (tokens, tools, status)
+    // Only real progress resets the stall watchdog: a model call starting, a tool starting or ending,
+    // or reply text. OpenClaw keeps sending status and lifecycle events while a run is stuck (for
+    // example on a tool that never returns), so those do not count.
     if (event === 'agent') {
       const data = payload.data ?? {}
-      if (payload.stream === 'lifecycle' && data.phase === 'model' && data.model) model = String(data.model)
+      if (payload.stream === 'lifecycle' && data.phase === 'model' && data.model) { model = String(data.model); lastActivity = Date.now() }
       // A tool run through dispatch_action is reported twice; keep the outer entry only.
       const nested = String(data.toolCallId ?? '').startsWith('tool_call:')
+      if (payload.stream === 'item' && data.kind === 'tool' && (data.phase === 'start' || data.phase === 'end')) lastActivity = Date.now()
       if (payload.stream === 'item' && data.kind === 'tool' && !nested && (data.phase === 'start' || data.phase === 'end')) {
         emit({
           type: 'tool',
@@ -239,6 +242,7 @@ async function run(start) {
     if (payload.state === 'status') {
       emit({ type: 'status', phase: String(payload.phase ?? '') })
     } else if (payload.state === 'delta') {
+      lastActivity = Date.now()
       if (payload.replace === true) {
         text = messageText(payload.message)
         emit({ type: 'replace', text })

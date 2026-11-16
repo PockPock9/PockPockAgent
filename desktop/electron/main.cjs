@@ -10,6 +10,8 @@ const themes = require('./themes.cjs')
 const { syncGuidance } = require('./openclaw-guidance.cjs')
 const { installedBrowsers } = require('./browsers.cjs')
 const { ReportStore, prepareCapture } = require('./reports.cjs')
+const { Maintenance } = require('./maintenance.cjs')
+const { FixRunner } = require('./maintenance-fix.cjs')
 const { run } = require('./platform.cjs')
 const paths = require('./paths.cjs')
 
@@ -44,6 +46,8 @@ let updater = null
 let themeSetting = themes.DEFAULT // the saved choice, which may be "system"
 let setup = null // created once the app data folder is known
 let reports = null // problem reports, in <userData>/reports
+let maintenance = null // Maintenance Manager setup
+let fixes = null // Maintenance Manager fix runs
 
 /** The renderer's view of the backend: the gateway's state, or why it is not up. */
 function backendPhase(list = services.list()) {
@@ -188,11 +192,31 @@ function registerIpc() {
   // Problem reports (see reports.cjs). The store validates ids, categories and sizes and redacts
   // personal details; preview shows the user exactly what would be saved.
   handle('reports:preview', (capture) => prepareCapture(capture))
-  handle('reports:create', (input) => reports.create(input && typeof input === 'object' ? input : {}))
+  handle('reports:create', (input) => { const report = reports.create(input && typeof input === 'object' ? input : {}); void fixes.autoNext(); return report })
   handle('reports:list', () => reports.list())
   handle('reports:get', (id) => reports.get(id))
   handle('reports:update', (id, change) => reports.update(id, change))
   handle('reports:delete', (id) => reports.remove(id))
+  // Maintenance Manager setup (maintenance.cjs): each step is an explicit user action.
+  handle('maintenance:status', () => maintenance.status())
+  handle('maintenance:agents', () => maintenance.agents())
+  handle('maintenance:setAgent', (choice) => maintenance.setAgent(choice))
+  handle('maintenance:github', () => maintenance.github())
+  handle('maintenance:githubLogin', () => maintenance.githubLogin())
+  handle('maintenance:cancelLogin', () => { maintenance.cancelLogin(); return true })
+  handle('maintenance:chooseFolder', async (current) => {
+    const result = await dialog.showOpenDialog(mainWindow, { title: 'Where should the copy of PockPock go?', properties: ['openDirectory', 'createDirectory'], defaultPath: typeof current === 'string' ? current : undefined })
+    return result.canceled ? '' : result.filePaths[0]
+  })
+  handle('maintenance:clone', (dir) => maintenance.clone(dir))
+  handle('maintenance:forget', () => maintenance.forget())
+  handle('maintenance:setAuto', (enabled) => { const result = maintenance.setAuto(enabled === true); void fixes.autoNext(); return result })
+  // Fix runs: start, stop, read; approve (commit, push, draft PR) and discard need an explicit click.
+  handle('maintenance:fixGet', (reportId) => fixes.get(reportId))
+  handle('maintenance:fixStart', (reportId) => fixes.start(reportId))
+  handle('maintenance:fixCancel', (reportId) => fixes.cancel(reportId))
+  handle('maintenance:fixApprove', (reportId, text) => fixes.approve(reportId, text && typeof text === 'object' ? { title: String(text.title ?? ''), body: String(text.body ?? '') } : {}))
+  handle('maintenance:fixDiscard', (reportId) => fixes.discard(reportId))
   handle('theme:set', (id) => {
     if (!themes.IDS.includes(id)) throw new Error('Unknown theme.')
     themeSetting = id
@@ -296,6 +320,8 @@ async function createWindow() {
   // With "system", follow the OS switching between light and dark while the app is open.
   nativeTheme.on('updated', () => { if (themeSetting === 'system') applyWindowTheme() })
   services.watch()
+  // Maintenance Manager automatic mode resumes shortly after start.
+  setTimeout(() => { void fixes?.autoNext() }, 60_000)
   // Bring PockPock's guidance in OpenClaw's AGENTS.md up to this version (a no-op when current).
   try { syncGuidance(paths.backendRoot()) } catch (error) { console.warn('OpenClaw guidance not updated:', error?.message || error) }
   // Before setup has installed the backend there is nothing to start.
@@ -329,6 +355,8 @@ if (!app.requestSingleInstanceLock()) {
     Menu.setApplicationMenu(paths.IS_MAC ? Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { label: 'View', submenu: [{ role: 'reload' }, { role: 'toggleDevTools' }, { type: 'separator' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' }, { role: 'togglefullscreen' }] }, { role: 'windowMenu' }]) : null)
     setup = new Setup({ services, userData: app.getPath('userData'), emit: (event) => send('setup:event', event) })
     reports = new ReportStore(path.join(app.getPath('userData'), 'reports'))
+    maintenance = new Maintenance({ userData: app.getPath('userData'), emit: (event) => send('maintenance:event', event) })
+    fixes = new FixRunner({ maintenance, reports, userData: app.getPath('userData'), emit: (event) => send('maintenance:event', event) })
     updater = new Updater({
       emit: (state) => send('updates:state', state),
       autoDownload: () => readSettings().updates?.autoDownload !== false,

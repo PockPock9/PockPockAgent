@@ -1,6 +1,6 @@
 # Problem reports and Maintenance
 
-Users report a reply that hung, failed or was wrong with the **Report** button under it. Reports stay on the PC and are listed on the **Maintenance** page, where they can be reviewed, corrected or deleted. They are the input for the Maintenance Manager (LRN-04 in [`TASKS.md`](../TASKS.md), planned), which will reproduce a reported problem, fix it with a documentation update, run the checks, and open a draft pull request after the user approves.
+Users report a reply that hung, failed or was wrong with the **Report** button under it. Reports stay on the PC and are listed on the **Maintenance** page, where they can be reviewed, corrected or deleted. The **Maintenance Manager** on the same page works through them: with an AI the user chooses, it finds the cause in its own copy of the PockPock code, fixes it together with a documentation update, runs the checks, and, only after the user approves, opens a **draft** pull request for the project owner, who reviews open pull requests weekly and merges or rejects them.
 
 ## User flow
 
@@ -10,6 +10,47 @@ Users report a reply that hung, failed or was wrong with the **Report** button u
 4. **What will be saved** shows the exact captured exchange after redaction, and what was hidden (for example "2 folder paths").
 5. **Save report**. The dialog confirms and offers **Open Maintenance**.
 6. **Maintenance** (sidebar) lists reports, newest first, with their category, status, chat, mode and age. Open one to change its category, status (**Open**, **Being fixed**, **Fixed**, **Won't fix**) or description, read the full capture, or delete it.
+
+## Maintenance Manager
+
+### Setup (once)
+
+**Maintenance → Set up the Maintenance Manager** has three steps; each needs an explicit click and can be changed later (**Change setup**).
+
+1. **Choose the AI.** PockPock lists what it finds on the PC:
+
+   | AI | Detected as | Data |
+   |---|---|---|
+   | **PockPock itself** | At least one Ollama model; the largest is suggested | Stays on the PC. PockPock's own fixing agent (below). Slower, and fixes fewer problems |
+   | GitHub Copilot | `copilot` CLI | The report, the code it reads and its changes go to GitHub, under the user's account; needs a Copilot subscription |
+   | Claude Code | `claude` CLI | Same, to Anthropic |
+   | OpenAI Codex | `codex` CLI | Same, to OpenAI |
+
+   Tools that are not installed are shown with how to install and sign in to them.
+2. **Connect GitHub** through the GitHub CLI (`gh auth login --web`): the app shows the one-time code and opens github.com/login/device. PockPock then checks whether the account can push to `PockPock9/PockPockAgent`.
+3. **Copy of PockPock.** The user picks a folder (default `Documents/PockPock/PockPockAgent`) and presses **Allow and clone**. Accounts without push rights get a fork in their own GitHub account (`gh repo fork`), and the copy is cloned from it. Commits made by the Manager use the account's GitHub no-reply email (`<id>+<login>@users.noreply.github.com`), set in the copy only.
+
+The setup is saved in `<app data>/maintenance.json`. **Change setup** keeps the copy on disk.
+
+### Fixing a report
+
+On a report, **Fix with …** starts a run (`desktop/electron/maintenance-fix.cjs`):
+
+1. Update the copy (`git fetch` from `origin`, or `upstream` for a fork) and create a git worktree on a new branch `fix/report-<id>` from the latest `main`, in a sibling folder `PockPockAgent-fixes/report-<id>`. A previous attempt for the same report is replaced.
+2. Give the chosen AI the report (already redacted) and these rules: read `AGENTS.md`; make the smallest correct fix; **update the documentation in the same change**; add or update a focused test; run the checks; do not commit, push or open pull requests; write the PR title and description to `.pockpock-pr.md`. **PockPock itself** runs `desktop/electron/maintenance-agent.cjs`: a tool loop against the chosen Ollama model with six tools (`list_files`, `search`, `read_file`, `replace_in_file`, `write_file`, `finish`) confined to the worktree (no `..`, no `.git`). It cannot run commands, so no tool can hang it; each model call is limited to 6 minutes and the run to 40 steps, and its prompt is small enough for local models (OpenClaw's own prompt is about 21K tokens, which overwhelmed `qwen3.5:9b` and stalled on a hung tool in testing); Claude Code runs with `-p` and edit permission plus a list of allowed check commands; Codex with `exec --full-auto`; Copilot with `-p --allow-all-tools` and `git push`, `git commit`, `git reset` and `gh` denied.
+3. The Manager checks the result itself:
+   - nothing changed: not proposed (the AI's notes are shown);
+   - no documentation change (`docs/`, any `README.md` or other `.md`): not proposed, because every fix needs one;
+   - then the checks for what changed: desktop code runs `npm ci`, `npm run typecheck`, `npm test` and `npm run build` in `desktop/`; Python code runs `backend/scripts/run_tests.py` with PockPock's Python; OpenClaw bridge changes run its node tests. A failing check stops the run with its output.
+4. The report's status becomes **Being fixed**; the page shows the live log, then either the reason it was not proposed (**Try again**, **Discard**) or the fix ready for review.
+
+### Automatic mode
+
+**Keep fixing reports automatically** (in the set-up summary) lets PockPock work through reports on its own: when nothing is running, it starts on the oldest **Open** report that has no fix attempt yet. It checks one minute after the app starts, when a report is saved, and after every run. One report runs at a time; a report whose fix failed is not retried automatically (press **Try again**), so a problem the AI cannot fix does not loop. Automatic mode only prepares fixes: each still waits for the user's **Approve and open draft PR**. The setting is `auto` in `maintenance.json`.
+
+### Reviewing and approving
+
+A fix ready for review shows the changed files, the diff, the checks that passed, and an editable PR title and description. **Approve and open draft PR** commits the change, pushes the branch (to the fork for accounts without push rights) and runs `gh pr create --draft` against `PockPock9/PockPockAgent`; the description is redacted again and ends with a note of the AI, the checks and that the reporter approved it. **Discard fix** removes the worktree and the branch. The Manager never merges.
 
 ## What a report contains
 
@@ -41,6 +82,10 @@ Strings are capped (20,000 characters each, 120 steps, 60 approvals); unknown fi
 | `desktop/src/components/ReportDialog.tsx` | The dialog: modal, focus kept inside, Escape closes, buttons always visible |
 | `desktop/src/pages/MaintenancePage.tsx` | List and detail views |
 | `desktop/electron/reports.cjs` | `ReportStore` (validate, redact, store, prune), `prepareCapture`, `redactText`; unit tests in `reports.test.cjs` |
+| `desktop/electron/maintenance.cjs` | Setup: AI detection, GitHub status and sign-in, clone or fork; tests in `maintenance.test.cjs` |
+| `desktop/electron/maintenance-fix.cjs` | Fix runs, automatic mode, checks, approval and discard; tests in `maintenance-fix.test.cjs` |
+| `desktop/electron/maintenance-agent.cjs` | "PockPock itself": the local tool loop and its worktree-confined tools; tests in `maintenance-agent.test.cjs` |
+| `desktop/src/components/MaintenanceSetup.tsx`, `FixPanel.tsx` | The setup steps and the per-report fix panel |
 
 IPC (preload `window.pockpock.reports`, all registered with `handle()`): `preview(capture)` returns the redacted capture and counts without saving; `create({ category, description, capture })`; `list()` (without captures); `get(id)`; `update(id, { category?, status?, description? })`; `delete(id)`. Ids must match `r-<base36>-<8 hex>`, so a renderer cannot read or delete other files; categories and statuses are checked against fixed lists.
 
@@ -49,8 +94,9 @@ IPC (preload `window.pockpock.reports`, all registered with `handle()`): `previe
 - The capture cannot be built (for example the app info call fails): the dialog shows the error and Save stays disabled.
 - Saving fails (disk full, permissions): the error is shown and the form keeps what was typed.
 - A report file is unreadable: it is skipped in the list; opening a missing id shows "Unknown report."
+- Maintenance Manager: the GitHub CLI or Git is missing (setup says how to install it); sign-in is cancelled or fails (the error is shown, **Connect GitHub** can be pressed again); the clone folder is not empty and not a PockPock copy (refused); fetching, creating the worktree, the AI, a check, the commit, the push or `gh pr create` fails (the run stops with the reason and output; nothing is pushed unless the push itself succeeded). The AI is stopped after 45 minutes and each check after 20.
 
 ## Verification
 
-- `npm test` in `desktop/` (redaction, capture sanitising, store create/list/update/delete, id checks).
+- `npm test` in `desktop/`: reports (redaction, capture sanitising, store create/list/update/delete, id checks), Maintenance Manager setup (`maintenance.test.cjs`: device-code parsing, model suggestion, AI choice validation, folder checks) and fix runs (`maintenance-fix.test.cjs`: documentation paths, check planning, the AI's instructions, PR text).
 - In the app with a temporary profile (`POCKPOCK_DESKTOP_USER_DATA`), in PockPock Dark and Feather at 1440 px and 820 px: Report opens with focus inside and closes on Escape; the preview hides the home folder; the stored file contains no home folder, email or attachment contents; status changes persist; delete removes the file; no horizontal overflow or console errors.

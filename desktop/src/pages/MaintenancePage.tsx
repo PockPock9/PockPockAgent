@@ -4,9 +4,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ArrowLeft, Flag, LoaderCircle, Trash2, Wrench } from 'lucide-react'
 import { Empty } from '../components/ui'
+import { MaintenanceSetup } from '../components/MaintenanceSetup'
+import { FixPanel } from '../components/FixPanel'
 import { PageFrame } from './Pages'
 import { bridge } from '../lib/types'
-import type { Report, ReportCategory, ReportStatus, ReportSummary } from '../lib/types'
+import type { MaintenanceStatus, Report, ReportCategory, ReportStatus, ReportSummary } from '../lib/types'
 import { captureText, CATEGORY_LABEL, describeRedactions, STATUS_LABEL } from '../lib/reports'
 import { relativeTime } from '../lib/api'
 
@@ -17,18 +19,24 @@ export function MaintenancePage() {
   const [reports, setReports] = useState<ReportSummary[] | null>(null)
   const [error, setError] = useState('')
   const [open, setOpen] = useState<string | null>(null)
+  const [setup, setSetup] = useState<MaintenanceStatus | null>(null)
 
   const load = useCallback(() => {
     if (!desktop) return
+    desktop.maintenance.status().then(setSetup, () => setSetup(null))
     desktop.reports.list().then((list) => { setReports(list); setError('') }, (reason: unknown) => setError(clean(reason, 'Reports could not be loaded.')))
   }, [desktop])
   useEffect(() => { load() }, [load])
+  // A fix starting or finishing (also in automatic mode) changes report statuses: refresh the list.
+  useEffect(() => desktop?.maintenance.onEvent((event) => { if (event.type === 'fix') load() }), [desktop, load])
 
-  if (open) return <ReportDetail id={open} onBack={() => { setOpen(null); load() }} />
+  if (open) return <ReportDetail id={open} setup={setup} onBack={() => { setOpen(null); load() }} />
   const openCount = reports?.filter((report) => report.status === 'open').length ?? 0
   return (
     <PageFrame eyebrow="System" title="Maintenance" intro="Problems you reported with the Report button under a reply. Each report keeps that exchange so it can be reproduced and fixed. Reports stay on this PC.">
       {error && <div className="banner banner--error" role="alert"><span>{error}</span></div>}
+      {setup && <MaintenanceSetup status={setup} onChange={load} />}
+      <h2 className="section-title">Reports</h2>
       {!reports && !error && <p className="note"><LoaderCircle size={13} className="spin" /> Loading reports…</p>}
       {reports && reports.length === 0 && (
         <Empty icon={<Flag size={20} />} title="No reports yet"><p>When a reply hangs, fails or gets something wrong, press <strong>Report</strong> under it to describe what happened.</p></Empty>
@@ -56,7 +64,7 @@ export function MaintenancePage() {
   )
 }
 
-function ReportDetail({ id, onBack }: { id: string; onBack: () => void }) {
+function ReportDetail({ id, setup, onBack }: { id: string; setup: MaintenanceStatus | null; onBack: () => void }) {
   const desktop = bridge()
   const [report, setReport] = useState<Report | null>(null)
   const [draft, setDraft] = useState<{ category: ReportCategory; status: ReportStatus; description: string } | null>(null)
@@ -108,6 +116,7 @@ function ReportDetail({ id, onBack }: { id: string; onBack: () => void }) {
               <button type="button" className="button" onClick={() => void remove()}><Trash2 size={13} /> Delete report</button>
             </div>
           </section>
+          <FixPanel reportId={id} setup={setup} onOpenSetup={onBack} />
           <h2 className="section-title">Captured exchange</h2>
           <p className="note">{describeRedactions(report.redactions)}</p>
           <pre className="report-capture">{captureText(report.capture)}</pre>
