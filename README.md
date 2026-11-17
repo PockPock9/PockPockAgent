@@ -49,6 +49,26 @@ PockPock is a local AI workspace for Windows and macOS. Its desktop app, **PockP
 
 ![Setup finished: every service running and checked](docs/images/setup-done.png)
 
+**PockPock can fix itself from your reports.** Press **Report** under a reply that hung, failed or was wrong. The **Maintenance Manager** works through the reports in its own copy of the code: it finds the cause, fixes it with a documentation update, runs the checks and shows you the change. A draft pull request is opened only after you approve it. Choose who does the fixing: PockPock itself with a local model, Claude Code or GitHub Copilot; the app installs and signs in to the last two for you.
+
+| Report a reply | Choose who fixes it |
+|---|---|
+| ![The Report dialog under a reply that failed](docs/images/report-dialog.png) | ![Maintenance: PockPock itself, Claude Code and GitHub Copilot](docs/images/maintenance-setup.png) |
+
+**Connect your apps.** The **Connectors** page links GitHub, email, Telegram, Slack, Discord and Notion. You paste a key you create in the app; PockPock checks it with the app, stores it encrypted, and gives the OpenClaw agent tools for it. Sending, posting and creating ask you first.
+
+| Connectors | A connector's page |
+|---|---|
+| ![The Connectors page](docs/images/connectors.png) | ![GitHub: what the agent can do, and the steps to connect](docs/images/connector-github.png) |
+
+**Use cloud models when you want them.** Connect NVIDIA NIM, OpenRouter or Alibaba Cloud Model Studio with your own key, and their models appear in the model menus of every engine. They are used only when you pick one.
+
+| Cloud models | In the model menu |
+|---|---|
+| ![The Cloud models page with OpenRouter connected](docs/images/cloud-models.png) | ![The model menu with local and cloud models](docs/images/model-menu-cloud.png) |
+
+*The Cloud models screenshots show sample models and a sample key ending; no real account is connected in them.*
+
 More screenshots, a guide to every feature, and [example prompts for OpenClaw](https://github.com/PockPock9/PockPockAgent/wiki/OpenClaw-Examples) are in the [wiki](https://github.com/PockPock9/PockPockAgent/wiki).
 
 ---
@@ -170,7 +190,7 @@ PockPockAgent/
 ├── backend/
 │   ├── scripts/        gateway (pockpock_server.py), Smart Router, telemetry, pockpock.py, run_tests.py
 │   └── projects/       planner, validator, run_store, browser_automation, agent_core, agent_tools,
-│                       agent_extensions, openclaw_bridge, nemoclaw_bridge, model_router, local_memory, observability
+│                       agent_extensions, connectors, openclaw_bridge, nemoclaw_bridge, model_router, local_memory, observability
 ├── docs/               architecture, roadmap, task tracker, feature pages
 ├── design-system/      desktop design tokens and rules
 └── AGENTS.md           rules for anyone (human or AI) changing this repository

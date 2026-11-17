@@ -4,6 +4,8 @@ Users report a reply that hung, failed or was wrong with the **Report** button u
 
 ## User flow
 
+![The Report dialog under a reply that failed](../images/report-dialog.png)
+
 1. Under any assistant reply, press **Report** (the flag button next to **Copy reply**).
 2. Choose what went wrong: **It hung or never finished**, **It failed**, **The result was wrong**, or **Something else**. A stopped reply starts on "hung", an error reply on "failed".
 3. Optionally describe what happened and what you expected.
@@ -14,6 +16,8 @@ Users report a reply that hung, failed or was wrong with the **Report** button u
 ## Maintenance Manager
 
 ### Setup (once)
+
+![Maintenance: choose PockPock itself, Claude Code or GitHub Copilot](../images/maintenance-setup.png)
 
 **Maintenance → Set up the Maintenance Manager** has three steps; each needs an explicit click and can be changed later (**Change setup**).
 
