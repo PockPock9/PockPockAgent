@@ -12,6 +12,12 @@ Supported services, all through their OpenAI-compatible chat-completions API:
 
 ## User flow
 
+| The Cloud models page | The model menu |
+|---|---|
+| ![The Cloud models page with OpenRouter connected](../images/cloud-models.png) | ![The model menu with local and cloud models](../images/model-menu-cloud.png) |
+
+*The screenshots show sample models and a sample key ending, not a real account.*
+
 1. Open **Cloud models** in the sidebar. Each service shows **Not connected**, **Connected**, or **Key needed again**.
 2. Paste the API key (for Alibaba, choose the region the key belongs to) and press **Connect**. **Get a key** opens the service's key page in the browser.
 3. PockPock checks the key with the service. A refused key is not saved, and the reason is shown (wrong key, wrong region, no credit, rate limit, service unreachable).

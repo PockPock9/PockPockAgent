@@ -11,7 +11,7 @@ PockPock Agent is the PockPock interface: a desktop app (Electron) for Windows a
 | Plan review | PockPock Agent shows its plan, success checks, deliverables, reviewer notes and task folder. **Approve and run**, **Edit plan**, or **Decline**. Nothing runs before approval. |
 | Approvals | OpenClaw tool calls (Ask first / Auto-approve safe) and PockPock Agent file or browser actions show a card with **Allow once** / **Deny** and the exact command, path, URL or diff. |
 | Permissions | PockPock Agent: Default, Auto-review, Full access, plus **Work in the open folder** or **Use a new temporary folder**. OpenClaw: Ask first, Auto-approve safe, Full access. Full access is shown in amber. |
-| Models | Chat and PockPock Agent: Smart route or any switched-on local model. OpenClaw: its default or any model in its config. A model loads only when a message uses it. |
+| Models | Chat and PockPock Agent: Smart route or any switched-on local model. OpenClaw: its default or any model in its config. Cloud models chosen on the Cloud models page are listed under their own heading in every engine's menu (NemoClaw: its sandbox-wide model). A model loads only when a message uses it. |
 | Timing | Live counters (tenths of a second) while a reply is thinking, planning or running a step; each finished step's duration; the planning time on the plan card; and under every reply a breakdown: **Thinking** (or **Planning**), **Waiting for you**, **Writing** (Chat) or **Working**, and **Total**. |
 | Agent results | A collapsible list of steps; research sources (with **Save** and **Check for changes**); changed files; produced files; and a button to open the task folder. |
 | Attachments | Upload documents or images, drag them onto the chat, or attach a text file from the Files panel. OpenClaw and NemoClaw accept text and documents only. |
@@ -22,6 +22,8 @@ PockPock Agent is the PockPock interface: a desktop app (Electron) for Windows a
 | Browser recipes | Saved, versioned browser workflows: editor with allowed sites, inputs, steps and stop conditions; version history; switch on/off; run with per-step approval and screenshots. |
 | Activity | Request totals, per-model call counts, success rate and average time, and recent routing events. No prompt text. |
 | Skills / MCP servers | Add from a link with a preview and approval, switch on or off, remove. See [agent extensions](agent-extensions.md). |
+| Connectors | Connect GitHub, email, Telegram, Slack, Discord or Notion with a key the app checks; the connected apps give the OpenClaw agent tools. See [Connectors](connectors.md). |
+| Cloud models | Connect NVIDIA NIM, OpenRouter or Alibaba Cloud Model Studio; the chosen models join the model menus of every engine and are used only when picked. See [Cloud models](cloud-models.md). |
 | Models / Memory / Research | Switch local models on or off; review and delete learned preferences; allow or block agent access to named public websites. |
 | Services | Every service with its state, **Start all** / **Stop all**, start/stop/restart each one, its log, and startup options. |
 | Setup | Installs every prerequisite and the backend, Ollama and models, OpenClaw (with a skills choice) and NemoClaw, then starts and checks every service. Opens automatically on first launch. |

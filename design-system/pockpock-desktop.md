@@ -68,6 +68,9 @@ The mark is a chicken foot whose centre toe is a lightning bolt. Files and gener
 - **Pickers** open as popovers above their button with a title and one-line explanation per option; the selected option is tinted and checked. Risky choices (Full access) use the warning colour in the picker and on the chip.
 - **Cards** in the thread (plan review, approval, skill/MCP install) share one style; a card waiting for the user has an accent border and ring. Primary action is filled violet, the others outlined.
 - **Steps** collapse to one summary line ("Worked through 7 steps" or the running step) and expand to the full list with status icons.
+- **Tabs** (Connectors): a row of text buttons with a count badge; the active one has an accent underline; they use `role="tablist"`, `role="tab"` and `aria-selected`.
+- **Connector cards and rows** (Connectors): a neutral icon tile (a pictogram, never an app's logo), name, one-line description, and a pill action (**Connect**, or the account name when connected). Featured connectors are cards in an auto-fit grid; the rest are rows grouped by a section title.
+- **Searchable choice list** (Cloud models): a search field above a bordered, scrolling list of checkbox rows, each with a title and a secondary line; the count and any limit are announced below it.
 - **Rows** on Customize pages: icon, title, secondary line, optional description, then a switch and/or a remove button.
 
 ## States and accessibility

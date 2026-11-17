@@ -17,6 +17,10 @@ Not offered, and why: Outlook.com and Microsoft 365 mail, Google Drive, Google C
 
 ## User flow
 
+| The Connectors page | A connector's page |
+|---|---|
+| ![The Connectors page](../images/connectors.png) | ![GitHub: what the agent can do, and the steps to connect](../images/connector-github.png) |
+
 1. Open **Connectors** in the sidebar. **Available** lists every connector (featured ones as cards, the rest in groups); **Connected** lists the connected ones. **Search connectors** filters by name and description.
 2. Press **Connect** on an app. Its page shows what the agent will be able to do (actions that change something are marked **asks you first**), the steps to create the key in that app, and the form. **Open <app>** opens the app's key page in the browser.
 3. Enter the key and press **Connect**. PockPock checks it with the app. A refused key is not saved, and the reason is shown.
