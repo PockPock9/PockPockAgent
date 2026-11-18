@@ -2,7 +2,7 @@
 
 This is the execution queue for [the agent capability roadmap](ROADMAP.md). An AI agent starting work should read this tracker, `AGENTS.md`, and the roadmap before editing code.
 
-**Tracker updated:** 2026-11-15  
+**Tracker updated:** 2026-11-17
 
 **2026-11-15 change:** the web frontend (`frontend/app`) was removed; the only interface is the Electron desktop app in `desktop/`. Completion notes below that mention `frontend/app/...` files, the Conversations page or 390/1440 px browser checks describe work as it was done then; the same behaviour now lives in `desktop/src/` (see [desktop app](features/desktop-app.md)). New UI work targets the desktop app. The Chrome companion scaffold (`backend/projects/chrome_companion/`) was also removed, so the AUT-02 group (AUT-02B, B1–B3 and C) is blocked until signed-in browser access is reconsidered; OpenClaw now covers operating the user's real browser and PC.  
 **Rule:** pick one task only: the highest-priority `Ready` task whose dependencies are all `Done`. If none is ready, report the blocking dependency. Do not start `Blocked`, `In progress`, or `Not started` work without explicitly coordinating with the current task owner.
@@ -96,6 +96,12 @@ Choose the first `Ready` task in this table. Priority order is computer/browser 
 | 43.2 | LRN-04B | Fix a report in an isolated worktree with the chosen AI; validate checks and documentation; automatic mode | LRN-04A | Done |
 | 43.3 | LRN-04C | Show the diff and PR text; on approval commit, push and open a draft PR; discard on reject | LRN-04B | In progress |
 | 44 | LRN-05 | Turn tasks that worked into reusable skills or browser recipes | LRN-02, BRW-06C3 | Not started |
+| 45 | SEQ-01 | Plan-and-Sequence (tracking group) | FND-01 | In progress |
+| 45.1 | SEQ-01A | P0 — Subtask schema, plan validation, state capsule | FND-01 | Done |
+| 45.2 | SEQ-01B | P1 — Measure the design targets | SEQ-01A | In progress |
+| 45.3 | SEQ-01C | P2 — Code-first verifier, retry, re-plan trigger | SEQ-01A | Done |
+| 45.4 | SEQ-01D | P3 — Router wiring (planner service plan-sequence endpoint) | SEQ-01A, PLN-05 | In progress |
+| 45.5 | SEQ-01E | P4 — OpenClaw as tool provider (subtask mode) | SEQ-01C, LRN-01 | In progress |
 ## Task definitions and acceptance checks
 
 ### Foundation
@@ -391,6 +397,120 @@ Select models/tools per step using tool support, context, task capability, local
 **Done when:** reasons/fallbacks are visible; incapable models are excluded; metrics are prompt-free by default; a fixed privacy-safe routing evaluation suite catches regressions and documents its limitations.
 
 **Completion:** 2026-11-12. Planner routing now uses enabled tool-capable candidates, their advertised context windows, and prompt-free average call latency; it preserves compatible user preference, prefers the configured fallback, then ranks remaining candidates by measured latency. Task class and route reason are explicit. Added a synthetic fixed evaluation suite and documented its privacy and unknown-context limits; no prompt/response or opt-in outcome metrics are used. Verification: Python compilation passed; 28 planner/run-store tests passed.
+
+### Plan-and-Sequence
+
+#### SEQ-01 — Plan-and-Sequence (tracking group)
+
+A strong model plans a task as 5–15 sequential steps and a small local
+model executes one step at a time, with a code-first verifier between
+steps and only a ≤400-token capsule passing forward (wiki page
+`Plan-and-Sequence`). Built in gated phases P0–P4 below; the group is
+complete only when every child is `Done`.
+
+**Done when:** all child tasks are complete and the end-to-end flow
+(plan → approve → run) works through the gateway with the Qwen3.6
+planner / Qwen3.5-9B executor split on the RTX 4070.
+
+#### SEQ-01A — P0: Subtask schema, plan validation, state capsule
+
+Subtask schema (goal, tools_allowed, budget, typed done-condition,
+inputs), plan validator, and state capsule format. No model calls yet.
+
+**Done when:** invalid plans are rejected in unit tests; valid plans pass
+through unchanged.
+
+**Completion:** 2026-11-17. `backend/projects/plan_sequence/` holds the
+Pydantic v2 schema (`contracts.py`, `extra="forbid"`), `validate_sequence_plan`
+(5–15 steps, unique ids, registered tools only, typed done-conditions,
+no dangling inputs), and `build_capsule` (≤400 tokens, ≤24 entries,
+summaries then values trimmed first, pointer loss recorded). Verification:
+the 84-test `plan_sequence` suite passes, including contract and capsule
+tests that reject invalid plans.
+
+#### SEQ-01B — P1: Measure the design targets
+
+**Owner:** plan-sequence measurement wave, started 2026-11-17.
+
+Run the sequenced path on PockPock's own task sample with real requests;
+measure prompt tokens per step, step success rate, and end-to-end task
+success vs the monolithic path.
+
+**Done when:** the ~1,500-token-per-step and ≤400-token-capsule figures
+are confirmed or corrected with real numbers, and end-to-end success vs
+the monolithic path is measured. Do not proceed on unmeasured targets.
+
+**Status (2026-11-17, not Done):** the harness exists and the token
+targets are confirmed — `backend/scripts/evaluate_plan_sequence.py`
+(6 hand-written reference plans, Measurements A–C) and
+`backend/scripts/plan_sequence_eval.md`: max step prompt 390 tokens,
+max capsule 109 tokens, fake-model runs 30/30 steps and 6/6 tasks
+completed. Still open: the live run with real `qwen3.5:2b` was NOT
+measured (the single bounded attempt exceeded its 120 s budget on this
+VM), and end-to-end task success vs the monolithic path is NOT measured
+(no monolithic runner exists to compare against). The feature doc
+(`docs/features/plan-and-sequence.md`) records both as open limits.
+Verification so far: `py_compile` passed; 84 `plan_sequence` tests and
+5 eval-harness tests pass.
+
+#### SEQ-01C — P2: Code-first verifier, retry, re-plan trigger
+
+Code-first verifier, retry ≤2× with grounded error feedback, re-plan
+trigger on repeated failure.
+
+**Done when:** a deliberately wrong step is caught at its boundary in
+tests; the run recovers instead of compounding.
+
+**Completion:** 2026-11-17. `verify_done_condition` checks typed
+done-conditions against files and the recorded step result (never the
+model's claim, never raising); `SequenceRunner` retries a failed step
+≤2× with the failure detail fed back, then stops with
+`status="needs_replan"` for the remaining steps only. Verification: the
+84-test `plan_sequence` suite passes, including wrong-step retry →
+`needs_replan`, tool-outside-allowed rejection, and prompt-over-budget
+cases.
+
+#### SEQ-01D — P3: Router wiring (planner service plan-sequence endpoint)
+
+**Owner:** plan-sequence routing wave, started 2026-11-17.
+
+Smart Router sends planning turns to the strong model and execution turns
+to the small model; the Tool-RAG retriever supplies each step's pinned
+tools. Planner service endpoint `POST /plan-sequence` returns a validated
+plan (one fix-up attempt, then 502; planner timeout surfaced as a
+re-plan trigger).
+
+**Done when:** end-to-end tasks complete on the RTX 4070 with the
+Qwen3.6 planner / Qwen3.5-9B executor split.
+
+**Status (2026-11-17, not Done):** the code is built and unit-tested —
+`choose_planner_model` / `choose_executor_model` in
+`backend/projects/plan_sequence/routing.py` and `POST /plan-sequence` in
+`backend/projects/planner/app.py` — but the pass condition (end-to-end
+tasks on the RTX 4070 with that model split) has NOT been verified; no
+live run on that hardware has happened. The gateway
+`/api/agents/plan-sequence` and `/api/agents/run-sequence` routes and
+any runner caller do not exist yet.
+
+#### SEQ-01E — P4: OpenClaw as tool provider (subtask mode)
+
+**Owner:** plan-sequence OpenClaw wave, started 2026-11-17.
+
+OpenClaw mode executes subtasks handed to it, with the step's small
+prompt and pinned tools.
+
+**Done when:** OpenClaw completes multi-step tasks with qwen3.5:2b/9B
+that previously never completed (the ~21K-prompt failure case).
+
+**Status (2026-11-17, not Done):** subtask mode is implemented in the
+Node helper only — `validateSubtask` / `buildSubtaskMessage` /
+`subtaskTimeoutSeconds` in
+`backend/projects/openclaw_bridge/turn_helpers.mjs`, wired into
+`gateway_turn.mjs` (invalid subtask fails fast; `subtaskId` echoed on
+started/final events) — but `openclaw_bridge` does not send a subtask
+yet, no runner caller exists, and the pass condition (live multi-step
+OpenClaw tasks on small models) has NOT been verified. Pinning in
+subtask mode is prompt-level only; OpenClaw has no tool allow-list API.
 
 ### Priority 4 — Multi-agent systems
 
@@ -695,10 +815,12 @@ Consolidate synthetic end-to-end capability cases with typed-contract, permissio
 
 ## Completion log
 
-TOL-01, FND-01, TOL-02, FND-02, FND-04, PLN-01, PLN-02, PLN-03, BRW-01, BRW-02, BRW-03, BRW-04, BRW-05, BRW-06, BRW-06A, BRW-06B, BRW-06C, BRW-06C1, BRW-06C2, BRW-06C2A, BRW-06C2B, BRW-06C2C, BRW-06C3, RES-01, RES-02, RES-03, RES-04, RES-05, RES-06, MAG-01, MAG-02, MAG-03, MAG-04A, MAG-04B, MAG-04C, MAG-05A, MAG-05B, AUT-01, AUT-06A, AUT-06B, and AUT-06 are complete. Operational controls such as cancellation, timeouts, and payload limits remain to keep local runs reliable.
+TOL-01, FND-01, TOL-02, FND-02, FND-04, PLN-01, PLN-02, PLN-03, BRW-01, BRW-02, BRW-03, BRW-04, BRW-05, BRW-06, BRW-06A, BRW-06B, BRW-06C, BRW-06C1, BRW-06C2, BRW-06C2A, BRW-06C2B, BRW-06C2C, BRW-06C3, RES-01, RES-02, RES-03, RES-04, RES-05, RES-06, MAG-01, MAG-02, MAG-03, MAG-04A, MAG-04B, MAG-04C, MAG-05A, MAG-05B, AUT-01, AUT-06A, AUT-06B, AUT-06, SEQ-01A, and SEQ-01C are complete. Operational controls such as cancellation, timeouts, and payload limits remain to keep local runs reliable.
 
 | Date | Task ID | Agent/owner | Result and verification | Changed files |
 | --- | --- | --- | --- | --- |
+| 2026-11-17 | SEQ-01A | Plan-sequence wave | P0 schema + validation + capsule: `SequencePlan` / `SequenceStep` / `DoneCondition` / `StateCapsule` (Pydantic v2, `extra="forbid"`), `validate_sequence_plan` (5–15 steps, unique ids, registered tools only, typed done-conditions, no dangling inputs), `build_capsule` (≤400 tokens, ≤24 entries, pointer-loss flag). Verification: 84-test `plan_sequence` suite passes, including invalid-plan rejection and capsule-trimming tests. | `backend/projects/plan_sequence/contracts.py`, `capsule.py`, `__init__.py`, `README.md` |
+| 2026-11-17 | SEQ-01C | Plan-sequence wave | P2 verifier + retry: `verify_done_condition` checks typed done-conditions against files and the recorded step result (never the model's claim, never raises); `SequenceRunner` retries a failed step ≤2× with grounded feedback, then stops with `needs_replan` for the remaining steps only; executor always called with `think=False`; pinned tools harness-enforced. Verification: 84-test `plan_sequence` suite passes, including wrong-step retry → `needs_replan`, tool-outside-allowed rejection, and prompt-over-budget cases. Not yet wired: no in-repo runner caller, no adapter to the real tools, no run-store persistence of runner events. | `backend/projects/plan_sequence/verifier.py`, `runner.py`, `__init__.py`, `README.md` |
 | 2026-11-16 | LRN-04A, LRN-04B | Claude Code (user session) | Setup (AI detection for PockPock itself, GitHub Copilot, Claude Code and Codex with data notices; GitHub CLI sign-in; clone or fork after an explicit Allow; no-reply git identity) verified end to end in the real app with a real clone. Fix runs in git worktrees with the Manager's own checks and a required documentation change; "PockPock itself" is a native tool loop on Ollama (`maintenance-agent.cjs`) after an OpenClaw-based attempt stalled on a hung tool for 21 minutes; automatic mode works through open reports one at a time. Real run: automatic mode picked up a documentation report, `qwen3.5:9b` produced a fix with a docs update in 1.8 min, all four desktop checks passed, the run reached "ready for review", and discard removed the worktree and branch. 23 node tests. The watchdog in `gateway_turn.mjs` now counts only real progress. Not yet exercised: approval opening a real draft PR (LRN-04C). | `desktop/electron/maintenance*.cjs`, `desktop/src/components/MaintenanceSetup.tsx`, `FixPanel.tsx`, `desktop/src/pages/MaintenancePage.tsx`, `backend/projects/openclaw_bridge/gateway_turn.mjs`, `docs/features/maintenance.md` |
 | 2026-11-16 | LRN-04B (option) | Claude Code (user session) | "PockPock itself" can optionally run through OpenClaw so it can run commands (build, tests, the app) while fixing. In a real run with `qwen3.5:9b` OpenClaw looped for 34 minutes without a tool call or file change, and its watchdog did not stop it because each finished model call counts as progress. Added `idleGuard`: a run with no tool call for 10 minutes is stopped and marked failed. 24 node tests, typecheck and build pass. Not re-run end to end with a larger model; the file-only agent stays the default. | `desktop/electron/maintenance*.cjs`, `MaintenanceSetup.tsx`, `FixPanel.tsx`, `docs/features/maintenance.md`, `README.md` |
 | 2026-11-16 | LRN-04B (cloud AIs) | Claude Code (user session) | Real run with GitHub Copilot CLI 1.0.107: worktree created from the latest `main`, Copilot started in it, and it stopped with "You have exceeded your monthly quota"; the run failed cleanly with that message and discard removed the worktree and branch. The same review found that Claude Code and Codex, installed by npm as `.cmd` launchers, were started through `cmd.exe` with the report text on the command line (unescaped, so `&` in a report could run commands, and the allowed-tools list split at spaces). `agentCommand` now sends their prompt on stdin and quotes the fixed arguments; 25 node tests. A successful cloud-AI fix is still not verified. | `desktop/electron/maintenance-fix.cjs`, `maintenance-fix.test.cjs`, `docs/features/maintenance.md` |

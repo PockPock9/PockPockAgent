@@ -18,7 +18,10 @@ from pydantic import BaseModel, Field
 from planner.critic import review_plan
 from planner.contracts import normalized_plan_steps, normalized_subtask_plan, normalized_task_brief
 from planner.routing import choose_candidate
+from projects.agent_tools import registered_tool_contracts
 from projects.model_router import ChatCompletionRequest, ModelProviderError, OllamaChatCompletionAdapter
+from projects.plan_sequence.contracts import SEQUENCE_CONTRACT_VERSION, validate_sequence_plan
+from projects.plan_sequence.routing import choose_executor_model, choose_planner_model
 from projects.model_router.cloud import OpenAICompatibleAdapter, RoutingChatCompletionProvider
 
 app = FastAPI(title="PockPock Planner", docs_url=None, redoc_url=None)
@@ -84,6 +87,19 @@ class PlanRequest(BaseModel):
     permission_mode: str = Field(default="auto-review", pattern=r"^(default|auto-review|full-access)$")
 
 
+class SequencePlanRequest(BaseModel):
+    """Request for POST /plan-sequence: same shapes as PlanRequest, plus planner_model."""
+
+    task: str = Field(min_length=1, max_length=8_000)
+    capable_models: list[str] = Field(min_length=1, max_length=64)
+    model_profiles: list[dict] = Field(default_factory=list, max_length=64)
+    preferred_model: str | None = Field(default=None, max_length=120)
+    default_model: str = Field(min_length=1, max_length=120)
+    workspace_path: str | None = Field(default=None, max_length=1024)
+    permission_mode: str = Field(default="auto-review", pattern=r"^(default|auto-review|full-access)$")
+    planner_model: str | None = Field(default=None, max_length=120)
+
+
 def build_execution_prompt(task: str, plan: list[str], model_prompt: object) -> str:
     prompt = ""
     if isinstance(model_prompt, str):
@@ -108,6 +124,86 @@ def build_execution_prompt(task: str, plan: list[str], model_prompt: object) -> 
         "Do not invent file deliverables or workspace changes. If files are created or changed, name them; report validation only if performed.\n\n"
         f"Detailed execution prompt:\n{prompt}"
     )[:4_000]
+
+
+def build_sequence_plan_prompt(task: str, tool_names: list[str], workspace_path: str | None, permission_mode: str) -> str:
+    """Ask the planner model for a validated sequence plan (Plan-and-Sequence P3)."""
+    tools = ", ".join(tool_names)
+    return (
+        "Break the user's request into a validated sequence plan for a small local model to execute one subtask at a time. "
+        "Return JSON only, with this shape: "
+        '{"contract_version": 1, "task": "<the request>", "steps": [{"id": "find-invoices", "goal": "<one sentence>", '
+        '"tools_allowed": ["<tool>"], "budget_tokens": 4000, "budget_seconds": 300, '
+        '"done_condition": {"type": "file_exists", "path": "summary.md"}, "inputs": ["task"]}]}. '
+        "Rules: 5-15 sequential steps, in execution order. Each step id is lowercase letters, digits, dashes or underscores "
+        "(max 32 characters) and unique. Each goal is one sentence (max 280 characters) stating only what that step achieves. "
+        "Each tools_allowed lists 1-3 tools, drawn only from this list: "
+        f"{tools}. "
+        "Use no other tool names: the plan is validated and rejected if a step names a tool that does not exist. "
+        "Each budget_tokens is 500-16000 and each budget_seconds is 30-900. "
+        "Each done_condition is one typed, code-checkable condition, never prose: "
+        "file_exists needs path; file_contains needs path and pattern; command_exit_0 needs no fields; "
+        "value_equals needs field and expected; no_error needs no fields. "
+        "A plan with an uncheckable done-condition is invalid and rejected. "
+        'Each inputs lists earlier step ids, or "task" for the original request; never a later step and never an unknown id. '
+        "Keep each step small enough for a small model: one clear goal, at most 3 tools, a short output. "
+        f"Workspace: {workspace_path or 'a new temporary task workspace'}. "
+        f"Permission: {permission_mode}. User request: {task}"
+    )
+
+
+def build_sequence_plan_fixup_prompt(error: str, previous_plan: dict, tool_names: list[str]) -> str:
+    """Ask the planner model to repair a plan that failed validation (one bounded attempt)."""
+    tools = ", ".join(tool_names)
+    previous = json.dumps(previous_plan)[:12_000]
+    return (
+        "Your previous sequence plan was rejected by validation. Fix it and return the complete corrected plan as JSON only. "
+        f"Validation error: {error[:2_000]} "
+        "The plan must have 5-15 sequential steps; every tools_allowed entry must come from this list: "
+        f"{tools}; every done_condition must be a typed, code-checkable condition "
+        "(file_exists needs path; file_contains needs path and pattern; command_exit_0 needs no fields; "
+        "value_equals needs field and expected; no_error needs no fields); "
+        'every inputs entry must be "task" or an earlier step id. '
+        f"Previous plan: {previous}"
+    )
+
+
+#: A planner timeout is a re-plan trigger, not a fatal error (the known
+#: 111-second planner timeout bug is out of scope here; see the
+#: Plan-and-Sequence design page). The 502 detail says so explicitly.
+PLANNER_TIMEOUT_DETAIL = (
+    "Planner timed out while writing the sequence plan; "
+    "treat this as a re-plan trigger, not a fatal error, and retry planning."
+)
+
+
+def _is_timeout_failure(exc: BaseException | None) -> bool:
+    """Whether an error chain is a timeout: a TimeoutError anywhere in the
+    chain, or timeout wording from the provider (aiohttp reports timeouts as
+    ``Connection timeout to host ...`` or a bare ``asyncio.TimeoutError``,
+    which ``_request_model_json`` wraps as a 502 HTTPException)."""
+    seen: set[int] = set()
+    current = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, TimeoutError):
+            return True
+        if "timed out" in str(current).lower() or "timeout" in str(current).lower():
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
+async def _request_sequence_plan_json(model: str, messages: list[dict[str, str]], timeout: aiohttp.ClientTimeout) -> dict:
+    """One planner JSON call for a sequence plan, with timeout surfaced as a re-plan trigger."""
+    try:
+        return await _request_model_json(model, messages, timeout=timeout, role="planner")
+    except HTTPException as err:
+        if _is_timeout_failure(err):
+            raise HTTPException(status_code=502, detail=PLANNER_TIMEOUT_DETAIL) from err
+        raise
+    except (aiohttp.ClientError, TimeoutError) as err:
+        raise HTTPException(status_code=502, detail=PLANNER_TIMEOUT_DETAIL) from err
 
 
 @app.get("/health")
@@ -221,3 +317,77 @@ async def plan(payload: PlanRequest):
         raise
     except (aiohttp.ClientError, TimeoutError, ValueError, TypeError) as err:
         raise HTTPException(status_code=502, detail=f"Planner service could not produce a usable plan: {err}") from err
+
+
+@app.post("/plan-sequence", dependencies=[Depends(require_internal_token)])
+async def plan_sequence(payload: SequencePlanRequest):
+    """Plan one task as a validated sequence plan (Plan-and-Sequence P3).
+
+    The planner model (strong local model by default) writes 5-15 sequential
+    subtasks; the plan is validated before anything executes. On validation
+    failure the model gets exactly one fix-up attempt with the error text;
+    if it still fails, the request fails with 502 and no invalid plan is
+    returned. A planner timeout is a re-plan trigger, not a fatal error.
+    """
+    task = payload.task.strip()
+    installed = set(dict.fromkeys(payload.capable_models))
+    profiles = payload.model_profiles or None
+    try:
+        planner_model, planner_reason = choose_planner_model(
+            installed,
+            preferred=payload.planner_model or payload.preferred_model,
+            fallback=payload.default_model,
+            profiles=profiles,
+        )
+    except ValueError as err:
+        raise HTTPException(status_code=503, detail=str(err)) from err
+    try:
+        executor_model, executor_reason = choose_executor_model(
+            installed, step_complexity="standard", profiles=profiles
+        )
+    except ValueError as err:
+        raise HTTPException(status_code=503, detail=str(err)) from err
+    tool_names = sorted(registered_tool_contracts())
+    prompt = build_sequence_plan_prompt(task, tool_names, payload.workspace_path, payload.permission_mode)
+    timeout = planning_timeout(payload.model_profiles, planner_model)
+    try:
+        raw = await _request_sequence_plan_json(
+            planner_model, [{"role": "user", "content": prompt}], timeout
+        )
+    except ValueError as err:
+        # The model returned malformed JSON or a non-object; there is no
+        # previous JSON to show it, so no fix-up attempt is possible.
+        raise HTTPException(
+            status_code=502,
+            detail=f"Planner returned unusable JSON for the sequence plan: {err}",
+        ) from err
+    try:
+        validated = validate_sequence_plan(raw, allowed_tools=set(tool_names))
+    except ValueError as err:
+        fixup_prompt = build_sequence_plan_fixup_prompt(str(err), raw, tool_names)
+        try:
+            raw_retry = await _request_sequence_plan_json(
+                planner_model, [{"role": "user", "content": fixup_prompt}], timeout
+            )
+        except ValueError as retry_err:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Planner returned unusable JSON for the sequence plan: {retry_err}",
+            ) from retry_err
+        try:
+            validated = validate_sequence_plan(raw_retry, allowed_tools=set(tool_names))
+        except ValueError as retry_err:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Planner returned an invalid sequence plan after one fix-up attempt: {str(retry_err)[:2_000]}",
+            ) from retry_err
+    validated["planner_model"] = planner_model
+    validated["executor_model"] = executor_model
+    return {
+        "contract_version": SEQUENCE_CONTRACT_VERSION,
+        "sequence_plan": validated,
+        "selected_model": planner_model,
+        "executor_model": executor_model,
+        "reason": planner_reason,
+        "executor_reason": executor_reason,
+    }

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { cleanToolError, isStalled, DEFAULT_STALL_SECONDS } from './turn_helpers.mjs'
+import { buildSubtaskMessage, cleanToolError, isStalled, subtaskTimeoutSeconds, validateSubtask, DEFAULT_STALL_SECONDS } from './turn_helpers.mjs'
 
 test('a turn is stalled only after the limit with no approval waiting', () => {
   const stallMs = DEFAULT_STALL_SECONDS * 1000
@@ -23,4 +23,70 @@ test('wrapper-only errors get a readable fallback, and long errors are cut', () 
 
 test('ordinary errors pass through with whitespace collapsed', () => {
   assert.equal(cleanToolError('Invalid arguments for tool "browser":\n  action: must be one of …'), 'Invalid arguments for tool "browser": action: must be one of …')
+})
+
+const validSubtask = () => ({
+  id: 'step-2',
+  goal: 'Read the two invoice messages and list their dates and amounts.',
+  tools_allowed: ['gmail_search', 'read_message'],
+  budget_seconds: 120,
+  capsule_text: 'Invoice message IDs: abc123, def456.',
+  model: 'qwen3.5:9b',
+})
+
+test('subtask message contains the goal, pinned tools, capsule, and DONE/FAILED line', () => {
+  const message = buildSubtaskMessage(validSubtask())
+  assert.match(message, /You are executing ONE subtask of a larger plan\. Do only this subtask\./)
+  assert.match(message, /Goal: Read the two invoice messages/)
+  assert.match(message, /Use only these tools: gmail_search, read_message\./)
+  assert.match(message, /State from earlier steps: Invoice message IDs: abc123, def456\./)
+  assert.match(message, /End with a single line "DONE: <evidence>" on success or "FAILED: <reason>" on failure\./)
+})
+
+test('subtask message has no history and stays small by construction', () => {
+  const message = buildSubtaskMessage(validSubtask())
+  assert.doesNotMatch(message, /conversation history|system prompt/i)
+  // Goal (<=500 chars) + capsule (<=1200 chars) + short template: far under ~1,500 tokens.
+  assert.ok(message.length < 2500, `message is ${message.length} chars`)
+  // Capsule is optional: no capsule line without one.
+  const { capsule_text, ...noCapsule } = validSubtask()
+  assert.doesNotMatch(buildSubtaskMessage(noCapsule), /State from earlier steps/)
+})
+
+test('a very long capsule is truncated with a marker', () => {
+  const message = buildSubtaskMessage({ ...validSubtask(), capsule_text: 'x'.repeat(5000) })
+  assert.match(message, /\[truncated\]/)
+  assert.ok(message.length < 2500, `message is ${message.length} chars`)
+  assert.ok(!message.includes('x'.repeat(2000)))
+})
+
+test('invalid subtask shapes are rejected with clear messages', () => {
+  assert.throws(() => validateSubtask(null), /must be an object/)
+  assert.throws(() => validateSubtask({ goal: 'x', tools_allowed: ['a'] }), /id must be a non-empty string/)
+  assert.throws(() => validateSubtask({ id: 's1', goal: '', tools_allowed: ['a'] }), /goal must be a non-empty string/)
+  assert.throws(() => validateSubtask({ id: 's1', goal: 'g'.repeat(501), tools_allowed: ['a'] }), /at most 500 characters/)
+  assert.throws(() => validateSubtask({ id: 's1', goal: 'g', tools_allowed: [] }), /1 to 3 tools/)
+  assert.throws(() => validateSubtask({ id: 's1', goal: 'g', tools_allowed: ['a', 'b', 'c', 'd'] }), /1 to 3 tools/)
+  assert.throws(() => validateSubtask({ id: 's1', goal: 'g', tools_allowed: ['a', ''] }), /non-empty string/)
+  assert.throws(() => validateSubtask({ id: 's1', goal: 'g', tools_allowed: ['a', 'a'] }), /must not repeat/)
+  assert.throws(() => validateSubtask({ ...validSubtask(), budget_seconds: 29 }), /between 30 and 900/)
+  assert.throws(() => validateSubtask({ ...validSubtask(), budget_seconds: 901 }), /between 30 and 900/)
+  assert.throws(() => validateSubtask({ ...validSubtask(), budget_seconds: '120' }), /between 30 and 900/)
+  assert.throws(() => validateSubtask({ ...validSubtask(), capsule_text: 42 }), /capsule_text must be a string/)
+  assert.throws(() => validateSubtask({ ...validSubtask(), model: '' }), /model must be a non-empty string/)
+  assert.throws(() => buildSubtaskMessage({ ...validSubtask(), goal: '' }), /goal must be a non-empty string/)
+})
+
+test('valid subtasks normalise: trims, drops an empty capsule, keeps optional fields', () => {
+  const checked = validateSubtask({ id: ' s1 ', goal: ' Do it. ', tools_allowed: [' read_file '], capsule_text: '  ', model: ' qwen3.5:9b ' })
+  assert.deepEqual(checked, { id: 's1', goal: 'Do it.', tools_allowed: ['read_file'], model: 'qwen3.5:9b' })
+  const minimal = validateSubtask({ id: 's1', goal: 'Do it.', tools_allowed: ['read_file'] })
+  assert.deepEqual(minimal, { id: 's1', goal: 'Do it.', tools_allowed: ['read_file'] })
+})
+
+test('the subtask budget replaces the caller timeout, otherwise the fallback stands', () => {
+  assert.equal(subtaskTimeoutSeconds(validSubtask(), 1800), 120)
+  assert.equal(subtaskTimeoutSeconds({ id: 's1', goal: 'g', tools_allowed: ['a'] }, 1800), 1800)
+  assert.equal(subtaskTimeoutSeconds(null, 1800), 1800)
+  assert.equal(subtaskTimeoutSeconds(undefined, 1800), 1800)
 })
