@@ -10,6 +10,7 @@ def agent_tool_specs() -> list[dict[str, Any]]:
     specs = [{'type': 'function', 'function': {'name': 'search_public_site', 'description': 'Search a user-supplied public website by crawling at most five same-host text/HTML pages. Accepts a bare hostname. Never fetches video, audio, or other media files.', 'parameters': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': 'The public hostname or HTTP/HTTPS URL supplied in the task'}, 'query': {'type': 'string', 'description': 'A concise phrase describing the public text information to find'}}, 'required': ['url', 'query']}}}, {'type': 'function', 'function': {'name': 'scrape_public_page', 'description': "Fetch and extract readable text from a public page explicitly included in the user's task. Read-only, same-host only, bounded download.", 'parameters': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': 'A public HTTP/HTTPS URL on a host the user supplied'}}, 'required': ['url']}}}, {'type': 'function', 'function': {'name': 'read_selected_file', 'description': 'Read text from a file explicitly attached to this task. Never reads arbitrary paths.', 'parameters': {'type': 'object', 'properties': {'name': {'type': 'string', 'description': 'The exact uploaded filename'}}, 'required': ['name']}}}, {'type': 'function', 'function': {'name': 'save_text_artifact', 'description': "Save a new text, Markdown, CSV, JSON, or HTML artifact in this task's dedicated output folder. Existing files are never overwritten.", 'parameters': {'type': 'object', 'properties': {'filename': {'type': 'string'}, 'content': {'type': 'string', 'description': 'Complete artifact contents'}}, 'required': ['filename', 'content']}}}, {'type': 'function', 'function': {'name': 'create_office_document', 'description': 'Create a new Word document, spreadsheet, or PowerPoint presentation in the task output folder. Spreadsheet content should be CSV text; presentation content may use blank lines to separate slides.', 'parameters': {'type': 'object', 'properties': {'filename': {'type': 'string'}, 'kind': {'type': 'string', 'enum': ['word', 'spreadsheet', 'presentation']}, 'title': {'type': 'string'}, 'content': {'type': 'string'}}, 'required': ['filename', 'kind', 'title', 'content']}}}, {'type': 'function', 'function': {'name': 'generate_local_image', 'description': 'Generate a PNG with an already-running local ComfyUI or Stable Diffusion WebUI engine. Never uses a cloud image service.', 'parameters': {'type': 'object', 'properties': {'prompt': {'type': 'string'}, 'width': {'type': 'integer', 'enum': [512, 640, 768, 896, 1024]}, 'height': {'type': 'integer', 'enum': [512, 640, 768, 896, 1024]}}, 'required': ['prompt']}}}]
     specs.append({'type': 'function', 'function': {'name': 'browse_public_page', 'description': 'Open one public web page in a fresh isolated browser context and return its visible text plus a saved screenshot. The runtime opens a visible Chromium window only when the original user task explicitly asks to open/show a browser or window; otherwise it stays headless. Explicit headless/background requests override visible intent. The page hostname must have been explicitly named in the user task. Read-only: does not click, type, submit forms, or use browser logins.', 'parameters': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': 'Public HTTP/HTTPS URL explicitly supplied by the user'}}, 'required': ['url']}}})
     specs.append({'type': 'function', 'function': {'name': 'browser_action', 'description': 'Apply one state-bound action to the most recent browser observation, then return a fresh observation and screenshot. Actions are click (named links only), type (named textbox/searchbox; never passwords), select (named combobox), scroll (up/down), and same-host navigate. Do not submit forms or click buttons. Use the exact observation_id returned by browse_public_page or the previous browser_action.', 'parameters': {'type': 'object', 'properties': {'observation_id': {'type': 'string', 'minLength': 32, 'maxLength': 32}, 'action': {'type': 'string', 'enum': ['click', 'type', 'select', 'scroll', 'navigate']}, 'role': {'type': 'string', 'enum': ['link', 'textbox', 'searchbox', 'combobox']}, 'name': {'type': 'string', 'maxLength': 160}, 'value': {'type': 'string', 'maxLength': 1000}, 'url': {'type': 'string', 'maxLength': 2048}, 'direction': {'type': 'string', 'enum': ['up', 'down']}}, 'required': ['observation_id', 'action']}}})
+    specs.append({'type': 'function', 'function': {'name': 'search_tools', 'description': 'Search the one-line index of permitted tools for tools that fit a follow-up need, when the tools selected for this task do not include the right one. Returns matching tools with one-line descriptions and scores; the full schemas of the matches are then added to your available tools for the next turn, so call search_tools first and use the new tools afterwards. Read-only: never runs another tool.', 'parameters': {'type': 'object', 'properties': {'query': {'type': 'string', 'description': 'What the tool should do, in plain words'}, 'top_k': {'type': 'integer', 'minimum': 1, 'maximum': 10, 'description': 'How many matches to return (default 5)'}}, 'required': ['query']}}})
     return specs
 
 def project_agent_tool_specs() -> list[dict[str, Any]]:
@@ -92,4 +93,42 @@ async def execute_agent_tool(name: str, arguments: dict[str, Any], context: Agen
         return {"generated": True, **await artifacts.generate_local_image(
             context, arguments.get("prompt"), arguments.get("width", 768), arguments.get("height", 768)
         )}
+    if name == "search_tools":
+        query = arguments.get("query")
+        if not isinstance(query, str) or not query.strip():
+            raise AgentToolError("A search query is required")
+        top_k = arguments.get("top_k", 5)
+        if not isinstance(top_k, int) or isinstance(top_k, bool) or top_k < 1 or top_k > 10:
+            raise AgentToolError("top_k must be an integer between 1 and 10")
+        # Lazy import: tool_retriever imports this registry module.
+        from .tool_retriever import SEARCH_TOOL_NAME, ToolRetriever
+
+        permitted = context.permitted_tools
+        if permitted is None:
+            # No run context (direct registry call): only read-only tools,
+            # so a context-free search can never surface a write/high-risk tool.
+            permitted = frozenset(
+                tool_name
+                for tool_name, contract in registered_tool_contracts().items()
+                if contract.risk_level == "read"
+            )
+        retriever = ToolRetriever()
+        retrieval = retriever.retrieve(
+            query.strip(),
+            top_k=top_k,
+            permitted=sorted(permitted),
+            permission_mode=context.permission_mode,
+        )
+        results = [
+            {
+                "name": tool_name,
+                "one_line": retriever.by_name[tool_name].one_line,
+                "score": retrieval.scores.get(tool_name, 0.0),
+            }
+            for tool_name in sorted(
+                retrieval.scores, key=lambda item: retrieval.scores[item], reverse=True
+            )[:top_k]
+            if tool_name != SEARCH_TOOL_NAME
+        ]
+        return {"query": query.strip(), "results": results, "method": retrieval.method}
     raise AgentToolError("The requested tool is not available in this bounded agent")

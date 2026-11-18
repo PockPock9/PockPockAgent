@@ -21,7 +21,7 @@ const host = paths.IS_MAC ? require('./setup-mac.cjs') : require('./setup-win.cj
 const { run } = platform
 
 // The default model is chosen per computer (hardware.cjs) and remembered in setup.json.
-const ROUTER_MODEL = 'qwen2.5:1.5b' // the Smart Router's classifier
+const ROUTER_MODEL = 'qwen3.5:2b' // the Smart Router's classifier
 const nemoclawEnv = (model) => `NEMOCLAW_NO_EXPRESS=1 NEMOCLAW_NON_INTERACTIVE=1 NEMOCLAW_PROVIDER=ollama NEMOCLAW_MODEL=${model} NEMOCLAW_SANDBOX_NAME=pockpock NEMOCLAW_CONTEXT_WINDOW=32768 NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1`
 const OPENCLAW_HOME = path.join(os.homedir(), '.openclaw')
 const BUNDLED_SKILLS = require('./openclaw-skills.json').skills

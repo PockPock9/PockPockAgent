@@ -102,5 +102,46 @@ class AgentToolTests(unittest.TestCase):
                 with self.assertRaises(AgentToolError):
                     asyncio.run(execute_agent_tool("read_selected_file", {"name": "secret.txt"}, context))
 
+        def test_search_tools_returns_only_permitted_matches(self):
+            with tempfile.TemporaryDirectory() as temporary:
+                context = AgentToolContext("c" * 32, set(), {}, Path(temporary))
+                context.permitted_tools = frozenset({
+                    "save_text_artifact", "search_public_site", "search_tools",
+                })
+                result = asyncio.run(execute_agent_tool(
+                    "search_tools", {"query": "save the results as a markdown file"}, context
+                ))
+                names = [item["name"] for item in result["results"]]
+                self.assertIn("save_text_artifact", names)
+                self.assertNotIn("search_tools", names)
+                self.assertNotIn("propose_project_edit", names)
+                self.assertEqual(result["query"], "save the results as a markdown file")
+                self.assertIn(result["method"], {"keyword", "hybrid", "deterministic", "fallback-full"})
+                for item in result["results"]:
+                    self.assertIn("one_line", item)
+                    self.assertIn("score", item)
+
+        def test_search_tools_rejects_bad_input(self):
+            with tempfile.TemporaryDirectory() as temporary:
+                context = AgentToolContext("c" * 32, set(), {}, Path(temporary))
+                context.permitted_tools = frozenset({"save_text_artifact", "search_tools"})
+                for arguments in ({"query": ""}, {"query": "save a file", "top_k": 0},
+                                  {"query": "save a file", "top_k": 11},
+                                  {"query": "save a file", "top_k": "five"}):
+                    with self.subTest(arguments=arguments), self.assertRaises(AgentToolError):
+                        asyncio.run(execute_agent_tool("search_tools", arguments, context))
+
+        def test_search_tools_without_run_context_only_reads(self):
+            # No permitted_tools on the context: a context-free search can
+            # never surface a write or high-risk tool.
+            with tempfile.TemporaryDirectory() as temporary:
+                context = AgentToolContext("c" * 32, set(), {}, Path(temporary))
+                result = asyncio.run(execute_agent_tool(
+                    "search_tools", {"query": "fix the bug in counter.py"}, context
+                ))
+                names = [item["name"] for item in result["results"]]
+                self.assertNotIn("propose_project_edit", names)
+                self.assertNotIn("save_text_artifact", names)
+
 if __name__ == "__main__":
     unittest.main()

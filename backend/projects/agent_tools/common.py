@@ -145,6 +145,12 @@ class AgentToolContext:
     scrape_count: int = 0
     image_count: int = 0
     artifacts: list[dict[str, str]] = field(default_factory=list)
+    # Tools this run is permitted to use (task capabilities / delegation).
+    # The executor sets it; search_tools only ever returns tools from this
+    # set. None means "no run context" — the search handler then falls back
+    # to read-only tools only, so a context-free call can never surface a
+    # write or high-risk tool.
+    permitted_tools: frozenset[str] | None = None
 
 @dataclass
 class ProjectAgentContext:
