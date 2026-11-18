@@ -36,6 +36,7 @@ from projects.agent_tools import (
     validate_tool_output,
 )
 from projects.agent_tools.tool_retriever import tool_retrieval_enabled
+from projects.agent_tools.context_compaction import compact_messages, truncate_tool_output
 from projects.model_router import (
     ChatCompletionProvider,
     ChatCompletionRequest,
@@ -1253,18 +1254,28 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                         and isinstance(tool.get("function"), dict)
                         and tool["function"].get("name") in permitted_tool_names
                     ]
+                    # search_tools only ever returns tools from this set.
+                    context.permitted_tools = frozenset(permitted_tool_names)
                     # Progressive disclosure (tool-RAG Phase 1): the model sees
                     # a one-line index of every permitted tool plus the full
                     # schemas of only the retrieved top-k. Delegates keep
                     # their pinned list. On any retrieval failure the full
                     # permitted list is used, so a miss costs tokens, never
                     # the task. Flag: POCKPOCK_TOOL_RETRIEVAL_ENABLED (on).
+                    # Phase 2: retrieval runs with the run's permission mode,
+                    # so tools the run may not use are filtered out before
+                    # ranking and never reach the model. The search_tools
+                    # escape hatch is always included in the selection, so
+                    # the model can discover tools mid-task; see the
+                    # hydration step after a search_tools call below.
                     if tool_retrieval_enabled():
                         try:
                             from projects.agent_tools.tool_retriever import ToolRetriever
 
                             selected_tools, retrieval = ToolRetriever().select_tools(
-                                payload.task.strip(), tools
+                                payload.task.strip(),
+                                tools,
+                                permission_mode=payload.permission_mode,
                             )
                             if retrieval.method != "fallback-full":
                                 tools = selected_tools
@@ -1292,6 +1303,22 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                         raise AgentRunTermination(get_cancel_reason())
                     if await request.is_disconnected():
                         raise asyncio.CancelledError
+                    # Context compaction (tool-RAG Phase 2): when the history
+                    # passes 70-80% of the context window, prune old tool
+                    # results first, then summarise the old portion keeping
+                    # a recent tail intact. Never touches the system prompt.
+                    messages, compaction = compact_messages(messages)
+                    if compaction["compacted"]:
+                        record({
+                            "event": "context_compaction",
+                            "task_id": task_id,
+                            "stage": compaction["stage"],
+                            "tokens_before": compaction["tokens_before"],
+                            "tokens_after": compaction["tokens_after"],
+                            "threshold_tokens": compaction["threshold_tokens"],
+                            "pruned": compaction["pruned"],
+                            "summarised": compaction["summarised"],
+                        })
                     current_call_id = uuid.uuid4().hex
                     call_started = time.monotonic()
                     record({
@@ -2118,9 +2145,53 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                                             {**item, "source_id": alias} if alias else item
                                         )
                                     model_tool_result["evidence"] = model_evidence
+                        if tool_status == "success" and name == "search_tools":
+                            # Hydration (tool-RAG Phase 2): the model searched
+                            # for tools because upfront retrieval missed. Add
+                            # the full schemas of the matches to the tool list
+                            # so the next model turn can call them; the search
+                            # result already told the model they exist.
+                            from projects.agent_tools.tool_retriever import hydrate_tools
+
+                            permitted_specs = [
+                                spec for spec in registered_tool_specs()
+                                if isinstance(spec, dict)
+                                and isinstance(spec.get("function"), dict)
+                                and spec["function"].get("name") in tool_contracts
+                            ]
+                            hydrated = hydrate_tools(tools, model_tool_result, permitted_specs)
+                            if hydrated:
+                                tools.extend(hydrated)
+                                hydrated_names = [
+                                    spec["function"]["name"] for spec in hydrated
+                                ]
+                                model_tool_result = {
+                                    **model_tool_result,
+                                    "note": (
+                                        "Full schemas for these tools have been added "
+                                        "to your available tools for the next turn: "
+                                        + ", ".join(hydrated_names)
+                                        + ". Call one of them through the tool interface."
+                                    ),
+                                }
+                                record({
+                                    "event": "tool_search_hydration",
+                                    "task_id": task_id,
+                                    "query": model_tool_result.get("query", ""),
+                                    "hydrated_tools": hydrated_names,
+                                })
                         result_text = json.dumps(model_tool_result, ensure_ascii=False)
-                        if len(result_text) > 50_000:
-                            result_text = result_text[:50_000] + "… (tool output truncated)"
+                        # Truncate over-long tool outputs at source: head +
+                        # tail with a pointer to the full content on disk
+                        # when it lives there (a saved artifact, or the file
+                        # that was read). Other results get a size marker only.
+                        pointer = None
+                        if name in {"save_text_artifact", "create_office_document",
+                                    "generate_local_image", "read_project_file"}:
+                            artifact_path = tool_result.get("path") if isinstance(tool_result, dict) else None
+                            if isinstance(artifact_path, str) and artifact_path:
+                                pointer = f"the file at {artifact_path}"
+                        result_text = truncate_tool_output(result_text, pointer=pointer)
                         messages.append({
                             "role": "tool",
                             "tool_call_id": call_id,

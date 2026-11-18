@@ -21,7 +21,14 @@ tool-RAG research:
     harness, before the model call — a weak local model is never asked to
     decide for itself which tools exist.
 
-Storage is in-memory brute force: 14 tools is a few hundred short
+Permission/risk filtering runs before any ranking (Phase 2): tools the run
+is not permitted to use (full-access tools in a default-mode run) and
+high-risk tools (workspace writes, project-code execution) unless the run
+explicitly allows them are removed from the candidate set first, so a
+forbidden tool can never be retrieved, pinned, or shown in the one-line
+index however well it matches the query. See :func:`filter_permitted_tools`.
+
+Storage is in-memory brute force: 15 tools is a few hundred short
 documents, scored in milliseconds. No sqlite-vec, LanceDB, or Chroma is
 needed at this scale, and no new dependency is added.
 
@@ -42,7 +49,7 @@ import urllib.request
 from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping, Sequence
 
-from .contracts import ToolContract
+from .contracts import ToolContract, risk_level_for_side_effect
 from .registry import registered_tool_contracts
 
 # ---------------------------------------------------------------------------
@@ -58,6 +65,12 @@ DEFAULT_TOP_K = 8
 #: they only appear when the task actually allows them.
 CORE_TOOL_NAMES = frozenset({"list_project_files", "read_selected_file"})
 
+#: The meta-tool for mid-task tool discovery. It is registered like any
+#: other tool (so the model can call it and the executor can validate it),
+#: but it is never ranked against task tools: it is always appended to the
+#: selection when permitted, and a search for tools never returns itself.
+SEARCH_TOOL_NAME = "search_tools"
+
 #: Ollama embedding model for the dense half of hybrid retrieval. Only used
 #: when it is installed; otherwise retrieval is keyword-only.
 EMBED_MODEL = "nomic-embed-text-v2-moe"
@@ -65,6 +78,68 @@ EMBED_MODEL = "nomic-embed-text-v2-moe"
 #: Minimum best BM25 score for the retrieval to be trusted. Below this the
 #: query matched nothing meaningful and the caller should use the full list.
 MIN_BM25_SCORE = 0.5
+
+#: Permission modes in which high-risk tools (risk level "high": tools that
+#: mutate existing workspace files or execute project code) may be retrieved.
+#: "default" runs never get them — the executor approval-gates workspace
+#: changes, and a "default" run has no approval path for them. The executor
+#: always passes the run's permission mode, so in production this is an
+#: explicit allowance, not a default.
+HIGH_RISK_PERMISSION_MODES = frozenset({"auto-review", "full-access"})
+
+#: Permission required by a tool that a "default" run may never retrieve,
+#: mirroring ``require_agent_tool_permission`` in the gateway: tools that
+#: require full access are invisible to default-mode runs.
+FULL_ACCESS_PERMISSION = "full-access"
+
+
+def high_risk_allowed(permission_mode: str | None, allow_high_risk: bool | None) -> bool:
+    """Whether high-risk tools may be retrieved for this run.
+
+    An explicit ``allow_high_risk`` flag wins. Otherwise a run permission
+    mode decides: auto-review and full-access allow them (the executor
+    approval-gates workspace changes in auto-review); "default" does not.
+    With no run context at all (eval harness, unit tests) the set is
+    unfiltered, so retrieval measurements stay comparable — the executor,
+    the only production caller, always passes a permission mode.
+    """
+    if allow_high_risk is not None:
+        return allow_high_risk
+    if permission_mode is None:
+        return True
+    return permission_mode in HIGH_RISK_PERMISSION_MODES
+
+
+def filter_permitted_tools(
+    contracts: Mapping[str, ToolContract],
+    *,
+    permission_mode: str | None = None,
+    allow_high_risk: bool | None = None,
+) -> tuple[set[str], dict[str, str]]:
+    """Apply permission/risk filtering to a tool set, before any ranking.
+
+    Returns ``(allowed names, filtered-out names with reasons)``. A filtered
+    tool can never be retrieved, pinned by deterministic routing, or shown
+    as a full schema — it is removed before BM25/dense scoring runs, so
+    ranking cannot resurrect it. Two rules, in order:
+
+    1. Permission: tools whose contract requires full access are excluded
+       from "default"-mode runs (same rule the executor enforces at call
+       time, applied here so the model never sees the tool at all).
+    2. Risk: high-risk tools (``risk_level == "high"``) are excluded unless
+       the run explicitly allows them (see :func:`high_risk_allowed`).
+    """
+    allowed: set[str] = set()
+    filtered_out: dict[str, str] = {}
+    allow_high = high_risk_allowed(permission_mode, allow_high_risk)
+    for name, contract in contracts.items():
+        if contract.required_permission == FULL_ACCESS_PERMISSION and permission_mode == "default":
+            filtered_out[name] = "permission: requires full-access, run is default mode"
+        elif risk_level_for_side_effect(contract.side_effect) == "high" and not allow_high:
+            filtered_out[name] = "risk: high-risk tool not allowed in this run"
+        else:
+            allowed.add(name)
+    return allowed, filtered_out
 
 ENV_FLAG = "POCKPOCK_TOOL_RETRIEVAL_ENABLED"
 
@@ -197,7 +272,7 @@ DETERMINISTIC_RULES: list[tuple[re.Pattern[str], tuple[str, ...]]] = [
      ("save_text_artifact",)),
     (re.compile(r"\b(research|search|look up|find)\b.{0,80}\b(website|web site|web page|on the web|online|internet)\b", re.I),
      ("search_public_site",)),
-    (re.compile(r"\b(scrape|fetch|extract|get the text)\b.{0,60}\b(https?://\S+|page|article|url|link)\b", re.I),
+    (re.compile(r"\b(scrape|fetch(?!\s+API\b)|extract|get the text)\b.{0,60}\b(https?://\S+|page|article|url|link)\b", re.I),
      ("scrape_public_page",)),
     (re.compile(r"\b(analy[sz]e|summari[sz]e|explain|read)\b.{0,60}\b(attached|attachment|uploaded)\b", re.I),
      ("read_selected_file",)),
@@ -205,7 +280,17 @@ DETERMINISTIC_RULES: list[tuple[re.Pattern[str], tuple[str, ...]]] = [
      ("validate_project",)),
     (re.compile(r"\b(fix|edit|change|update|patch|correct)\b.{0,60}\b(bug|code|file|function|title)\b", re.I),
      ("propose_project_edit",)),
+    # A fix/edit verb aimed at a named code file ("fix parser.py") is a
+    # high-confidence edit even when no bug/code/file noun follows.
+    (re.compile(r"\b(fix|edit|change|update|patch|correct)\b.{0,40}\b[\w-]+\.(py|js|mjs|cjs|jsx|ts|tsx|html|css|sql|sh|ps1|rb|go|rs|java)\b", re.I),
+     ("propose_project_edit",)),
     (re.compile(r"\b(create|write|build|add)\b.{0,60}\b(new file|script|web ?app|website|game|component)\b", re.I),
+     ("propose_project_patch",)),
+    # A create/write/build verb aimed at a named code file ("write
+    # csv2json.py") is a high-confidence new-file patch. Office extensions
+    # (.docx/.xlsx/.pptx) are deliberately excluded: the office rule above
+    # owns those.
+    (re.compile(r"\b(write|create|build)\b.{0,40}\b[\w-]+\.(py|js|mjs|cjs|jsx|ts|tsx|html|css|sql|sh|ps1|rb|go|rs|java)\b", re.I),
      ("propose_project_patch",)),
     (re.compile(r"\b(search|find|grep|look for)\b.{0,60}\b(in (the )?(code|codebase|project|workspace)|codebase)\b", re.I),
      ("search_project",)),
@@ -341,6 +426,10 @@ class Retrieval:
     tokens_after: int = 0
     dense_available: bool = False
     latency_ms: float = 0.0
+    # Tools removed by permission/risk filtering before ranking, with the
+    # reason each was excluded. Never empty when the run's permission mode
+    # forbids a tool the query would otherwise have matched.
+    filtered_out: dict[str, str] = field(default_factory=dict)
 
 
 def _doc_text(contract: ToolContract) -> str:
@@ -383,7 +472,10 @@ class ToolRetriever:
         embedder: OllamaEmbedder | None = None,
         dense_enabled: bool = True,
     ):
-        self.docs = build_tool_docs(contracts)
+        self.contracts_by_name: dict[str, ToolContract] = dict(
+            contracts if contracts is not None else registered_tool_contracts()
+        )
+        self.docs = build_tool_docs(self.contracts_by_name)
         self.by_name = {doc.name: doc for doc in self.docs}
         self.bm25 = BM25Index([tokenize(doc.text) for doc in self.docs])
         self._embedder = embedder
@@ -430,12 +522,37 @@ class ToolRetriever:
         *,
         top_k: int = DEFAULT_TOP_K,
         permitted: Sequence[str] | None = None,
+        permission_mode: str | None = None,
+        allow_high_risk: bool | None = None,
     ) -> Retrieval:
-        """Rank permitted tools for ``task``; never raises for a bad query."""
+        """Rank permitted tools for ``task``; never raises for a bad query.
+
+        Permission/risk filtering runs first: tools the run may not use are
+        removed before deterministic routing and BM25/dense scoring, so a
+        forbidden tool can never be retrieved however well it matches.
+        ``permitted`` is the caller's allow-list (task capabilities /
+        delegation); ``permission_mode`` / ``allow_high_risk`` apply the
+        contract permission and risk rules on top of it.
+        """
         started = time.monotonic()
-        allowed = [doc for doc in self.docs if permitted is None or doc.name in set(permitted)]
+        # Permission/risk filtering runs on the candidate set only (the
+        # caller's allow-list intersected with the index), before any
+        # ranking, so a forbidden tool can never be retrieved, pinned, or
+        # shown as a full schema however well it matches the query.
+        candidates = {
+            doc.name: self.contracts_by_name[doc.name]
+            for doc in self.docs
+            if (permitted is None or doc.name in set(permitted))
+            and doc.name in self.contracts_by_name
+        }
+        _allowed_names, filtered_out = filter_permitted_tools(
+            candidates,
+            permission_mode=permission_mode,
+            allow_high_risk=allow_high_risk,
+        )
+        allowed = [doc for doc in self.docs if doc.name in _allowed_names]
         if not allowed:
-            return Retrieval([], [], "fallback-full", latency_ms=0.0)
+            return Retrieval([], [], "fallback-full", latency_ms=0.0, filtered_out=filtered_out)
         full_specs = [doc.spec for doc in allowed]
         tokens_before = sum(estimate_tokens(json.dumps(spec)) for spec in full_specs)
         index_lines = [doc.one_line for doc in allowed]
@@ -478,6 +595,10 @@ class ToolRetriever:
             return bm25_norm
 
         ranked = sorted(bm25_scores, key=lambda name: combined(name), reverse=True)
+        # The meta-tool is never ranked against task tools: it is always
+        # appended below when permitted, and ranking it could displace a
+        # real tool for "search ..." queries.
+        ranked = [name for name in ranked if name != SEARCH_TOOL_NAME]
         scores = {name: round(combined(name), 4) for name in ranked}
         method = "hybrid" if dense_on else "keyword"
 
@@ -487,11 +608,12 @@ class ToolRetriever:
             method = "fallback-full"
         else:
             selected = list(dict.fromkeys([*pinned, *ranked[:top_k]]))
-            # Core tools are appended beyond top_k, never truncated by it.
+            # Core tools and the search_tools escape hatch are appended
+            # beyond top_k, never truncated by it.
             allowed_names = {doc.name for doc in allowed}
-            for core in sorted(CORE_TOOL_NAMES):
-                if core in allowed_names and core not in selected:
-                    selected.append(core)
+            for extra in sorted(CORE_TOOL_NAMES | {SEARCH_TOOL_NAME}):
+                if extra in allowed_names and extra not in selected:
+                    selected.append(extra)
 
         selected_specs = [self.by_name[name].spec for name in selected]
         tokens_after = sum(estimate_tokens(json.dumps(spec)) for spec in selected_specs)
@@ -504,6 +626,7 @@ class ToolRetriever:
             tokens_after=tokens_after,
             dense_available=dense_on,
             latency_ms=round((time.monotonic() - started) * 1000, 2),
+            filtered_out=filtered_out,
         )
 
     def select_tools(
@@ -512,12 +635,16 @@ class ToolRetriever:
         specs: Sequence[dict[str, Any]],
         *,
         top_k: int = DEFAULT_TOP_K,
+        permission_mode: str | None = None,
+        allow_high_risk: bool | None = None,
     ) -> tuple[list[dict[str, Any]], Retrieval]:
         """Progressive disclosure for one agent turn.
 
         Returns ``(selected full schemas, retrieval)``. ``retrieval.index_lines``
-        is the one-line index of every permitted tool, to be shown to the model
-        alongside the selected schemas.
+        is the one-line index of every permitted tool that passed the
+        permission/risk filter, to be shown to the model alongside the
+        selected schemas. Tools the run may not use are filtered out before
+        ranking, so they appear in neither the index nor the schemas.
         """
         permitted = [
             spec["function"]["name"]
@@ -526,10 +653,54 @@ class ToolRetriever:
             and isinstance(spec.get("function"), dict)
             and isinstance(spec["function"].get("name"), str)
         ]
-        retrieval = self.retrieve(task, top_k=top_k, permitted=permitted)
+        retrieval = self.retrieve(
+            task,
+            top_k=top_k,
+            permitted=permitted,
+            permission_mode=permission_mode,
+            allow_high_risk=allow_high_risk,
+        )
         by_name = {
             spec["function"]["name"]: spec
             for spec in specs
             if isinstance(spec, dict) and isinstance(spec.get("function"), dict)
         }
         return [by_name[name] for name in retrieval.selected_names if name in by_name], retrieval
+
+
+def hydrate_tools(
+    current_tools: Sequence[dict[str, Any]],
+    search_result: Mapping[str, Any] | None,
+    permitted_specs: Sequence[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Full schemas to add after a ``search_tools`` call (progressive disclosure).
+
+    ``search_result`` is the validated ``search_tools`` output; ``permitted_specs``
+    are the full schemas this run may use. Returns the specs for tools named
+    in the result that are permitted and not already in ``current_tools``,
+    in result order. The caller appends them to the model's tool list so the
+    next turn can call the newly discovered tools. Never adds a tool outside
+    the permitted set, even if the search result named one.
+    """
+    current_names = {
+        spec["function"]["name"]
+        for spec in current_tools
+        if isinstance(spec, dict)
+        and isinstance(spec.get("function"), dict)
+        and isinstance(spec["function"].get("name"), str)
+    }
+    by_name = {
+        spec["function"]["name"]: spec
+        for spec in permitted_specs
+        if isinstance(spec, dict)
+        and isinstance(spec.get("function"), dict)
+        and isinstance(spec["function"].get("name"), str)
+    }
+    results = search_result.get("results") if isinstance(search_result, dict) else None
+    added: list[dict[str, Any]] = []
+    for item in results if isinstance(results, list) else []:
+        name = item.get("name") if isinstance(item, dict) else None
+        if isinstance(name, str) and name in by_name and name not in current_names:
+            added.append(by_name[name])
+            current_names.add(name)
+    return added

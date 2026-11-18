@@ -1,9 +1,11 @@
+import os
 import unittest
 from unittest.mock import patch
 
 import aiohttp
 
 from projects.model_router import ChatCompletionRequest, ModelProviderError, OllamaChatCompletionAdapter, resolve_think
+from projects.model_router.client import DEFAULT_CONTEXT_WINDOW_TOKENS, DEFAULT_KEEP_ALIVE
 
 
 class FakeResponse:
@@ -165,9 +167,111 @@ class OllamaChatCompletionAdapterTests(unittest.IsolatedAsyncioTestCase):
             "repeat_penalty": 1.1,
             "temperature": 0.4,
             "top_p": 0.8,
+            # Requests that do not set a window get the 16K default, so
+            # ordinary turns are not truncated by Ollama's 4K default.
+            "num_ctx": DEFAULT_CONTEXT_WINDOW_TOKENS,
         })
+        self.assertEqual(payload["keep_alive"], DEFAULT_KEEP_ALIVE)
         self.assertTrue(payload["stream"])
         self.assertEqual(tokens, ["Hello", " world"])
+
+    async def test_native_request_sets_default_keep_alive_and_context(self):
+        FakeSession.response = FakeResponse(result={
+            "message": {"role": "assistant", "content": "hi"},
+            "done_reason": "stop",
+        })
+        with patch("projects.model_router.client.aiohttp.ClientSession", FakeSession):
+            await self.adapter.complete(
+                ChatCompletionRequest(
+                    model="local-model",
+                    messages=[{"role": "user", "content": "hello"}],
+                ),
+                timeout=self.timeout,
+            )
+
+        _, payload, _ = FakeSession.calls[0]
+        self.assertEqual(payload["keep_alive"], "30m")
+        self.assertEqual(payload["options"]["num_ctx"], 16_384)
+
+    async def test_native_request_prefers_explicit_keep_alive_and_context(self):
+        FakeSession.response = FakeResponse(result={
+            "message": {"role": "assistant", "content": "hi"},
+            "done_reason": "stop",
+        })
+        with patch("projects.model_router.client.aiohttp.ClientSession", FakeSession):
+            await self.adapter.complete(
+                ChatCompletionRequest(
+                    model="local-model",
+                    messages=[{"role": "user", "content": "hello"}],
+                    context_window=8192,
+                    keep_alive="5m",
+                ),
+                timeout=self.timeout,
+            )
+
+        _, payload, _ = FakeSession.calls[0]
+        self.assertEqual(payload["keep_alive"], "5m")
+        self.assertEqual(payload["options"]["num_ctx"], 8192)
+
+    async def test_keep_alive_and_context_defaults_are_env_overridable(self):
+        FakeSession.response = FakeResponse(result={
+            "message": {"role": "assistant", "content": "hi"},
+            "done_reason": "stop",
+        })
+        with (
+            patch.dict(os.environ, {"POCKPOCK_OLLAMA_KEEP_ALIVE": "1h", "POCKPOCK_NUM_CTX": "8192"}),
+            patch("projects.model_router.client.aiohttp.ClientSession", FakeSession),
+        ):
+            await self.adapter.complete(
+                ChatCompletionRequest(
+                    model="local-model",
+                    messages=[{"role": "user", "content": "hello"}],
+                ),
+                timeout=self.timeout,
+            )
+
+        _, payload, _ = FakeSession.calls[0]
+        self.assertEqual(payload["keep_alive"], "1h")
+        self.assertEqual(payload["options"]["num_ctx"], 8192)
+
+    async def test_invalid_num_ctx_env_falls_back_to_default(self):
+        FakeSession.response = FakeResponse(result={
+            "message": {"role": "assistant", "content": "hi"},
+            "done_reason": "stop",
+        })
+        with (
+            patch.dict(os.environ, {"POCKPOCK_NUM_CTX": "not-a-number"}),
+            patch("projects.model_router.client.aiohttp.ClientSession", FakeSession),
+        ):
+            await self.adapter.complete(
+                ChatCompletionRequest(
+                    model="local-model",
+                    messages=[{"role": "user", "content": "hello"}],
+                ),
+                timeout=self.timeout,
+            )
+
+        _, payload, _ = FakeSession.calls[0]
+        self.assertEqual(payload["options"]["num_ctx"], DEFAULT_CONTEXT_WINDOW_TOKENS)
+
+    async def test_tool_request_sets_keep_alive_and_context_options(self):
+        # The OpenAI-compatible tool path previously sent neither, so agent
+        # turns ran on Ollama's 4K default and unloaded after 5 idle minutes.
+        FakeSession.response = FakeResponse(result={"choices": [{"message": {"content": "ok"}}]})
+        with patch("projects.model_router.client.aiohttp.ClientSession", FakeSession):
+            await self.adapter.complete(
+                ChatCompletionRequest(
+                    model="local-model",
+                    messages=[{"role": "user", "content": "Use a tool"}],
+                    tools=[{"type": "function", "function": {"name": "read"}}],
+                ),
+                timeout=self.timeout,
+            )
+
+        url, payload, _ = FakeSession.calls[0]
+        self.assertEqual(url, "http://127.0.0.1:11434/v1/chat/completions")
+        self.assertEqual(payload["keep_alive"], "30m")
+        self.assertEqual(payload["options"]["num_ctx"], 16_384)
 
     async def test_provider_http_failure_is_explicit(self):
         FakeSession.response = FakeResponse(status=503, text="temporarily unavailable")

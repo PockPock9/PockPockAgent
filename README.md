@@ -155,13 +155,14 @@ Chat and PockPock Agent requests go through the Smart Router, which picks a mode
 1. A fast heuristic recognises code, math, and images.
 2. For anything else, `qwen3.5:2b` classifies the intent, complexity (1–10) and confidence using the recent conversation.
 3. Generation settings (temperature, top-p) and a role-specific system prompt are set for the task.
-4. If the chosen model fails, the router falls back to another one without losing the conversation.
+4. If the chosen model fails, the router falls back to another one without losing the conversation. If the small triage model is not installed, simple turns fall back to the general model instead of failing.
 
 Typical roles on the reference PC (any installed models can be used):
 
 | Role | Model | Used for |
 |---|---|---|
 | Router | `qwen3.5:2b` | Classifies every request |
+| Quick / triage | `qwen3.5:2b` | Greetings, short factual questions, and other simple turns |
 | General / default | `qwen3.5:9b` | Everyday questions and agent work |
 | Accurate, slow | `qwen3.5:27b` | Complex tasks (pick it in the model picker) |
 | Coder | `qwen2.5-coder:7b`, `qwen2.5-coder:14b` | Code and DevOps |

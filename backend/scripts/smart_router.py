@@ -47,8 +47,8 @@ class Pipe:
             description="High-capacity generalist for deep writing, nuance, analysis, and synthesis"
         )
         quick_model: str = Field(
-            default="qwen2.5:7b",
-            description="Low-latency conversationalist for quick lookups, trivia, definitions, and short Q&A"
+            default="qwen3.5:2b",
+            description="Small fast model for greetings, simple factual lookups, and triage turns; falls back to the general model when it is not installed"
         )
         vision_model: str = Field(
             default="llava:7b",
@@ -97,6 +97,18 @@ class Pipe:
                 "name": "🧠 Ultra-Smart Router (Cognitive AI Dispatcher)",
             }
         ]
+
+    def resolve_routed_model(self, model: str, installed: set[str]) -> str:
+        """Return the model to actually call for an auto-routed decision.
+
+        Simple/triage turns route to the small model (``quick_model``,
+        qwen3.5:2b). When that model is not installed the turn falls back
+        to the configured general model instead of failing with "model not
+        installed". Any other routed model is returned unchanged.
+        """
+        if model == self.valves.quick_model and model not in installed:
+            return self.valves.general_model
+        return model
 
     def _queue_dashboard_event(self, event: Dict[str, Any]) -> None:
         event["timestamp"] = time.time()

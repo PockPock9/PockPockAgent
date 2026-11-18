@@ -36,6 +36,11 @@ class ToolContract:
             },
         }
 
+    @property
+    def risk_level(self) -> str:
+        """Risk class derived from the tool's side effect (see below)."""
+        return risk_level_for_side_effect(self.side_effect)
+
     def as_dict(self) -> dict[str, Any]:
         return {
             "contract_version": self.contract_version,
@@ -91,6 +96,7 @@ _OUTPUT_SCHEMAS: dict[str, dict[str, Any]] = {
     "propose_project_edit": {"type": "object", "required": ["patch_id", "path", "summary", "diff", "status"], "properties": {"patch_id": {"type": "string"}, "path": {"type": "string"}, "summary": {"type": "string"}, "diff": {"type": "string"}, "status": {"type": "string"}}},
     "propose_project_patch": {"type": "object", "required": ["patch_id", "path", "summary", "diff", "status"], "properties": {"patch_id": {"type": "string"}, "path": {"type": "string"}, "summary": {"type": "string"}, "diff": {"type": "string"}, "status": {"type": "string"}}},
     "validate_project": {"type": "object", "required": ["valid", "checks", "issues", "checked_files", "execution_enabled"], "properties": {"valid": {"type": "boolean"}, "checks": {"type": "array"}, "issues": {"type": "array"}, "checked_files": {"type": "integer"}, "execution_enabled": {"type": "boolean"}}},
+    "search_tools": {"type": "object", "required": ["query", "results", "method"], "properties": {"query": {"type": "string"}, "results": {"type": "array", "items": {"type": "object", "required": ["name", "one_line", "score"], "properties": {"name": {"type": "string"}, "one_line": {"type": "string"}, "score": {"type": "number"}}}}, "method": {"type": "string"}}},
 }
 
 
@@ -110,18 +116,55 @@ _TOOL_METADATA: dict[str, tuple[str, str, str, float, int, int]] = {
     "propose_project_edit": ("workspace_edit", "full-access", "workspace_write", 30, 30_000, 60_000),
     "propose_project_patch": ("workspace_edit", "full-access", "workspace_write", 30, 280_000, 60_000),
     "validate_project": ("workspace_validation", "full-access", "project_check_execution", 260, 2_000, 100_000),
+    # Meta-tool: searches the one-line index of permitted tools. Read-only,
+    # default permission, always available in every task scope (see
+    # _TASK_CAPABILITY_CONTRACTS) and always included in the model-facing
+    # tool list alongside the retrieved top-k, so the model can discover
+    # tools mid-task when upfront retrieval missed.
+    "search_tools": ("tool_discovery", "default", "tool_index_read", 10, 4_000, 20_000),
 }
 
+# Risk classes derived from a tool's side effect. "read" tools only observe;
+# "write" tools create new artifacts or interact with a page the user named
+# (the executor still approval-gates high-impact browser clicks); "high"
+# tools mutate existing workspace files or execute project code, so they are
+# only retrievable when the run explicitly allows them (auto-review or
+# full-access permission, or an explicit allow_high_risk flag — see
+# tool_retriever.py). An unknown side effect fails closed to "high": a tool
+# whose effect the registry cannot classify must never be retrieved by
+# default into a low-permission run.
+_RISK_BY_SIDE_EFFECT: dict[str, str] = {
+    "external_read": "read",
+    "workspace_read": "read",
+    "read_attached_data": "read",
+    "tool_index_read": "read",
+    "task_artifact_write": "write",
+    "local_artifact_write": "write",
+    "external_interaction": "write",
+    "workspace_write": "high",
+    "project_check_execution": "high",
+}
+
+
+def risk_level_for_side_effect(side_effect: str) -> str:
+    """Risk class for a side-effect label; unknown labels fail closed to high."""
+    return _RISK_BY_SIDE_EFFECT.get(side_effect, "high")
+
+
 _TASK_CAPABILITY_CONTRACTS = {
-    "workspace_read": {"workspace_read"},
-    "workspace_write": {"workspace_edit"},
-    "project_validation": {"workspace_validation"},
-    "public_research": {"internet_research"},
-    "browser_read": {"browser_read"},
-    "browser_action": {"browser_interaction"},
-    "attachment_read": {"attachment_analysis"},
-    "artifact_creation": {"artifact_creation"},
-    "local_image_generation": {"image_generation"},
+    # Every task scope also includes "tool_discovery": search_tools is a
+    # read-only meta-tool, so the model can always ask the harness for tools
+    # it was not given up front. It never grants a capability itself — a
+    # search only ever returns tools the run is already permitted to use.
+    "workspace_read": {"workspace_read", "tool_discovery"},
+    "workspace_write": {"workspace_edit", "tool_discovery"},
+    "project_validation": {"workspace_validation", "tool_discovery"},
+    "public_research": {"internet_research", "tool_discovery"},
+    "browser_read": {"browser_read", "tool_discovery"},
+    "browser_action": {"browser_interaction", "tool_discovery"},
+    "attachment_read": {"attachment_analysis", "tool_discovery"},
+    "artifact_creation": {"artifact_creation", "tool_discovery"},
+    "local_image_generation": {"image_generation", "tool_discovery"},
 }
 
 

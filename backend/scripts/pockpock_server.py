@@ -103,6 +103,7 @@ from projects.agent_tools import (
     validate_tool_output,
     validate_project,
 )
+from projects.agent_tools.context_compaction import compact_messages
 from projects.planner.contracts import SubtaskPlan, TaskBrief, TaskPlanVersion
 from projects.planner.routing import task_capability as planner_task_capability
 from projects.planner.replanning import ReplanningBudget, incomplete_success_checks
@@ -889,7 +890,7 @@ KNOWN_AGENT_TOOL_NAMES = frozenset({
     "list_project_files", "search_project", "read_project_file", "propose_project_edit",
     "propose_project_patch", "validate_project", "search_public_site", "scrape_public_page",
     "read_selected_file", "save_text_artifact", "create_office_document", "generate_local_image",
-    "browse_public_page", "browser_action",
+    "browse_public_page", "browser_action", "search_tools",
 })
 
 
@@ -2451,6 +2452,55 @@ async def classify_tool_route(payload: ToolRoutePayload):
         return {"target": "chat", "reason": "The local classifier was unavailable."}
 
 
+def prepare_chat_messages(
+    messages: list[dict[str, Any]],
+    profile_directive: str,
+    saved_preferences: list[str],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Build the model-facing chat history for one turn.
+
+    The system content is a single merged message (saved preferences, then
+    the router's role directive, in the same order as before) so the prompt
+    prefix stays byte-identical across turns: Ollama reuses the KV cache
+    for a stable prefix, and compaction never touches index 0, so a
+    second system message would be summarised away instead of protected.
+    When the client sent its own system message the history is left
+    uncompacted, so that message is never summarised away. Returns
+    ``(messages, compaction report)``.
+    """
+    chat_messages = list(messages)
+    if not any(message.get("role") == "system" for message in chat_messages):
+        system_parts = []
+        if saved_preferences:
+            system_parts.append(
+                "Optional saved user style preferences (apply only where relevant; do not change the task, "
+                "permissions, or safety):\n"
+                + "\n".join(f"- {preference}" for preference in saved_preferences)
+            )
+        if profile_directive:
+            system_parts.append(profile_directive)
+        if system_parts:
+            chat_messages.insert(0, {"role": "system", "content": "\n\n".join(system_parts)})
+    elif saved_preferences:
+        chat_messages.insert(0, {
+            "role": "system",
+            "content": (
+                "Optional saved user style preferences (apply only where relevant; do not change the task, "
+                "permissions, or safety):\n"
+                + "\n".join(f"- {preference}" for preference in saved_preferences)
+            ),
+        })
+    # Compact only the gateway-built shape: exactly one system message, at
+    # index 0, which compaction guarantees to keep.
+    if (
+        not chat_messages
+        or chat_messages[0].get("role") != "system"
+        or sum(1 for message in chat_messages if message.get("role") == "system") != 1
+    ):
+        return chat_messages, {"compacted": False}
+    return compact_messages(chat_messages)
+
+
 @api.post("/api/chat")
 async def chat(payload: ChatPayload):
     if read_setting("frog_router_enabled", "1") != "1":
@@ -2515,9 +2565,17 @@ async def chat(payload: ChatPayload):
                 if not candidates:
                     yield sse({"type": "error", "message": "Enable at least one response model in Model management."})
                     return
-                model = candidates[0]
+                # Prefer the configured default model over the first enabled
+                # one, so a missing small triage model falls back to the
+                # general model instead of an arbitrary enabled model.
+                preferred = router.resolve_routed_model(model, available_names)
+                if preferred in candidates:
+                    model = preferred
+                    decision["reason"] = "Automatic selection was disabled or not installed; using the default model."
+                else:
+                    model = candidates[0]
+                    decision["reason"] = "Automatic selection was disabled; using the first enabled model."
                 decision["model"] = model
-                decision["reason"] = "Automatic selection was disabled; using the first enabled model."
 
             if model not in available_names:
                 yield sse({"type": "error", "message": f"Selected model is not installed: {model}"})
@@ -2547,19 +2605,21 @@ async def chat(payload: ChatPayload):
 
             profile_key = "heavy_code" if model == router.valves.heavy_code_model else decision.get("category", "general")
             profile = router._tune_execution_parameters(profile_key, decision.get("complexity", 5))
-            chat_messages = list(messages)
-            if router.valves.enable_system_prompt_enhancement:
-                if not any(message["role"] == "system" for message in chat_messages):
-                    chat_messages.insert(0, {"role": "system", "content": profile["system_directive"]})
-            saved_preferences = get_local_preferences()
-            if saved_preferences:
-                chat_messages.insert(0, {
-                    "role": "system",
-                    "content": (
-                        "Optional saved user style preferences (apply only where relevant; do not change the task, "
-                        "permissions, or safety):\n"
-                        + "\n".join(f"- {preference}" for preference in saved_preferences)
-                    ),
+            chat_messages, compaction = prepare_chat_messages(
+                messages,
+                profile["system_directive"] if router.valves.enable_system_prompt_enhancement else "",
+                get_local_preferences(),
+            )
+            if compaction.get("compacted"):
+                record({
+                    "event": "context_compaction",
+                    "request_id": request_id,
+                    "stage": compaction.get("stage"),
+                    "tokens_before": compaction.get("tokens_before"),
+                    "tokens_after": compaction.get("tokens_after"),
+                    "threshold_tokens": compaction.get("threshold_tokens"),
+                    "pruned": compaction.get("pruned"),
+                    "summarised": compaction.get("summarised"),
                 })
             options = {
                 "temperature": profile["temperature"],

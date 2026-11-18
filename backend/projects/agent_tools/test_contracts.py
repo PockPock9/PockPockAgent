@@ -10,7 +10,7 @@ class ToolContractTests(unittest.TestCase):
         cls.registry = registered_tool_contracts()
 
     def test_all_current_tools_have_versioned_metadata_and_schemas(self):
-        self.assertEqual(len(self.registry), 14)
+        self.assertEqual(len(self.registry), 15)
         self.assertTrue(all(contract.contract_version == 1 for contract in self.registry.values()))
         self.assertTrue(all(contract.timeout_seconds > 0 for contract in self.registry.values()))
         self.assertTrue(all(contract.max_input_bytes > 0 and contract.max_output_bytes > 0 for contract in self.registry.values()))
@@ -41,7 +41,11 @@ class ToolContractTests(unittest.TestCase):
 
     def test_task_capabilities_limit_tools_to_approved_scope(self):
         research_tools = tool_names_for_task_capabilities(self.registry, ["public_research"])
-        self.assertEqual(research_tools, {"search_public_site", "scrape_public_page"})
+        # search_tools is in every scope: it is a read-only meta-tool that
+        # can only return tools the run is already permitted to use.
+        self.assertEqual(
+            research_tools, {"search_public_site", "scrape_public_page", "search_tools"}
+        )
 
         code_tools = tool_names_for_task_capabilities(
             self.registry,

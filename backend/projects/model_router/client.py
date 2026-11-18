@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 import json
+import os
 from typing import Any, AsyncIterator, Mapping, Protocol, Sequence
 
 import aiohttp
@@ -30,6 +31,47 @@ def model_thinks_by_default(model: str | None) -> bool:
     """True when ``model`` is a thinking-by-default local model."""
     name = (model or "").lower()
     return any(name.startswith(prefix) or f"/{prefix}" in name for prefix in THINKING_MODEL_PREFIXES)
+
+
+#: How long Ollama keeps a model resident after its last use, sent as
+#: ``keep_alive`` on every local request. Ollama's own default is 5
+#: minutes, which unloads the model between agent turns and pays a reload
+#: on the next one; 30 minutes keeps it resident across a working
+#: session. Override with ``POCKPOCK_OLLAMA_KEEP_ALIVE`` (e.g. ``5m``,
+#: ``1h``, ``0`` to unload immediately).
+DEFAULT_KEEP_ALIVE = "30m"
+
+#: Context window (``num_ctx``) sent when a request does not set one.
+#: Ollama defaults to 4K on cards under 24 GB, which is too small for
+#: agent loops; 16K fits ordinary agent turns while keeping KV-cache
+#: VRAM in check (about 3 GB for a 14B model — raising this much higher
+#: on a 12 GB card can force partial CPU offload). The agent loop's
+#: compaction budget is separate; see context_compaction.py. Override
+#: with ``POCKPOCK_NUM_CTX``.
+DEFAULT_CONTEXT_WINDOW_TOKENS = 16_384
+
+
+def ollama_keep_alive() -> str:
+    """Keep-alive sent on local requests (env-overridable)."""
+    return os.environ.get("POCKPOCK_OLLAMA_KEEP_ALIVE", "").strip() or DEFAULT_KEEP_ALIVE
+
+
+def default_context_window() -> int:
+    """Context window sent when a request does not set one (env-overridable)."""
+    try:
+        return int(os.environ.get("POCKPOCK_NUM_CTX", "").strip() or DEFAULT_CONTEXT_WINDOW_TOKENS)
+    except ValueError:
+        return DEFAULT_CONTEXT_WINDOW_TOKENS
+
+
+def resolve_num_ctx(request: "ChatCompletionRequest") -> int:
+    """Context window for one request: explicit field, then caller option, then default."""
+    if request.context_window is not None:
+        return request.context_window
+    num_ctx = (request.options or {}).get("num_ctx")
+    if isinstance(num_ctx, int) and num_ctx > 0:
+        return num_ctx
+    return default_context_window()
 
 
 def resolve_think(
@@ -71,6 +113,10 @@ class ChatCompletionRequest:
     # Callers should use resolve_think() so thinking-by-default models (Qwen 3.5,
     # issue #86) get think=False on ordinary turns instead of returning empty replies.
     think: bool | None = None
+    # Ollama keep-alive for this request (e.g. "30m"); None uses
+    # ollama_keep_alive(). Sent on both Ollama endpoints so the model
+    # stays resident between turns of one session.
+    keep_alive: str | None = None
 
     def to_payload(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -129,6 +175,11 @@ class OllamaChatCompletionAdapter:
         # reasoning trace and returns no tool calls (issue #86).
         if request.think is not None:
             payload["think"] = request.think
+        # Tool-call turns previously sent neither keep-alive nor a context
+        # window, so they ran on Ollama's 4K default and the model unloaded
+        # after 5 idle minutes. Send both here, as on the native endpoint.
+        payload["keep_alive"] = request.keep_alive or ollama_keep_alive()
+        payload["options"] = _request_options(request)
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(
@@ -217,23 +268,36 @@ class OllamaChatCompletionAdapter:
         *,
         stream: bool,
     ) -> dict[str, Any]:
-        options = dict(request.options or {})
-        if request.temperature is not None:
-            options["temperature"] = request.temperature
-        if request.top_p is not None:
-            options["top_p"] = request.top_p
-        if request.max_tokens is not None:
-            options["num_predict"] = request.max_tokens
-        if request.context_window is not None:
-            options["num_ctx"] = request.context_window
         payload: dict[str, Any] = {
             "model": request.model,
             "messages": [dict(message) for message in request.messages],
             "stream": stream,
-            "options": options,
+            "options": _request_options(request),
+            # Keep the model resident between turns of one session instead
+            # of Ollama's 5-minute default unload (see DEFAULT_KEEP_ALIVE).
+            "keep_alive": request.keep_alive or ollama_keep_alive(),
         }
         if request.response_format and request.response_format.get("type") == "json_object":
             payload["format"] = "json"
         if request.think is not None:
             payload["think"] = request.think
         return payload
+
+
+def _request_options(request: ChatCompletionRequest) -> dict[str, Any]:
+    """Ollama ``options`` for one request: caller options, then the typed fields.
+
+    The context window always lands here: an explicit ``context_window``
+    wins, then a caller-supplied ``num_ctx`` option, then the
+    ``POCKPOCK_NUM_CTX`` default (16K — Ollama's own 4K default on
+    sub-24 GB cards truncates ordinary agent turns).
+    """
+    options = dict(request.options or {})
+    if request.temperature is not None:
+        options["temperature"] = request.temperature
+    if request.top_p is not None:
+        options["top_p"] = request.top_p
+    if request.max_tokens is not None:
+        options["num_predict"] = request.max_tokens
+    options["num_ctx"] = resolve_num_ctx(request)
+    return options
