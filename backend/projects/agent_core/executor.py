@@ -35,10 +35,12 @@ from projects.agent_tools import (
     tool_names_for_task_capabilities, validate_research_answer, validate_tool_input,
     validate_tool_output,
 )
+from projects.agent_tools.tool_retriever import tool_retrieval_enabled
 from projects.model_router import (
     ChatCompletionProvider,
     ChatCompletionRequest,
     ModelProviderError,
+    resolve_think,
 )
 from projects.model_router.cloud import is_cloud_model
 from projects.planner.replanning import ReplanningBudget, incomplete_success_checks
@@ -1251,6 +1253,37 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                         and isinstance(tool.get("function"), dict)
                         and tool["function"].get("name") in permitted_tool_names
                     ]
+                    # Progressive disclosure (tool-RAG Phase 1): the model sees
+                    # a one-line index of every permitted tool plus the full
+                    # schemas of only the retrieved top-k. Delegates keep
+                    # their pinned list. On any retrieval failure the full
+                    # permitted list is used, so a miss costs tokens, never
+                    # the task. Flag: POCKPOCK_TOOL_RETRIEVAL_ENABLED (on).
+                    if tool_retrieval_enabled():
+                        try:
+                            from projects.agent_tools.tool_retriever import ToolRetriever
+
+                            selected_tools, retrieval = ToolRetriever().select_tools(
+                                payload.task.strip(), tools
+                            )
+                            if retrieval.method != "fallback-full":
+                                tools = selected_tools
+                                messages[0]["content"] += (
+                                    "\nAvailable tools (one-line index; full schemas "
+                                    "follow only for the tools selected for this task):\n"
+                                    + "\n".join(retrieval.index_lines)
+                                )
+                                record({
+                                    "event": "tool_retrieval",
+                                    "task_id": task_id,
+                                    "method": retrieval.method,
+                                    "selected_tools": retrieval.selected_names,
+                                    "schema_tokens_before": retrieval.tokens_before,
+                                    "schema_tokens_after": retrieval.tokens_after,
+                                    "latency_ms": retrieval.latency_ms,
+                                })
+                        except Exception:
+                            logger.exception("Tool retrieval failed; using the full tool list")
                 profile = router._tune_execution_parameters("agentic", decision.get("complexity", 5))
 
                 tool_call_limit = payload.delegation_contract.max_tool_calls if payload.delegation_contract else 20
@@ -1290,6 +1323,9 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                                 top_p=profile["top_p"],
                                 max_tokens=8192,
                                 response_format=response_format,
+                                # Tool-call turns never think: the trace burns
+                                # the turn and can leave tool_calls empty (#86).
+                                think=resolve_think(selected, tools=True),
                             )
                             return await MODEL_CLIENT.complete(
                                 model_request,

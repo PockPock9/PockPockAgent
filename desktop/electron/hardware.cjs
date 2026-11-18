@@ -12,7 +12,7 @@ const MODEL_CHOICES = [
   { name: 'qwen3.5:9b', downloadGB: 6.6, summary: 'Better answers. Needs a graphics card with 8 GB of memory, or an Apple silicon Mac with 16 GB.' },
   { name: 'qwen3.5:27b', downloadGB: 17, summary: 'Best answers, but slow unless the graphics card has 20 GB of memory or more.' },
 ]
-const ROUTER_MODEL_GB = 1.0 // qwen2.5:1.5b
+const ROUTER_MODEL_GB = 2.7 // qwen3.5:2b (2.0 GB weights + 0.7 GB vision projector)
 
 /** Approximate downloads per component, in GB (the model is counted separately). */
 const COMPONENT_GB = { core: 0.7, ollama: 1.2, openclaw: 0.4, nemoclaw: 8 }

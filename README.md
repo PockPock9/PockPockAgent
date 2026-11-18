@@ -87,7 +87,7 @@ PockPock runs on **Windows 10/11 (64-bit)** and **macOS 12 or later** (Apple sil
 | Component | What it adds | Download |
 |---|---|---|
 | PockPock backend (always) | Python 3.12 (Windows: from python.org or winget; Mac: through uv, into PockPock's own folder), the PockPock services, an isolated browser for agent web tasks | about 600–700 MB |
-| Ollama and models | Ollama plus the AI model (`qwen3.5:4b`, `qwen3.5:9b` or `qwen3.5:27b`) and `qwen2.5:1.5b` (Smart Router classifier) | about 5 GB with `4b`, 8 GB with `9b` |
+| Ollama and models | Ollama plus the AI model (`qwen3.5:4b`, `qwen3.5:9b` or `qwen3.5:27b`) and `qwen3.5:2b` (Smart Router classifier) | about 7 GB with `4b`, 10 GB with `9b` |
 | OpenClaw engine | Node.js (if needed), OpenClaw, the PockPock permission plugin, and a list of OpenClaw skills you can untick | about 400 MB |
 | NemoClaw engine (only with **Customize**) | Windows: WSL with Ubuntu, Docker Desktop and a NemoClaw sandbox. Mac (Apple silicon only): Apple's Command Line Tools, Docker Desktop and a NemoClaw sandbox | about 8 GB |
 
@@ -153,7 +153,7 @@ PockPock Agent is an Electron app that talks to a local API (the **gateway**, `1
 Chat and PockPock Agent requests go through the Smart Router, which picks a model for each request from the models switched on in **Models**:
 
 1. A fast heuristic recognises code, math, and images.
-2. For anything else, `qwen2.5:1.5b` classifies the intent, complexity (1–10) and confidence using the recent conversation.
+2. For anything else, `qwen3.5:2b` classifies the intent, complexity (1–10) and confidence using the recent conversation.
 3. Generation settings (temperature, top-p) and a role-specific system prompt are set for the task.
 4. If the chosen model fails, the router falls back to another one without losing the conversation.
 
@@ -161,7 +161,7 @@ Typical roles on the reference PC (any installed models can be used):
 
 | Role | Model | Used for |
 |---|---|---|
-| Router | `qwen2.5:1.5b` | Classifies every request |
+| Router | `qwen3.5:2b` | Classifies every request |
 | General / default | `qwen3.5:9b` | Everyday questions and agent work |
 | Accurate, slow | `qwen3.5:27b` | Complex tasks (pick it in the model picker) |
 | Coder | `qwen2.5-coder:7b`, `qwen2.5-coder:14b` | Code and DevOps |

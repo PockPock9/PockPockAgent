@@ -14,13 +14,13 @@ type ComponentInfo = { id: SetupComponent; title: string; icon: React.ReactNode;
 const COMPONENTS: ComponentInfo[] = isMac
   ? [
       { id: 'core', title: 'PockPock backend', icon: <Server size={16} />, detail: 'Python 3.12 (installed into PockPock’s own folder, no password needed), the PockPock services and an isolated browser for agent web tasks.', size: 'about 700 MB', locked: true },
-      { id: 'ollama', title: 'Ollama and models', icon: <Cpu size={16} />, detail: 'Runs AI models on this Mac. Installs Ollama in Applications and downloads the model chosen below plus qwen2.5:1.5b, a small model that routes requests.', size: 'about 1 GB plus the model' },
+      { id: 'ollama', title: 'Ollama and models', icon: <Cpu size={16} />, detail: 'Runs AI models on this Mac. Installs Ollama in Applications and downloads the model chosen below plus qwen3.5:2b, a small model that routes requests.', size: 'about 1 GB plus the model' },
       { id: 'openclaw', title: 'OpenClaw engine', icon: <Terminal size={16} />, detail: 'An agent that works directly on this Mac, with skills, MCP servers and the Ask first / Auto-approve / Full access permissions. Installs Node.js into PockPock’s folder if needed.', size: 'about 400 MB' },
       { id: 'nemoclaw', title: 'NemoClaw engine', icon: <Box size={16} />, detail: 'OpenClaw inside a Docker sandbox, so it cannot touch this Mac. Installs Docker Desktop and Apple’s Command Line Tools if missing.', size: 'about 8 GB', warning: 'macOS asks for your password once (to install Docker Desktop) and may ask to install the Command Line Tools. Takes 20 to 40 minutes.' },
     ]
   : [
       { id: 'core', title: 'PockPock backend', icon: <Server size={16} />, detail: 'Python 3.12, the PockPock services and an isolated browser for agent web tasks.', size: 'about 600 MB', locked: true },
-      { id: 'ollama', title: 'Ollama and models', icon: <Cpu size={16} />, detail: 'Runs AI models on this PC. Downloads the model chosen below plus qwen2.5:1.5b, a small model that routes requests.', size: 'about 2 GB plus the model' },
+      { id: 'ollama', title: 'Ollama and models', icon: <Cpu size={16} />, detail: 'Runs AI models on this PC. Downloads the model chosen below plus qwen3.5:2b, a small model that routes requests.', size: 'about 2 GB plus the model' },
       { id: 'openclaw', title: 'OpenClaw engine', icon: <Terminal size={16} />, detail: 'An agent that works directly on this PC, with skills, MCP servers and the Ask first / Auto-approve / Full access permissions. Installs Node.js if needed.', size: 'about 400 MB' },
       { id: 'nemoclaw', title: 'NemoClaw engine', icon: <Box size={16} />, detail: 'OpenClaw inside a sandbox, so it cannot touch this PC. Installs WSL with Ubuntu and Docker Desktop.', size: 'about 8 GB', warning: 'Windows asks for administrator permission, may need a restart, and Ubuntu asks you to create a username once. Takes 20 to 40 minutes.' },
     ]

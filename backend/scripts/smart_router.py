@@ -27,7 +27,7 @@ class Pipe:
     class Valves(BaseModel):
         """Dynamic configuration controllable from Open WebUI admin panel."""
         router_model: str = Field(
-            default="qwen2.5:1.5b",
+            default="qwen3.5:2b",
             description="Ultra-fast micro-model for semantic query classification"
         )
         code_model: str = Field(
@@ -292,6 +292,8 @@ Respond with ONLY a JSON object:
                         temperature=0.05,
                         max_tokens=120,
                         response_format={"type": "json_object"},
+                        # Classification is a JSON turn: never think (#86).
+                        think=False,
                     ),
                     timeout=aiohttp.ClientTimeout(total=30),
                 )
@@ -304,6 +306,8 @@ Respond with ONLY a JSON object:
                             "model": self.valves.router_model,
                             "prompt": classification_prompt,
                             "stream": False,
+                            # Classification is a JSON turn: never think (#86).
+                            "think": False,
                             "options": {"temperature": 0.05, "num_predict": 120},
                         },
                         timeout=aiohttp.ClientTimeout(total=30),
@@ -562,6 +566,17 @@ Respond with ONLY a JSON object:
                 "top_p": profile["top_p"] if self.valves.enable_dynamic_parameter_morphing else 0.9,
             },
         }
+        # Qwen 3.5 thinks by default and only content is forwarded, so without
+        # think=False replies come back empty (issue #86). A turn classified as
+        # hard reasoning keeps thinking on (think left unset).
+        from projects.model_router import resolve_think
+
+        _think = resolve_think(
+            decision["model"],
+            explicit_reasoning=decision.get("category") == "reasoning",
+        )
+        if _think is not None:
+            payload["think"] = _think
 
         # 6. Stream with Automated Circuit-Breaker Fallback
         success = False
@@ -584,6 +599,7 @@ Respond with ONLY a JSON object:
                     messages=adjusted_messages,
                     temperature=payload["options"]["temperature"],
                     top_p=payload["options"]["top_p"],
+                    think=_think,
                 )
                 async for token in self.model_client.stream_tokens(
                     request,
@@ -645,6 +661,16 @@ Respond with ONLY a JSON object:
             })
             try:
                 payload["model"] = fallback_model
+                from projects.model_router import resolve_think as _resolve_think
+
+                _fallback_think = _resolve_think(
+                    fallback_model,
+                    explicit_reasoning=decision.get("category") == "reasoning",
+                )
+                if _fallback_think is not None:
+                    payload["think"] = _fallback_think
+                elif "think" in payload:
+                    del payload["think"]
                 if self.model_client is not None:
                     from projects.model_router import ChatCompletionRequest
 
@@ -653,6 +679,7 @@ Respond with ONLY a JSON object:
                         messages=adjusted_messages,
                         temperature=payload["options"]["temperature"],
                         top_p=payload["options"]["top_p"],
+                        think=_fallback_think,
                     )
                     async for token in self.model_client.stream_tokens(
                         request,

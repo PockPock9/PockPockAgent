@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import aiohttp
 
-from projects.model_router import ChatCompletionRequest, ModelProviderError, OllamaChatCompletionAdapter
+from projects.model_router import ChatCompletionRequest, ModelProviderError, OllamaChatCompletionAdapter, resolve_think
 
 
 class FakeResponse:
@@ -106,6 +106,39 @@ class OllamaChatCompletionAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["max_tokens"], 8192)
         self.assertEqual(result["choices"][0]["message"]["content"], "ok")
 
+    async def test_tool_request_passes_think_false_to_openai_compatible_endpoint(self):
+        # Issue #86: a thinking model returns no tool calls unless think is off.
+        FakeSession.response = FakeResponse(result={"choices": [{"message": {"content": "ok"}}]})
+        with patch("projects.model_router.client.aiohttp.ClientSession", FakeSession):
+            await self.adapter.complete(
+                ChatCompletionRequest(
+                    model="qwen3.5:2b",
+                    messages=[{"role": "user", "content": "Use a tool"}],
+                    tools=[{"type": "function", "function": {"name": "read"}}],
+                    think=False,
+                ),
+                timeout=self.timeout,
+            )
+
+        _, payload, _ = FakeSession.calls[0]
+        self.assertIs(payload["think"], False)
+
+    async def test_openai_compatible_request_omits_think_when_unset(self):
+        FakeSession.response = FakeResponse(result={"choices": [{"message": {"content": "ok"}}]})
+        with patch("projects.model_router.client.aiohttp.ClientSession", FakeSession):
+            await self.adapter.complete(
+                ChatCompletionRequest(
+                    model="local-model",
+                    messages=[{"role": "user", "content": "Use a tool"}],
+                    tools=[{"type": "function", "function": {"name": "read"}}],
+                ),
+                timeout=self.timeout,
+            )
+
+        _, payload, _ = FakeSession.calls[0]
+        self.assertNotIn("think", payload)
+
+
     async def test_streaming_uses_shared_adapter_and_preserves_extra_local_options(self):
         FakeSession.response = FakeResponse(content=FakeContent([
             b'{"message":{"content":"Hello"}}\n',
@@ -147,6 +180,24 @@ class OllamaChatCompletionAdapterTests(unittest.IsolatedAsyncioTestCase):
                     ),
                     timeout=self.timeout,
                 )
+
+
+class ResolveThinkTests(unittest.TestCase):
+    def test_qwen35_models_disable_thinking(self):
+        for model in ("qwen3.5:2b", "qwen3.5:9b", "qwen3.5-9b-text:latest", "qwen3:8b"):
+            self.assertIs(resolve_think(model), False, model)
+
+    def test_other_models_keep_their_default(self):
+        for model in ("qwen2.5:14b", "llama3.1:8b", "mistral-nemo:12b", None):
+            self.assertIsNone(resolve_think(model), model)
+
+    def test_tool_and_json_turns_disable_thinking_for_any_model(self):
+        self.assertIs(resolve_think("qwen2.5:14b", tools=True), False)
+        self.assertIs(resolve_think("llama3.1:8b", json_output=True), False)
+
+    def test_explicit_reasoning_keeps_thinking_on(self):
+        self.assertIsNone(resolve_think("qwen3.5:2b", explicit_reasoning=True))
+        self.assertIsNone(resolve_think("qwen3.5:2b", tools=True, explicit_reasoning=True))
 
 
 if __name__ == "__main__":

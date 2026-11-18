@@ -18,6 +18,43 @@ class ModelProviderError(RuntimeError):
         self.status_code = status_code
 
 
+# Model families whose Ollama builds think by default. With thinking on, the
+# reply is a long reasoning trace and the visible content can come back empty
+# to callers that only forward ``content`` (GitHub issue #86). The gateway
+# therefore sends ``think: false`` for these models unless a turn explicitly
+# needs reasoning.
+THINKING_MODEL_PREFIXES = ("qwen3.5", "qwen3:")
+
+
+def model_thinks_by_default(model: str | None) -> bool:
+    """True when ``model`` is a thinking-by-default local model."""
+    name = (model or "").lower()
+    return any(name.startswith(prefix) or f"/{prefix}" in name for prefix in THINKING_MODEL_PREFIXES)
+
+
+def resolve_think(
+    model: str | None,
+    *,
+    tools: bool = False,
+    json_output: bool = False,
+    explicit_reasoning: bool = False,
+) -> bool | None:
+    """Decide the Ollama ``think`` flag for one model call.
+
+    Returns ``False`` for tool-call and structured-JSON turns (thinking
+    tokens slow those turns and can break schema adherence) and for
+    thinking-by-default models in ordinary chat, where the trace otherwise
+    eats the reply. Returns ``None`` — leave the model default — for
+    explicit hard-reasoning turns and for models that do not think by
+    default, so thinking stays available where the code asks for it.
+    """
+    if explicit_reasoning:
+        return None
+    if tools or json_output or model_thinks_by_default(model):
+        return False
+    return None
+
+
 @dataclass(frozen=True)
 class ChatCompletionRequest:
     model: str
@@ -31,6 +68,8 @@ class ChatCompletionRequest:
     options: Mapping[str, Any] | None = None
     # Ollama's reasoning switch; None leaves the model default. Structured JSON calls turn it off
     # because thinking tokens on a large, partly CPU-offloaded model can take minutes.
+    # Callers should use resolve_think() so thinking-by-default models (Qwen 3.5,
+    # issue #86) get think=False on ordinary turns instead of returning empty replies.
     think: bool | None = None
 
     def to_payload(self) -> dict[str, Any]:
@@ -85,6 +124,11 @@ class OllamaChatCompletionAdapter:
         timeout: aiohttp.ClientTimeout,
     ) -> dict[str, Any]:
         payload = request.to_payload()
+        # Ollama's OpenAI-compatible endpoint accepts the same ``think`` flag
+        # as /api/chat; without it a thinking model burns the turn on a
+        # reasoning trace and returns no tool calls (issue #86).
+        if request.think is not None:
+            payload["think"] = request.think
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(

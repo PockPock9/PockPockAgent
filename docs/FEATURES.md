@@ -15,6 +15,7 @@ This index points to detailed feature contracts. Every new feature or change to 
 - [Delegated agent runs](features/delegated-agent-runs.md)
 - [Agent tool and run event contracts](features/agent-tool-contracts.md)
 - [Agent tool capabilities](features/agent-tools.md)
+- [Tool retrieval (progressive disclosure)](features/tool-retrieval.md)
 - [Local agent interaction and automation (planned)](features/local-agent-automation.md)
 - [Agent platform supporting tools (planned)](features/agent-platform-expansion.md)
 - [Workspace validation](features/workspace-validation.md)

@@ -112,6 +112,7 @@ from projects.model_router import (
     ChatCompletionRequest,
     ModelProviderError,
     OllamaChatCompletionAdapter,
+    resolve_think,
 )
 from projects.model_router.cloud import CloudRegistry, RegistryCloudProvider, RoutingChatCompletionProvider, is_cloud_model
 from projects.model_router.cloud_api import create_cloud_router
@@ -1032,6 +1033,7 @@ async def review_build_completeness(model: str, request_text: str, sources: str)
                 temperature=0,
                 max_tokens=900,
                 response_format={"type": "json_object"},
+                think=False,
             ),
             timeout=aiohttp.ClientTimeout(total=240),
         )
@@ -2428,6 +2430,7 @@ async def classify_tool_route(payload: ToolRoutePayload):
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0,
                 response_format={"type": "json_object"},
+                think=False,
             ),
             timeout=aiohttp.ClientTimeout(total=15),
         )
@@ -2563,12 +2566,19 @@ async def chat(payload: ChatPayload):
                 "top_p": profile["top_p"],
                 **payload.options,
             }
+            # Qwen 3.5 thinks by default and the gateway only forwards content,
+            # so without think=False chat replies come back empty (issue #86).
+            # A turn the router classified as hard reasoning keeps thinking on.
             model_request = ChatCompletionRequest(
                 model=model,
                 messages=chat_messages,
                 temperature=options.pop("temperature", None),
                 top_p=options.pop("top_p", None),
                 options=options,
+                think=resolve_think(
+                    model,
+                    explicit_reasoning=(decision or {}).get("category") == "reasoning",
+                ),
             )
             record({
                 "event": "model_call_started",
@@ -2622,7 +2632,16 @@ async def chat(payload: ChatPayload):
                     "role": "fallback",
                 })
                 yield sse({"type": "fallback", "call_id": fallback_id, "model": fallback, "error": primary_error[:240]})
-                fallback_request = replace(model_request, model=fallback)
+                # Re-resolve think for the fallback model: a qwen3.5 fallback
+                # needs think=False even when the primary model did not.
+                fallback_request = replace(
+                    model_request,
+                    model=fallback,
+                    think=resolve_think(
+                        fallback,
+                        explicit_reasoning=(decision or {}).get("category") == "reasoning",
+                    ),
+                )
                 fallback_started = time.monotonic()
                 fallback_status = "error"
                 fallback_error = ""
