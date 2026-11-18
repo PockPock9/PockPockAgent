@@ -1,6 +1,7 @@
 """Tests for the promotion gate: inbox, verification, approve/reject."""
 
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -50,10 +51,11 @@ class VerificationTests(unittest.TestCase):
         self.assertFalse(result.passed)
 
     def test_script_pass_and_fail(self):
+        # sys.executable, not "python3": Windows has no python3 binary.
         self.assertTrue(run_verification(
-            {"type": "script", "command": ["python3", "-c", "pass"]}).passed)
+            {"type": "script", "command": [sys.executable, "-c", "pass"]}).passed)
         self.assertFalse(run_verification(
-            {"type": "script", "command": ["python3", "-c", "import sys; sys.exit(1)"]}).passed)
+            {"type": "script", "command": [sys.executable, "-c", "import sys; sys.exit(1)"]}).passed)
 
     def test_manual_is_not_verified(self):
         result = run_verification({"type": "manual"})
