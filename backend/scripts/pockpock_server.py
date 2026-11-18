@@ -105,6 +105,8 @@ from projects.agent_tools import (
 )
 from projects.agent_tools.context_compaction import compact_messages
 from projects.planner.contracts import SubtaskPlan, TaskBrief, TaskPlanVersion
+from projects.plan_sequence.contracts import SEQUENCE_CONTRACT_VERSION, validate_sequence_plan
+from projects.plan_sequence.runner import SequenceRunner
 from projects.planner.routing import task_capability as planner_task_capability
 from projects.planner.replanning import ReplanningBudget, incomplete_success_checks
 from projects.agent_core.executor import AgentCoreServices, create_agent_runner
@@ -286,8 +288,18 @@ class AgentPlanPayload(BaseModel):
 class AgentPlanDecisionPayload(BaseModel):
     action_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
     decision: Literal["approved", "rejected"]
-    plan: list[str] = Field(min_length=1, max_length=10)
-    success_checks: list[str] = Field(min_length=1, max_length=12)
+    # Optional: sequence-plan decisions approve/reject the whole plan and
+    # send neither. The monolithic path below still rejects empty lists.
+    plan: list[str] = Field(default_factory=list, max_length=10)
+    success_checks: list[str] = Field(default_factory=list, max_length=12)
+
+
+class AgentSequenceRunPayload(BaseModel):
+    """Request for POST /api/agents/run-sequence: run an approved sequence plan."""
+
+    plan_id: str = Field(pattern=r"^[a-f0-9]{32}$")
+    plan_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    run_id: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
 
 
 class AgentApprovalDecision(BaseModel):
@@ -1336,11 +1348,134 @@ async def plan_agent_task(payload: AgentPlanPayload, request: Request):
         raise HTTPException(status_code=503, detail=f"Planner service is unavailable or returned an invalid plan: {err}") from err
 
 
+@api.post("/api/agents/plan-sequence")
+async def plan_sequence_agent_task(payload: AgentPlanPayload, request: Request):
+    """Plan a task as a validated sequence plan (Plan-and-Sequence P3).
+
+    Mirrors :func:`plan_agent_task` but asks the planner service's
+    ``/plan-sequence`` endpoint for 5-15 sequential subtasks instead of a
+    monolithic plan. The returned plan is validated server-side with
+    :func:`validate_sequence_plan` and never stored when invalid (502).
+    The plan is held in an ``AGENT_PLAN_TICKETS`` ticket until the user
+    approves or rejects it via the plan decision endpoint; running it is
+    POST /api/agents/run-sequence. API only — there is no desktop UI for
+    sequence plans yet.
+    """
+    require_local_agent_request(request)
+    if read_setting("frog_router_enabled", "1") != "1":
+        raise HTTPException(status_code=503, detail="Smart Router is stopped. Start it before planning an agent task.")
+    task = payload.task.strip()
+    if not task:
+        raise HTTPException(status_code=422, detail="Describe the task before asking the agent to plan it.")
+
+    cloud_profile = CLOUD_REGISTRY.profile(payload.preferred_model) if is_cloud_model(payload.preferred_model) else None
+    if is_cloud_model(payload.preferred_model) and cloud_profile is None:
+        raise HTTPException(status_code=409, detail="That cloud model is not connected. Choose it again on the Cloud page.")
+    try:
+        model_profiles, _ = await tool_capable_models()
+    except HTTPException:
+        if cloud_profile is None:
+            raise
+        model_profiles = []  # Ollama is not running; the chosen cloud model does not need it.
+    if cloud_profile is not None:
+        model_profiles = [*model_profiles, cloud_profile]
+    if not model_profiles:
+        raise HTTPException(status_code=503, detail="No enabled local model supports agent tool calls. Enable a tool-capable model in Model Room.")
+    planner_url = os.environ.get("POCKPOCK_PLANNER_URL", "http://127.0.0.1:8771").rstrip("/")
+    # Coding requests default to a coder model; the general agentic model writes near-empty files for them.
+    default_model = router.valves.agentic_model
+    if planner_task_capability(task) == "workspace":
+        capable_names = {item["name"] for item in model_profiles}
+        coder_choices = [
+            *sorted(name for name in capable_names if re.search(r"coder", name, re.I) and re.search(r"agent", name, re.I)),
+            router.valves.heavy_code_model,
+            router.valves.code_model,
+        ]
+        default_model = next((name for name in coder_choices if name in capable_names), default_model)
+    try:
+        # The planner makes a plan call and a fix-up call; each may take up to 300 s on a large model.
+        timeout = aiohttp.ClientTimeout(total=660)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(f"{planner_url}/plan-sequence", json={
+                "task": task,
+                "capable_models": [item["name"] for item in model_profiles],
+                "model_profiles": model_profiles,
+                "preferred_model": payload.preferred_model,
+                "planner_model": payload.preferred_model,
+                "default_model": default_model,
+                "workspace_path": payload.workspace_path,
+                "permission_mode": payload.permission_mode,
+              }, headers={"X-PockPock-Internal-Token": os.environ.get("POCKPOCK_INTERNAL_TOKEN", "")}) as response:
+                result = await response.json()
+                if response.status >= 400:
+                    detail = result.get("detail", "Planner service failed") if isinstance(result, dict) else "Planner service failed"
+                    raise HTTPException(status_code=response.status, detail=detail)
+        if not isinstance(result, dict) or not isinstance(result.get("sequence_plan"), dict):
+            raise ValueError("Planner service returned an invalid response")
+        if result.get("contract_version") != SEQUENCE_CONTRACT_VERSION:
+            raise ValueError("Planner service uses an unsupported response contract version")
+        if not isinstance(result.get("selected_model"), str) or not result["selected_model"].strip():
+            raise ValueError("Planner service returned no planner model")
+        if not isinstance(result.get("executor_model"), str) or not result["executor_model"].strip():
+            raise ValueError("Planner service returned no executor model")
+        try:
+            sequence_plan = validate_sequence_plan(result["sequence_plan"])
+        except ValueError as err:
+            raise HTTPException(status_code=502, detail=f"Planner service returned an invalid sequence plan: {err}") from err
+        now_monotonic = time.monotonic()
+        for stale_id in [key for key, value in AGENT_PLAN_TICKETS.items() if value.get("expires_at", 0) <= now_monotonic]:
+            AGENT_PLAN_TICKETS.pop(stale_id, None)
+        for completed_id in [key for key, value in AGENT_PLAN_TICKETS.items() if value.get("status") in {"rejected", "consumed"}]:
+            AGENT_PLAN_TICKETS.pop(completed_id, None)
+        if len(AGENT_PLAN_TICKETS) >= 200:
+            raise HTTPException(status_code=429, detail="Too many plans are waiting for review. Finish or discard one before planning again.")
+        plan_id = uuid.uuid4().hex
+        ticket_state = {
+            "plan_id": plan_id,
+            "request": task,
+            "source_task": (payload.source_task or task).strip(),
+            "permission_mode": payload.permission_mode,
+            "workspace_path": payload.workspace_path,
+            "sequence_plan": sequence_plan,
+            "selected_model": result["selected_model"],
+            "executor_model": result["executor_model"],
+            "reason": result.get("reason"),
+            "executor_reason": result.get("executor_reason"),
+            "status": "pending",
+            "expires_at": now_monotonic + 600,
+        }
+        plan_hash = agent_plan_hash(ticket_state)
+        ticket_state["action_hash"] = plan_hash
+        AGENT_PLAN_TICKETS[plan_id] = ticket_state
+        return {
+            "contract_version": SEQUENCE_CONTRACT_VERSION,
+            "plan_id": plan_id,
+            "plan_hash": plan_hash,
+            "sequence_plan": sequence_plan,
+            "selected_model": result["selected_model"],
+            "executor_model": result["executor_model"],
+            "reason": result.get("reason"),
+            "executor_reason": result.get("executor_reason"),
+        }
+    except HTTPException:
+        raise
+    except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, TypeError) as err:
+        raise HTTPException(status_code=503, detail=f"Planner service is unavailable or returned an invalid plan: {err}") from err
+
+
 def agent_plan_hash(state: dict[str, Any]) -> str:
     bound = {
         key: state.get(key)
         for key in ("plan_id", "request", "source_task", "permission_mode", "workspace_path", "plan", "success_checks", "execution_prompt", "selected_model", "task_brief", "delegation_plan", "critic_review", "reason")
     }
+    if "sequence_plan" in state:
+        # Sequence tickets bind the plan (and its routing reasons) instead
+        # of the monolithic fields above, which are absent (None) for them.
+        # Monolithic tickets never carry "sequence_plan", so their bound
+        # dict — and therefore their hash — is unchanged.
+        bound["sequence_plan"] = state.get("sequence_plan")
+        bound["executor_model"] = state.get("executor_model")
+        bound["executor_reason"] = state.get("executor_reason")
     encoded = json.dumps(bound, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
@@ -1626,10 +1761,24 @@ async def decide_agent_plan(plan_id: str, payload: AgentPlanDecisionPayload, req
         raise HTTPException(status_code=410, detail="Plan expired. Create a fresh plan before starting work.")
     if plan["status"] != "pending" or plan["action_hash"] != payload.action_hash:
         raise HTTPException(status_code=409, detail="This plan was already decided or its contents changed. Create a fresh plan.")
+    if "sequence_plan" in plan:
+        # ---- Sequence-plan branch (Plan-and-Sequence P3) ----
+        # A sequence ticket is approved or rejected as a whole: there are
+        # no editable monolithic steps or checks to revise, so the
+        # monolithic revision path below does not apply.
+        if payload.decision == "rejected":
+            plan["status"] = "rejected"
+            AGENT_PLAN_TICKETS.pop(plan_id, None)
+            return {"accepted": True, "status": "rejected"}
+        plan["status"] = "approved"
+        plan["approved_hash"] = agent_plan_hash(plan)
+        return {"accepted": True, "status": "approved", "approved_plan_hash": plan["approved_hash"]}
     if payload.decision == "rejected":
         plan["status"] = "rejected"
         AGENT_PLAN_TICKETS.pop(plan_id, None)
         return {"accepted": True, "status": "rejected"}
+    if not payload.plan or not payload.success_checks:
+        raise HTTPException(status_code=422, detail="Plan steps and checks must be non-empty and at most 320 characters.")
     revised = dict(plan)
     revised["plan"] = [step.strip() for step in payload.plan]
     revised["success_checks"] = [check.strip() for check in payload.success_checks]
@@ -1661,6 +1810,311 @@ async def run_agent_task(payload: AgentTaskPayload, request: Request):
         LOCAL_PREFERENCE_MEMORY.remember_from_text(payload.source_task)
     runner = create_agent_runner(AgentCoreServices.from_mapping(globals()))
     return await runner(payload, request)
+
+
+@api.post("/api/agents/run-sequence")
+async def run_sequence_agent_task(payload: AgentSequenceRunPayload, request: Request):
+    """Run an approved sequence plan one step at a time (Plan-and-Sequence P3).
+
+    Requires a ticket created by POST /api/agents/plan-sequence and approved
+    via the plan decision endpoint; the caller's ``plan_hash`` must match the
+    ticket's approved hash (409 otherwise). The plan runs through
+    :class:`SequenceRunner` with the ticket's executor model: each step gets
+    only its pinned tools, and the typed done-condition is verified in code
+    before the next step starts. Runner events stream as SSE (``plan_started``,
+    ``step_started``, ``step_verified``, ``step_retry``, ``step_failed``,
+    ``replan_needed``, ``plan_completed``), followed by a final ``done`` event
+    carrying the ``SequenceRunResult``. API only — there is no desktop UI for
+    sequence runs yet.
+
+    Cancellation and the run timeout use the same machinery as the monolithic
+    path: POST /api/runs/{run_id}/cancel (or the 15-minute timeout) sets the
+    run's cancel event, which the stream loop notices within 0.5 s and then
+    cancels the runner task. Known limitation: a tool call doing blocking
+    synchronous work that ignores asyncio cancellation can delay the stop
+    until that call returns, because the runner itself takes no cancel event.
+    """
+    require_local_agent_request(request)
+    if read_setting("frog_router_enabled", "1") != "1":
+        raise HTTPException(status_code=503, detail="Smart Router is stopped. Start it before running an agent task.")
+    ticket = AGENT_PLAN_TICKETS.get(payload.plan_id)
+    if not ticket or ticket.get("expires_at", 0) <= time.monotonic():
+        AGENT_PLAN_TICKETS.pop(payload.plan_id, None)
+        raise HTTPException(status_code=409, detail="An approved sequence plan is required. Create and approve a fresh plan before running this task.")
+    if ticket.get("status") != "approved" or "sequence_plan" not in ticket or ticket.get("approved_hash") != payload.plan_hash:
+        raise HTTPException(status_code=409, detail="The run request does not match the approved sequence plan. Review and approve the exact plan before starting.")
+    run_id = payload.run_id or uuid.uuid4().hex
+    source_task = ticket["source_task"]
+    try:
+        create_agent_run(run_id, None, "agent-sequence", source_task, permission_level=ticket["permission_mode"])
+    except RunAlreadyExists as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
+    except (InvalidRunRelationship, ValueError) as err:
+        raise HTTPException(status_code=422, detail=str(err)) from err
+    AGENT_PLAN_TICKETS.pop(payload.plan_id, None)
+    cancel_event = asyncio.Event()
+    AGENT_RUN_CANCEL_EVENTS[run_id] = cancel_event
+    AGENT_RUN_CANCEL_REASONS[run_id] = "user"
+
+    async def stream():
+        started = time.monotonic()
+        loop = asyncio.get_running_loop()
+
+        async def expire_run() -> None:
+            if cancel_event.is_set():
+                return
+            result: dict[str, Any] = {}
+            try:
+                result = await asyncio.to_thread(request_agent_run_cancel, run_id, reason="timeout")
+            except Exception:
+                logger.exception("Could not persist timeout request for sequence run %s", run_id)
+            finally:
+                if not cancel_event.is_set():
+                    AGENT_RUN_CANCEL_REASONS[run_id] = (
+                        "timeout" if result.get("reason") == "timeout" else "user"
+                    )
+                    cancel_event.set()
+
+        timeout_handle = loop.call_later(
+            AGENT_RUN_TIMEOUT_SECONDS,
+            lambda: asyncio.create_task(expire_run()),
+        )
+        get_cancel_reason = lambda: AGENT_RUN_CANCEL_REASONS.get(run_id, "user")
+        acquired = False
+        output_dir: Path | None = None
+        workspace: Path | None = None
+        try:
+            if cancel_event.is_set():
+                raise AgentRunTermination(get_cancel_reason())
+            if AGENT_TASK_SEMAPHORE.locked():
+                yield sse({"type": "error", "message": "Another agent task is already running. Wait for it to finish before starting a new one."})
+                return
+            await AGENT_TASK_SEMAPHORE.acquire()
+            acquired = True
+            workspace_root: Path | None = None
+            if ticket.get("workspace_path"):
+                try:
+                    workspace_root = Path(ticket["workspace_path"]).expanduser().resolve(strict=True)
+                except OSError as err:
+                    raise HTTPException(status_code=422, detail="The selected task workspace no longer exists.") from err
+                if not workspace_root.is_dir():
+                    raise HTTPException(status_code=422, detail="The selected task workspace must be a folder.")
+            output_dir = task_output_dir(run_id)
+            workspace = workspace_root or output_dir
+            AGENT_TASK_WORKSPACES[run_id] = workspace.resolve()
+            context = AgentToolContext(
+                task_id=run_id,
+                allowed_hosts=explicit_task_hosts(source_task),
+                attachments={},
+                output_dir=output_dir,
+                permission_mode=ticket["permission_mode"],
+                # Sequence steps never open a visible browser; browser tools
+                # run headless, as in the monolithic path's default.
+                visible_browser=False,
+            )
+            record({
+                "event": "agent_task_started",
+                "request_id": run_id,
+                "category": "agentic",
+                "source": "local_agent",
+                "reason": "Bounded local sequence run started",
+            })
+
+            async def chat(model: str, messages: list[dict], tools: list[dict], *, think: bool) -> dict:
+                result = await MODEL_CLIENT.complete(
+                    ChatCompletionRequest(
+                        model=model,
+                        messages=messages,
+                        tools=tools,
+                        # Tool-call turns never think: the trace burns the
+                        # turn and can leave tool_calls empty (#86).
+                        think=think,
+                        context_window=16384,
+                    ),
+                    # A step that writes a whole file in one tool call can take minutes on a local model.
+                    timeout=aiohttp.ClientTimeout(total=600, sock_read=560),
+                )
+                choices = result.get("choices", [])
+                assistant = choices[0].get("message", {}) if isinstance(choices, list) and choices and isinstance(choices[0], dict) else {}
+                if not isinstance(assistant, dict):
+                    raise ValueError("The local model returned an invalid agent response.")
+                allowed_tool_names = {
+                    tool["function"]["name"]
+                    for tool in tools
+                    if isinstance(tool, dict)
+                    and isinstance(tool.get("function"), dict)
+                    and isinstance(tool["function"].get("name"), str)
+                }
+                # Local models often print function calls as text instead of
+                # using tool_calls; recover those the same way as the
+                # monolithic path.
+                assistant = normalize_text_tool_calls(assistant, allowed_tool_names)
+                calls = []
+                for call in assistant.get("tool_calls", []) or []:
+                    if not isinstance(call, dict):
+                        continue
+                    function = call.get("function", {})
+                    if not isinstance(function, dict):
+                        function = {}
+                    name = function.get("name", "")
+                    if not isinstance(name, str):
+                        name = ""
+                    arguments = function.get("arguments", {})
+                    if isinstance(arguments, str):
+                        try:
+                            arguments = json.loads(arguments)
+                        except json.JSONDecodeError:
+                            arguments = {}
+                    if not isinstance(arguments, dict):
+                        arguments = {}
+                    calls.append({"name": name, "arguments": arguments})
+                content = assistant.get("content", "")
+                return {"content": content if isinstance(content, str) else "", "tool_calls": calls}
+
+            async def execute_tool(name: str, arguments: dict) -> dict:
+                try:
+                    contract = registered_tool_contracts().get(name)
+                    if contract is None:
+                        raise ToolContractError("unknown_tool", f"Tool '{name}' is not registered")
+                    arguments = validate_tool_input(contract, arguments)
+                    require_agent_tool_permission(contract.required_permission, ticket["permission_mode"])
+                    tool_result = await execute_agent_tool(name, arguments, context)
+                except (AgentToolError, ToolError, ToolContractError, ValueError) as err:
+                    return {"ok": False, "output": "", "exit_code": None, "error": str(err)[:500]}
+                if not isinstance(tool_result, dict):
+                    return {"ok": False, "output": "", "exit_code": None, "error": "Tool returned a non-dict result"}
+                # execute_agent_tool raises on failure and most tools return
+                # no "ok" key on success, so absence of "ok" means success.
+                output = tool_result.get("output", "")
+                if not isinstance(output, str):
+                    output = json.dumps(output) if isinstance(output, (dict, list)) else str(output)
+                exit_code = tool_result.get("exit_code")
+                if exit_code is not None and (not isinstance(exit_code, int) or isinstance(exit_code, bool)):
+                    exit_code = None
+                error = tool_result.get("error")
+                return {
+                    "ok": bool(tool_result.get("ok", True)),
+                    "output": output,
+                    "exit_code": exit_code,
+                    "error": error if isinstance(error, str) else None,
+                }
+
+            # The runner emits events synchronously while run() is awaited,
+            # so it runs as a background task and this loop drains the
+            # queue into SSE frames as they arrive. Cancellation (or the
+            # 15-minute timeout, via expire_run above) sets cancel_event,
+            # which the loop notices at most 0.5 s later.
+            events: asyncio.Queue[dict] = asyncio.Queue()
+            runner = SequenceRunner(
+                chat=chat,
+                execute_tool=execute_tool,
+                on_event=lambda event: events.put_nowait(event),
+            )
+            run_task = asyncio.create_task(runner.run(
+                ticket["sequence_plan"],
+                workspace=workspace,
+                run_id=run_id,
+                permission_mode=ticket["permission_mode"],
+                executor_model=ticket["executor_model"],
+            ))
+            try:
+                result: dict | None = None
+                while result is None:
+                    if run_task.done():
+                        while not events.empty():
+                            yield sse(events.get_nowait())
+                        result = await run_task
+                        break
+                    try:
+                        event = await asyncio.wait_for(events.get(), timeout=0.5)
+                    except asyncio.TimeoutError:
+                        if cancel_event.is_set():
+                            raise AgentRunTermination(get_cancel_reason())
+                        continue
+                    yield sse(event)
+            finally:
+                if not run_task.done():
+                    run_task.cancel()
+                    await asyncio.gather(run_task, return_exceptions=True)
+            assert result is not None
+            record({
+                "event": "agent_task_completed",
+                "request_id": run_id,
+                "category": "agentic",
+                "status": result["status"],
+                "duration_ms": round((time.monotonic() - started) * 1000),
+            })
+            yield sse({
+                "type": "done",
+                "contract_version": SEQUENCE_CONTRACT_VERSION,
+                "task_id": run_id,
+                "status": result["status"],
+                "duration_ms": round((time.monotonic() - started) * 1000),
+                "workspace_path": str(workspace.resolve()),
+                "result": result,
+            })
+        except AgentRunTermination as err:
+            timed_out = err.reason == "timeout"
+            terminal_status = "timed_out" if timed_out else "cancelled"
+            message = "The agent run exceeded its 15-minute time limit." if timed_out else "The agent run was cancelled."
+            record({
+                "event": "agent_task_completed",
+                "request_id": run_id,
+                "category": "agentic",
+                "status": terminal_status,
+                "error": message,
+                "duration_ms": round((time.monotonic() - started) * 1000),
+            })
+            yield sse({
+                "type": terminal_status,
+                "contract_version": SEQUENCE_CONTRACT_VERSION,
+                "task_id": run_id,
+                "message": message,
+                "duration_ms": round((time.monotonic() - started) * 1000),
+            })
+        except asyncio.CancelledError:
+            record({
+                "event": "agent_task_completed",
+                "request_id": run_id,
+                "category": "agentic",
+                "status": "cancelled",
+                "error": "Task cancelled by local client",
+                "duration_ms": round((time.monotonic() - started) * 1000),
+            })
+            raise
+        except HTTPException as err:
+            record({
+                "event": "agent_task_completed",
+                "request_id": run_id,
+                "category": "agentic",
+                "status": "error",
+                "error": str(err.detail)[:240],
+                "duration_ms": round((time.monotonic() - started) * 1000),
+            })
+            yield sse({"type": "error", "message": str(err.detail)})
+        except Exception:
+            logger.exception("PockPock AI sequence run failed")
+            record({
+                "event": "agent_task_completed",
+                "request_id": run_id,
+                "category": "agentic",
+                "status": "error",
+                "error": "Unexpected local agent failure",
+                "duration_ms": round((time.monotonic() - started) * 1000),
+            })
+            yield sse({"type": "error", "message": "The local agent task failed. Check the PockPock AI server logs."})
+        finally:
+            timeout_handle.cancel()
+            if acquired:
+                AGENT_TASK_SEMAPHORE.release()
+            try:
+                await asyncio.to_thread(finish_incomplete_agent_run, run_id)
+            except Exception:
+                logger.exception("Could not finalize sequence run %s", run_id)
+            AGENT_RUN_CANCEL_EVENTS.pop(run_id, None)
+            AGENT_RUN_CANCEL_REASONS.pop(run_id, None)
+
+    return StreamingResponse(track_agent_stream(run_id, stream(), sse), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 async def _fetch_research_snapshot(source: SourceRecord) -> tuple[SourceRecord, str, bool]:

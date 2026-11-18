@@ -119,6 +119,48 @@ Switching model in the middle of a long conversation makes the new model read th
 
 Each PockPock conversation maps to one OpenClaw session (`pockpock-<conversation id>`), so the agent remembers earlier turns in the thread. Turns sent in Chat, Agent, or NemoClaw mode are not copied into it. The model picker is hidden because OpenClaw uses its own configured model. Images are not accepted; text and document attachments are.
 
+## Subtask mode (Plan-and-Sequence P4)
+
+OpenClaw mode is demoted to tool provider under the Plan-and-Sequence design (`~/workspace/pockpock-test/wiki/Plan-and-Sequence.md`): instead of planning, it executes one subtask at a time, handed to it by the sequenced runner with a small prompt and pinned tools. This is what makes OpenClaw usable with small local models — the ~21K-token system prompt that made `qwen3.5:2b` turns never complete is replaced by a step message of well under ~1,500 tokens by construction.
+
+The sequenced runner (separate work, not the `/api/openclaw/chat` route — `bridge.py` does not send a subtask yet) passes the subtask in the helper's start message on stdin:
+
+```json
+{"type": "start", "sessionId": "pockpock-<id>", "message": "<ignored in subtask mode>", "mode": "ask", "model": "<optional>", "agent": "main", "timeoutSeconds": 1800,
+ "subtask": {"id": "step-2", "goal": "Read the two invoice messages and list their dates and amounts.",
+             "tools_allowed": ["gmail_search", "read_message"], "budget_seconds": 120,
+             "capsule_text": "Invoice message IDs: abc123, def456.", "model": "qwen3.5:9b"}}
+```
+
+| Field | Rule |
+| --- | --- |
+| `id` | Non-empty string (≤128 chars); echoed back as `subtaskId` so the parent can correlate steps |
+| `goal` | Non-empty string, ≤500 chars — one sentence, what this step achieves and nothing else |
+| `tools_allowed` | 1–3 unique non-empty tool names |
+| `budget_seconds` | Optional, 30–900; replaces `timeoutSeconds` as the abort timer for this step |
+| `capsule_text` | Optional state from earlier steps (pointers and short summaries, never full history); truncated to ~1,200 chars with a `[truncated]` marker |
+| `model` | Optional; when given it replaces `start.model` and is still checked against the models OpenClaw knows, so an unknown name is refused with `unknown_model` |
+
+An invalid subtask fails before connecting to the gateway: `{"type": "error", "code": "invalid_subtask", "message": "<clear reason>"}`.
+
+The helper builds a small focused message for `chat.send` instead of the caller's full message:
+
+```text
+You are executing ONE subtask of a larger plan. Do only this subtask.
+
+Goal: <goal>
+
+Use only these tools: <tool1, tool2>.
+
+State from earlier steps: <capsule text, when provided>
+
+End with a single line "DONE: <evidence>" on success or "FAILED: <reason>" on failure.
+```
+
+It contains no long system prompt and no conversation history. The `started` and `final` events carry `subtaskId` alongside the usual fields; all other events are unchanged, and the non-subtask path behaves exactly as before.
+
+**Honest limitation — the pinned tools are not hard-enforced here.** OpenClaw itself does not expose a tool allow-list, so the bridge cannot remove unlisted tools from the agent. The pin is enforced by the prompt above and by the PockPock permission plugin (Ask first / Auto-approve safe still ask for anything outside the safe set), not by the bridge. Harness-level enforcement — only making the pinned tools available to the call — lives in the Python sequenced runner, which is separate work. Treat a step that calls an unlisted tool as executor tool drift (see the Plan-and-Sequence failure-modes table): the verifier between steps, not this bridge, is what catches it.
+
 ## Modules and data flow
 
 ```text
@@ -141,7 +183,7 @@ PockPock Agent desktop app (OpenClaw mode)
 | --- | --- |
 | `backend/projects/openclaw_bridge/bridge.py` | Configuration, input validation, permission state file, helper process lifecycle, single active turn, approval relay, status probe and cache |
 | `backend/projects/openclaw_bridge/api.py` | `/api/openclaw/status`, `/chat`, and `/approvals` routes; SSE framing; heartbeat; abort on disconnect |
-| `backend/projects/openclaw_bridge/gateway_turn.mjs` | Node helper that speaks the OpenClaw gateway WebSocket protocol for one turn or one status check |
+| `backend/projects/openclaw_bridge/gateway_turn.mjs` | Node helper that speaks the OpenClaw gateway WebSocket protocol for one turn or one status check; in subtask mode it validates the subtask, builds the small step message, and applies its budget as the turn timeout |
 | `backend/projects/openclaw_bridge/plugin/pockpock-permissions.ts` | OpenClaw plugin that enforces the three modes on every tool call and exposes `pockpock.permissions.status` |
 | `backend/projects/openclaw_bridge/install_plugin.py` | Copies the plugin into `~/.openclaw/policies/`, enables it, and reloads or restarts the gateway |
 | `backend/projects/openclaw_bridge/test_bridge.py`, `plugin/test_policy.mjs` | Unit tests (no OpenClaw needed) |
@@ -250,7 +292,7 @@ An invalid agent name disables the integration at startup and logs a warning.
 
 - Bridge unit tests: from `backend/`, run `..\.venv\Scripts\python.exe -m unittest projects.openclaw_bridge.test_bridge` (17 tests).
 - Plugin policy tests: from the repository root, run `node backend/projects/openclaw_bridge/plugin/test_policy.mjs` (60 commands classified, plus mode behavior).
-- Turn helpers (stall watchdog, error cleanup): `node --test backend/projects/openclaw_bridge/turn_helpers.test.mjs`. Guidance block merge: `npm test` in `desktop/`. Both run in CI.
+- Turn helpers (stall watchdog, error cleanup, subtask validation/message/timeout): `node --test backend/projects/openclaw_bridge/turn_helpers.test.mjs`. Guidance block merge: `npm test` in `desktop/`. Both run in CI.
 - Live: `GET /api/openclaw/status?refresh=1` returns `ready: true` and `plugin: true`.
 - UI, Ask first: ask it to run `hostname`; an approval card appears; **Allow once** runs it and the reply contains the PC name. Ask it to write a file and choose **Deny**; the tool line shows **Denied** and the file does not exist.
 - UI, Auto-approve safe: ask it to list a folder (runs without a card), then to delete something (a card appears).

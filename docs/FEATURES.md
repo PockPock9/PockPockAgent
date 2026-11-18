@@ -16,6 +16,7 @@ This index points to detailed feature contracts. Every new feature or change to 
 - [Agent tool and run event contracts](features/agent-tool-contracts.md)
 - [Agent tool capabilities](features/agent-tools.md)
 - [Tool retrieval (progressive disclosure)](features/tool-retrieval.md)
+- [Plan-and-Sequence: strong-model planning, small-model steps, code-first verification](features/plan-and-sequence.md)
 - [Local-AI efficiency: small-model routing, keep-alive/context defaults, prefix caching, chat compaction](features/local-ai-efficiency.md)
 - [Local agent interaction and automation (planned)](features/local-agent-automation.md)
 - [Agent platform supporting tools (planned)](features/agent-platform-expansion.md)

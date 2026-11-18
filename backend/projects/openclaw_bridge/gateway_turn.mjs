@@ -10,7 +10,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import readline from 'node:readline'
-import { cleanToolError, DEFAULT_STALL_SECONDS, isStalled } from './turn_helpers.mjs'
+import { buildSubtaskMessage, cleanToolError, DEFAULT_STALL_SECONDS, isStalled, subtaskTimeoutSeconds, validateSubtask } from './turn_helpers.mjs'
 
 const DEBUG = process.env.POCKPOCK_OPENCLAW_DEBUG === '1'
 const STATE_DIR = process.env.OPENCLAW_STATE_DIR || path.join(os.homedir(), '.openclaw')
@@ -156,6 +156,23 @@ function localModels() {
 }
 
 async function run(start) {
+  // Subtask mode (Plan-and-Sequence P4): validate before connecting so an
+  // invalid subtask fails fast without touching the gateway.
+  let subtask = null
+  if (start.subtask !== undefined && start.subtask !== null) {
+    try {
+      subtask = validateSubtask(start.subtask)
+    } catch (error) {
+      fail('invalid_subtask', String(error?.message ?? error))
+      return
+    }
+  }
+  // The subtask budget replaces the caller's per-turn timeout for this step.
+  const timeoutSeconds = subtaskTimeoutSeconds(subtask, start.timeoutSeconds)
+  // In subtask mode the small built message replaces the caller's full message:
+  // no long system prompt, no conversation history.
+  const message = subtask ? buildSubtaskMessage(subtask) : start.message
+
   const sessionKey = `agent:${start.agent}:explicit:${start.sessionId}`
   const gateway = new Gateway(loadGateway())
   await gateway.connected
@@ -193,7 +210,7 @@ async function run(start) {
       gateway.call(kind === 'exec' ? 'exec.approval.resolve' : 'plugin.approval.resolve', { id, decision: 'deny' }).catch(() => {})
     }
     try { await gateway.call('chat.abort', runId ? { sessionKey, runId } : { sessionKey }, 5_000) } catch { /* The run may already be over. */ }
-    if (reason === 'timeout') fail('timeout', `OpenClaw did not finish within ${start.timeoutSeconds} seconds, so the turn was stopped.`)
+    if (reason === 'timeout') fail('timeout', `OpenClaw did not finish within ${timeoutSeconds} seconds, so the turn was stopped.`)
     else if (reason === 'stalled') fail('stalled', `OpenClaw made no progress for ${Math.round(stallSeconds / 60)} minutes (no reply, tool activity or approval request), so the turn was stopped. Try again, or ask for a smaller step; a smaller model or a new chat can also help when the conversation is long.`)
     else finish({ type: 'error', code: 'aborted', message: 'The OpenClaw turn was stopped.' }, 0)
   }
@@ -257,7 +274,7 @@ async function run(start) {
     } else if (TERMINAL_CHAT_STATES.has(payload.state)) {
       if (payload.state === 'final') {
         const finalText = messageText(payload.message) || text
-        finish({ type: 'final', text: finalText, model, durationMs: Date.now() - startedAt, stopReason: String(payload.stopReason ?? '') })
+        finish({ type: 'final', text: finalText, model, durationMs: Date.now() - startedAt, stopReason: String(payload.stopReason ?? ''), ...(subtask ? { subtaskId: subtask.id } : {}) })
       } else if (payload.state === 'aborted') {
         finish({ type: 'error', code: 'aborted', message: 'The OpenClaw turn was stopped.' })
       } else {
@@ -287,15 +304,15 @@ async function run(start) {
   // the PockPock mode to every tool call instead (see pockpock-permissions.ts).
   // A conversation may pick one of the local or cloud models OpenClaw already knows; anything else is refused.
   const available = localModels()
-  const requested = String(start.model || '')
+  const requested = String(subtask?.model || start.model || '')
   const isCloud = available.cloud.includes(requested)
   if (requested && !isCloud && !available.models.includes(requested)) return fail('unknown_model', `OpenClaw has no model named "${requested}".`)
   const sessionModel = requested ? `${isCloud ? CLOUD_PROVIDER : 'ollama'}/${requested}` : available.model
   await gateway.call('sessions.patch', { key: sessionKey, permissionMode: 'full', ...(sessionModel ? { model: sessionModel } : {}) })
-  const sent = await gateway.call('chat.send', { sessionKey, message: start.message, idempotencyKey: crypto.randomUUID() })
+  const sent = await gateway.call('chat.send', { sessionKey, message, idempotencyKey: crypto.randomUUID() })
   runId = String(sent?.runId ?? '')
-  emit({ type: 'started', runId })
-  setTimeout(() => { void abort('timeout') }, start.timeoutSeconds * 1000).unref()
+  emit({ type: 'started', runId, ...(subtask ? { subtaskId: subtask.id } : {}) })
+  setTimeout(() => { void abort('timeout') }, timeoutSeconds * 1000).unref()
   // Watchdog: a run that goes quiet (for example after a failed approval) would otherwise wait for the
   // full timeout. Approvals waiting for the user never count as quiet.
   lastActivity = Date.now()
