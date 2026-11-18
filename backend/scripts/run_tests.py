@@ -12,8 +12,8 @@ import sys
 from pathlib import Path
 
 BACKEND = Path(__file__).resolve().parents[1]
-PACKAGES = ["agent_core", "agent_extensions", "agent_tools", "connectors", "local_memory", "model_router", "nemoclaw_bridge", "observability", "openclaw_bridge", "plan_sequence"]
-SERVICES = ["planner", "run_store", "browser_automation", "validator"]
+PACKAGES = ["agent_core", "agent_eval", "agent_extensions", "agent_skills", "agent_tools", "connectors", "local_memory", "model_router", "nemoclaw_bridge", "observability", "openclaw_bridge", "plan_sequence"]
+SERVICES = ["planner", "run_store", "browser_automation", "validator", "agent_verifier"]
 
 
 def run(label: str, args: list[str], cwd: Path) -> bool:

@@ -110,6 +110,8 @@ from projects.plan_sequence.runner import SequenceRunner
 from projects.planner.routing import task_capability as planner_task_capability
 from projects.planner.replanning import ReplanningBudget, incomplete_success_checks
 from projects.agent_core.executor import AgentCoreServices, create_agent_runner
+from projects.agent_skills.distiller import RunRecord
+from projects.agent_skills.service import AgentSkillsService
 from projects.local_memory import LocalPreferenceMemory
 from projects.model_router import (
     ChatCompletionRequest,
@@ -236,6 +238,21 @@ class ResearchProviderPayload(BaseModel):
 
 class LocalMemorySettingsPayload(BaseModel):
     enabled: bool
+
+
+class SkillDistillPayload(BaseModel):
+    run_id: str = ""
+    task: str
+    trajectory: list[dict[str, Any]] = []
+    outcome: str = "success"
+    verifier_verdict: dict[str, Any] | None = None
+    use_model: bool = False
+
+
+class SkillInboxDecisionPayload(BaseModel):
+    reason: str = ""
+    by: str = "human"
+    force: bool = False
 
 
 class ResearchCollectionSavePayload(BaseModel):
@@ -2420,6 +2437,128 @@ async def clear_memory_preferences(request: Request):
     require_local_agent_request(request)
     LOCAL_PREFERENCE_MEMORY.clear()
     return await get_memory_preferences(request)
+
+
+def _agent_skills_service() -> AgentSkillsService:
+    return AgentSkillsService()
+
+
+@api.get("/api/skills")
+async def list_skills(request: Request, status: str | None = None):
+    """List library skills, optionally filtered by lifecycle status."""
+    require_local_agent_request(request)
+    service = _agent_skills_service()
+    return {
+        "skills": [
+            {
+                "name": record.skill.name,
+                "description": record.skill.description,
+                "version": record.skill.version,
+                "status": record.skill.status,
+                "tags": record.skill.tags,
+                "source_run_id": record.skill.source_run_id,
+            }
+            for record in service.library.list(status=status)
+        ]
+    }
+
+
+@api.get("/api/skills/inbox")
+async def list_skill_candidates(request: Request, status: str = "pending"):
+    """List skill-inbox candidates (pending by default)."""
+    require_local_agent_request(request)
+    service = _agent_skills_service()
+    return {"candidates": [c.as_dict() for c in service.inbox.list(status=status)]}
+
+
+@api.post("/api/skills/distill")
+async def distill_run_to_skills(payload: SkillDistillPayload, request: Request):
+    """Distil a completed run into inbox candidates (never directly usable)."""
+    require_local_agent_request(request)
+    service = _agent_skills_service()
+    record = RunRecord(
+        run_id=payload.run_id or "unknown",
+        task=payload.task,
+        trajectory=payload.trajectory,
+        outcome=payload.outcome,
+        verifier_verdict=payload.verifier_verdict,
+    )
+    candidates = service.distill_run(record, use_model=payload.use_model)
+    return {"candidates": [c.as_dict() for c in candidates]}
+
+
+@api.post("/api/skills/inbox/{candidate_id}/verify")
+async def verify_skill_candidate(candidate_id: str, request: Request):
+    require_local_agent_request(request)
+    service = _agent_skills_service()
+    try:
+        result = service.verify_candidate(candidate_id)
+    except FileNotFoundError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
+    except ValueError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
+    return {
+        "passed": result.passed,
+        "method": result.method,
+        "detail": result.detail,
+        "duration_ms": result.duration_ms,
+    }
+
+
+@api.post("/api/skills/inbox/{candidate_id}/approve")
+async def approve_skill_candidate(
+    candidate_id: str, payload: SkillInboxDecisionPayload, request: Request
+):
+    """Promote a candidate. Requires a passed test unless force=True (recorded override)."""
+    require_local_agent_request(request)
+    service = _agent_skills_service()
+    try:
+        candidate = service.approve_candidate(
+            candidate_id, reason=payload.reason, by=payload.by, force=payload.force
+        )
+    except FileNotFoundError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
+    except ValueError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
+    return candidate.as_dict()
+
+
+@api.post("/api/skills/inbox/{candidate_id}/reject")
+async def reject_skill_candidate(
+    candidate_id: str, payload: SkillInboxDecisionPayload, request: Request
+):
+    require_local_agent_request(request)
+    service = _agent_skills_service()
+    try:
+        candidate = service.reject_candidate(
+            candidate_id, reason=payload.reason, by=payload.by
+        )
+    except FileNotFoundError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
+    except ValueError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
+    return candidate.as_dict()
+
+
+@api.get("/api/skills/retrieve")
+async def retrieve_skills_for_task(request: Request, task: str):
+    """Preview what a live run would retrieve for a task (promoted/active only)."""
+    require_local_agent_request(request)
+    return _agent_skills_service().retrieve_for_task(task)
+
+
+@api.post("/api/skills/maintain")
+async def run_skill_maintenance(request: Request):
+    """Run contradiction detection + pruning; returns the decision report."""
+    require_local_agent_request(request)
+    report = _agent_skills_service().run_maintenance()
+    return {
+        "total": report.total,
+        "contradictions": [d.__dict__ for d in report.contradictions],
+        "pruned_tips": [d.__dict__ for d in report.pruned_tips],
+        "pruned_facts": [d.__dict__ for d in report.pruned_facts],
+        "pruned_skills": [d.__dict__ for d in report.pruned_skills],
+    }
 
 
 @api.put("/api/models/{name:path}")

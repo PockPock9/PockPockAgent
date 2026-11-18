@@ -79,6 +79,7 @@ The desktop app's main process serves the built interface and forwards `/api` to
 | `desktop/electron/connectors.cjs` | Connectors in the desktop app | Stores connector credentials encrypted with `safeStorage`, has the gateway check them, and pushes the connected apps to the gateway |
 | `desktop/electron/cloud.cjs`, `cloud-openclaw.cjs` | Cloud providers in the desktop app | Checks and stores API keys (encrypted with `safeStorage`), lists and saves the chosen models, pushes the configuration to the gateway, and writes the `pockpock-cloud` provider into OpenClaw's configuration |
 | `backend/projects/local_memory/` | Allowlisted, automatic local response-preference capture and review/delete storage | Stores only normalized preference values in SQLite; disabled state, individual deletion, and clear-all are user controlled |
+| `backend/projects/agent_skills/` | Self-authored skill + reasoning memory: skill library (SKILL.md files on disk), ReasoningBank-style tips and a semantic fact store in SQLite, a distiller (stub + small local model, think:false), and the skill-inbox promotion gate | Local files + SQLite only, no external memory platform; a candidate is retrievable only after passing its verification test or human approval (promoted skills / active tips only, status filtered before ranking); contradictions invalidate, never overwrite; pruning decisions are logged. Retrieval into live runs is behind `POCKPOCK_SKILLS_ENABLED` (default off). See [Self-authored skill + reasoning memory](features/agent-skills-memory.md). |
 | `backend/projects/observability/` | Prompt-free trace sink contract and deterministic routing evaluation report | Operational telemetry excludes prompts; synthetic evaluation cases emit only case IDs and aggregate/model-selection outcomes |
 | `backend/scripts/agent_run_store.py` | Run/event schema, durable run lifecycle and cancellation state, event replay, and task journal writing | Persistence boundary used by routes and agent orchestration; owns run-history SQL and legacy-safe cancellation-column migration |
 | `backend/projects/run_store/delegation_scheduler.py` | Bounded dependency scheduling and deterministic child-run identity | Scheduler and gateway child execution with scoped context, deadlines, cancellation, and durable typed results |
@@ -122,6 +123,7 @@ Decision: setup ends by starting and checking every service rather than trusting
 | Planner | 8771 | `/health` | Desktop app service manager, or `pockpock.py start` |
 | Validator | 8772 | `/health` | Desktop app service manager, or `pockpock.py start` |
 | Run store | 8773 | `/health` | Desktop app service manager, or `pockpock.py start` |
+| Agent verifier | 8775 | `/health` | Desktop app service manager, or `pockpock.py start` |
 | Browser automation | 8774 | `/health` | Desktop app service manager, or `pockpock.py start` |
 | Ollama | 11434 | `/api/version` | Desktop app service manager, or the Ollama tray app |
 | OpenClaw gateway | 18810 | port open | Desktop app service manager (`openclaw gateway start`), or its login item |
@@ -260,6 +262,13 @@ This local deployment uses process-separated services to isolate planning, valid
 - **Decision:** persist ordered agent events separately from prompt-free telemetry and replay from that log.
 - **Reason:** users need progress and results to survive reloads, and the task workspace needs a durable open/recovery pointer.
 - **Tradeoff:** task event payloads can include work details, so access remains local and retention/cleanup needs a future explicit policy.
+
+### External verification and durable run ledger
+
+- **Decision:** verify agent runs with external ground truth (tests, linters, schemas, file/content expectations, a rubric critic given the original requirements) in a separate service with its own SQLite ledger, and complete a run only on a verifier pass.
+- **Reason:** self-correction without external feedback degrades performance, and the model claiming "done" is not evidence. The ledger (per-step capsules, tool calls, file diffs, verdicts) makes runs resumable after a kill and auditable after the fact.
+- **Tradeoff:** the verifier ledger is separate from the run store, so a run has two durable records (gateway metadata vs verifiable execution). Rewind records unrestored files instead of restoring them — no whole-file snapshots are taken.
+- **Boundary:** the harness enforces max steps, retries, identical failures, replans, and wall time; the planner timeout and executor zero-tools bugs are worked around (stored-plan resume; zero-tools success treated as a signed failure), not fixed here.
 
 ### Bounded agent replanning
 

@@ -5,6 +5,7 @@ These directories own workflow services and in-process packages. Services commun
 | Project | Responsibility | Port | Entry point |
 | --- | --- | ---: | --- |
 | [agent_core](./agent_core/README.md) | In-process agent execution orchestration | Gateway process | `create_agent_runner` |
+| [agent_eval](./agent_eval/README.md) | Local eval harness: verifiable task suite, pass@1/pass^k runner, prompt optimisation, LoRA trace export | In-process package | `projects.agent_eval` |
 | [agent_tools](./agent_tools/README.md) | Agent tool catalog, workspace/file capabilities, research and artifact tools | In-process package | `projects.agent_tools` |
 | [model_router](./model_router/README.md) | Provider-neutral chat-completion contract and Ollama adapter | In-process package | `ChatCompletionProvider` |
 | [local_memory](./local_memory/README.md) | Allowlisted local preference capture and user-controlled retention | In-process package | `LocalPreferenceMemory` |
