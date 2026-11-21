@@ -14,14 +14,28 @@ function inside(root, target) {
   return resolved
 }
 
+// Like inside(), but follows symlinks and junctions: a link inside the workspace that points
+// outside it is refused, because fs calls would otherwise read the target.
+async function insideReal(root, target) {
+  const lexical = inside(root, target)
+  const base = await fs.realpath(path.resolve(root))
+  const real = await fs.realpath(lexical)
+  const same = process.platform === 'win32' || process.platform === 'darwin'
+    ? (a, b) => a.toLowerCase() === b.toLowerCase()
+    : (a, b) => a === b
+  const prefix = base.endsWith(path.sep) ? base : base + path.sep
+  if (!same(real, base) && !same(real.slice(0, prefix.length), prefix)) throw new Error('That path is outside the workspace.')
+  return real
+}
+
 async function list(root, relative = '') {
-  const folder = inside(root, relative)
+  const folder = await insideReal(root, relative)
   const entries = await fs.readdir(folder, { withFileTypes: true })
   const items = entries
     .filter((entry) => !entry.isSymbolicLink())
     .map((entry) => ({
       name: entry.name,
-      path: path.relative(path.resolve(root), path.join(folder, entry.name)),
+      path: path.join(path.relative(path.resolve(root), inside(root, relative)), entry.name),
       directory: entry.isDirectory(),
       muted: HIDDEN.has(entry.name) || entry.name.startsWith('.'),
     }))
@@ -30,7 +44,7 @@ async function list(root, relative = '') {
 }
 
 async function read(root, relative) {
-  const file = inside(root, relative)
+  const file = await insideReal(root, relative)
   const stat = await fs.stat(file)
   if (!stat.isFile()) throw new Error('That is not a file.')
   if (stat.size > MAX_READ_BYTES) throw new Error(`The file is larger than ${MAX_READ_BYTES / 1024} KB, too big to attach.`)
@@ -39,4 +53,4 @@ async function read(root, relative) {
   return { name: path.basename(file), text: data.toString('utf8'), size: stat.size }
 }
 
-module.exports = { inside, list, read }
+module.exports = { inside, insideReal, list, read }

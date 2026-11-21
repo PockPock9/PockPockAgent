@@ -24,7 +24,7 @@ from projects.plan_sequence.contracts import SEQUENCE_CONTRACT_VERSION, validate
 from projects.plan_sequence.routing import choose_executor_model, choose_planner_model
 from projects.model_router.cloud import OpenAICompatibleAdapter, RoutingChatCompletionProvider
 
-app = FastAPI(title="PockPock Planner", docs_url=None, redoc_url=None)
+app = FastAPI(title="PockPock Planner", docs_url=None, redoc_url=None, openapi_url=None)
 OLLAMA_URL = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
 # Cloud models ("<provider>/<model>") go through the gateway's local endpoint, which holds the keys.
 GATEWAY_URL = os.environ.get("POCKPOCK_GATEWAY_URL", "http://127.0.0.1:8766").rstrip("/")
