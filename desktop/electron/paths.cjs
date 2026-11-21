@@ -4,7 +4,26 @@
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
-const { app } = require('electron')
+
+// Only require the real `electron` module inside the Electron main process. The `electron`
+// npm package has no postinstall script, so `npm ci` never downloads the binary; the first
+// `require('electron')` from plain Node lazily downloads and extracts the whole ~200 MB
+// Electron.app into node_modules instead. The main-process unit tests run under plain Node,
+// so that require made the test step download and extract Electron on CI — and on the macOS
+// Intel runner the extraction failed with EPERM inside the app bundle
+// (`.../Electron Framework.framework/Resources`), failing the desktop job even though the
+// PR under test changed no code. `process.versions.electron` is set only when this process
+// actually is Electron, so outside it we use a stub with the same shape callers rely on.
+let electronApp = null
+if (process.versions.electron) {
+  electronApp = require('electron').app
+}
+const app = electronApp || { isPackaged: false }
+
+/** The real Electron `app` object when running inside Electron, else null. */
+function getElectronApp() {
+  return electronApp
+}
 
 const IS_WIN = process.platform === 'win32'
 const IS_MAC = process.platform === 'darwin'
@@ -210,7 +229,7 @@ function cleanEnv(extra = {}) {
 }
 
 module.exports = {
-  IS_WIN, IS_MAC, HOME, LOCAL, exe,
+  IS_WIN, IS_MAC, HOME, LOCAL, exe, getElectronApp,
   repoRoot, backendRoot, runtimeRoot, venvRoot, venvPython, basePython, dataRoot, migrateLegacyData, logsRoot,
   runtimeNodeBin, npmPrefix, npmPrefixBin, toolDirs, fixPath, findExecutable,
   ollamaAppDirs, ollamaExe, ollamaServerLog, nodeExe, npmCmd, openclawCmd, openclawEntry, openclawLog, dockerCli, cleanEnv,
