@@ -9,9 +9,13 @@ import json
 import asyncio
 import anyio
 import hashlib
+import logging
 import os
 import re
 import sqlite3
+import sys
+import threading
+import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
@@ -20,6 +24,8 @@ from pathlib import Path
 from typing import Any
 
 import telemetry_store as telemetry
+
+logger = logging.getLogger(__name__)
 
 
 RUN_EVENT_CONTRACT_VERSION = 1
@@ -186,8 +192,57 @@ def _service_request(path: str, *, method: str = "GET", payload: dict[str, Any] 
         raise RuntimeError(f"Run-store service is unavailable: {err}") from err
 
 
+def store_identity() -> str:
+    """A short, path-free fingerprint of the database file this process uses for runs.
+
+    The run-store service reports it on /health so the gateway can tell whether that service keeps
+    runs in the same file the gateway would use itself.
+    """
+    resolved = str(Path(telemetry.DB_PATH).expanduser().resolve())
+    if sys.platform in {"win32", "darwin"}:
+        resolved = resolved.lower()
+    return hashlib.sha256(resolved.encode("utf-8")).hexdigest()[:16]
+
+
+_REMOTE_CHECK_SECONDS = 30.0
+_remote_check = {"at": -_REMOTE_CHECK_SECONDS, "matches": True}
+_remote_check_lock = threading.Lock()
+
+
+def _remote_store_matches() -> bool:
+    """False only when the run-store service positively reports a different database file.
+
+    The launchers reuse any healthy service already on the port. A run-store left over from another
+    data folder (another checkout, a test run, a different LOCALAPPDATA or XDG_DATA_HOME) then held
+    the runs, so history seemed to disappear after a restart and finished runs answered 404 for a
+    while (issues #60, #61). An unreachable service keeps the old behaviour: the request fails loudly.
+    """
+    base_url = os.environ.get("POCKPOCK_RUN_STORE_URL", "").rstrip("/")
+    try:
+        with urlopen(f"{base_url}/health", timeout=1) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (OSError, ValueError):
+        return True
+    remote = payload.get("store") if isinstance(payload, dict) else None
+    if not isinstance(remote, str) or remote == store_identity():
+        return True
+    logger.warning(
+        "The run-store service on %s keeps runs in a different database than this gateway; "
+        "using this gateway's own run database instead. Stop the other PockPock services and start again.",
+        base_url,
+    )
+    return False
+
+
 def _use_remote_store() -> bool:
-    return bool(os.environ.get("POCKPOCK_RUN_STORE_URL")) and os.environ.get("POCKPOCK_RUN_STORE_INTERNAL") != "1"
+    if not os.environ.get("POCKPOCK_RUN_STORE_URL") or os.environ.get("POCKPOCK_RUN_STORE_INTERNAL") == "1":
+        return False
+    now = time.monotonic()
+    with _remote_check_lock:
+        if now - _remote_check["at"] >= _REMOTE_CHECK_SECONDS:
+            _remote_check["at"] = now
+            _remote_check["matches"] = _remote_store_matches()
+        return _remote_check["matches"]
 
 
 def initialize_agent_store() -> None:
