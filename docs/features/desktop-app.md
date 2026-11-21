@@ -148,7 +148,7 @@ The window loads the interface from the app's own loopback server, which also fo
 
 | Mode | Calls |
 |---|---|
-| Chat | `POST /api/chat` with the chat history (documents inlined, images as base64), streamed |
+| Chat | `POST /api/chat` with the chat history (documents inlined, images as base64), streamed. The newest user message needs text or an image (422 otherwise) |
 | PockPock Agent | `POST /api/agents/plan` → plan card → `POST /api/agents/plans/{id}/decision` → `POST /api/agents/run` (streamed). Approvals: `POST /api/runs/{run}/approvals/{id}`. Stop: `POST /api/runs/{run}/cancel`. Saving a source: `POST /api/agents/{task}/research-collection/sources` |
 | OpenClaw | `POST /api/openclaw/chat` with `session_id = pockpock-<chat id>`, permission mode and model, streamed. Approvals: `POST /api/openclaw/approvals` |
 | NemoClaw | `POST /api/nemoclaw/chat` with `session_id = pockpock-<chat id>`, streamed |

@@ -13,7 +13,7 @@ from internal_auth import require_internal_token
 
 import aiohttp
 from fastapi import Depends, FastAPI, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from planner.critic import review_plan
 from planner.contracts import normalized_plan_steps, normalized_subtask_plan, normalized_task_brief
@@ -24,7 +24,7 @@ from projects.plan_sequence.contracts import SEQUENCE_CONTRACT_VERSION, validate
 from projects.plan_sequence.routing import choose_executor_model, choose_planner_model
 from projects.model_router.cloud import OpenAICompatibleAdapter, RoutingChatCompletionProvider
 
-app = FastAPI(title="PockPock Planner", docs_url=None, redoc_url=None)
+app = FastAPI(title="PockPock Planner", docs_url=None, redoc_url=None, openapi_url=None)
 OLLAMA_URL = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
 # Cloud models ("<provider>/<model>") go through the gateway's local endpoint, which holds the keys.
 GATEWAY_URL = os.environ.get("POCKPOCK_GATEWAY_URL", "http://127.0.0.1:8766").rstrip("/")
@@ -86,6 +86,14 @@ class PlanRequest(BaseModel):
     workspace_path: str | None = Field(default=None, max_length=1024)
     permission_mode: str = Field(default="auto-review", pattern=r"^(default|auto-review|full-access)$")
 
+    @field_validator("task")
+    @classmethod
+    def task_has_text(cls, value: str) -> str:
+        # A task of only spaces became "" later and surfaced as a 502 (issue #73).
+        if not value.strip():
+            raise ValueError("Describe the task to plan.")
+        return value
+
 
 class SequencePlanRequest(BaseModel):
     """Request for POST /plan-sequence: same shapes as PlanRequest, plus planner_model."""
@@ -98,6 +106,14 @@ class SequencePlanRequest(BaseModel):
     workspace_path: str | None = Field(default=None, max_length=1024)
     permission_mode: str = Field(default="auto-review", pattern=r"^(default|auto-review|full-access)$")
     planner_model: str | None = Field(default=None, max_length=120)
+
+    @field_validator("task")
+    @classmethod
+    def task_has_text(cls, value: str) -> str:
+        # A task of only spaces became "" later and surfaced as a 502 (issue #73).
+        if not value.strip():
+            raise ValueError("Describe the task to plan.")
+        return value
 
 
 def build_execution_prompt(task: str, plan: list[str], model_prompt: object) -> str:

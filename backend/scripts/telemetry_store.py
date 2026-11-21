@@ -91,20 +91,30 @@ def installed_models():
         return None
 
 
+SUPPORTED_EVENTS = frozenset({
+    "request_received",
+    "route_decision",
+    "model_call_started",
+    "model_call_completed",
+    "model_management",
+    "router_state",
+    "agent_task_started",
+    "agent_task_completed",
+    "agent_tool_started",
+    "agent_tool_completed",
+    # Agent diagnostics recorded by the executor (issue #50). save_event stores only fixed columns,
+    # so these keep the same prompt-free footprint.
+    "build_review",
+    "context_compaction",
+    "skill_retrieval",
+    "tool_retrieval",
+    "tool_search_hydration",
+})
+
+
 def save_event(data):
     event_type = data.get("event")
-    if event_type not in {
-        "request_received",
-        "route_decision",
-        "model_call_started",
-        "model_call_completed",
-        "model_management",
-        "router_state",
-        "agent_task_started",
-        "agent_task_completed",
-        "agent_tool_started",
-        "agent_tool_completed",
-    }:
+    if event_type not in SUPPORTED_EVENTS:
         raise ValueError("Unsupported event type")
 
     def text(key, limit=240):

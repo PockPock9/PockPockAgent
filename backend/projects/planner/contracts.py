@@ -150,6 +150,11 @@ def _normalized_required_capabilities(value: object, original_request: str) -> o
         for capability in ("workspace_read", "workspace_write", "project_validation"):
             if capability not in normalized:
                 normalized.append(capability)
+    # A request for a saved file or document needs the artifact tools, or the run has nothing to save
+    # with (issue #92: "Save a text artifact named probe-result.md" planned no capabilities at all).
+    # Research reports are built by the gateway from validated sources, so they are left alone.
+    if _ARTIFACT_INTENT.search(original_request) and not {"artifact_creation", "workspace_write", "public_research"} & set(normalized):
+        normalized.append("artifact_creation")
     return normalized
 
 
@@ -157,6 +162,12 @@ _WEB_CUE = re.compile(
     r"https?://|\bwww\.|\b[a-z0-9-]+\.(?:com|org|net|io|dev|ai|edu|gov|co|app)\b"
     r"|\b(web|website|websites|site|sites|page|pages|browser|browse|online|internet|url|link|links|search|research"
     r"|look\s+up|scrape|crawl|screenshot|sources?|citations?|cite|news|docs|documentation)\b",
+    re.IGNORECASE,
+)
+_ARTIFACT_INTENT = re.compile(
+    r"\b(save|create|make|write|export|generate|produce|draft|prepare)\b[^.?!\n]{0,80}?"
+    r"(?:\b(artifact|document|doc|report|spreadsheet|workbook|presentation|slides|deck|memo)\b"
+    r"|\.(?:md|txt|docx|xlsx|pptx|csv|pdf|html)\b)",
     re.IGNORECASE,
 )
 _BUILD_INTENT = re.compile(

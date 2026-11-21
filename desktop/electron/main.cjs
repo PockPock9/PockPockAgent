@@ -164,12 +164,12 @@ function registerIpc() {
   handle('workspace:list', (relative) => workspace.list(workspaceRoot(), typeof relative === 'string' ? relative : ''))
   handle('workspace:read', (relative) => workspace.read(workspaceRoot(), String(relative)))
   handle('workspace:open', async (relative) => {
-    const error = await shell.openPath(workspace.inside(workspaceRoot(), String(relative || '')))
+    const error = await shell.openPath(await workspace.insideReal(workspaceRoot(), String(relative || '')))
     if (error) throw new Error(error)
     return true
   })
-  handle('workspace:reveal', (relative) => {
-    shell.showItemInFolder(workspace.inside(workspaceRoot(), String(relative || '')))
+  handle('workspace:reveal', async (relative) => {
+    shell.showItemInFolder(await workspace.insideReal(workspaceRoot(), String(relative || '')))
     return true
   })
 

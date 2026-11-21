@@ -7,9 +7,15 @@ and inside the run-store process itself.
 
 import json
 import asyncio
+import anyio
 import hashlib
+import logging
 import os
 import re
+import sqlite3
+import sys
+import threading
+import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
@@ -18,6 +24,8 @@ from pathlib import Path
 from typing import Any
 
 import telemetry_store as telemetry
+
+logger = logging.getLogger(__name__)
 
 
 RUN_EVENT_CONTRACT_VERSION = 1
@@ -168,17 +176,73 @@ def _service_request(path: str, *, method: str = "GET", payload: dict[str, Any] 
             return json.loads(response.read().decode("utf-8"))
     except HTTPError as err:
         detail = err.read().decode("utf-8", errors="replace")
+        try:
+            message = json.loads(detail).get("detail")
+        except (ValueError, AttributeError):
+            message = None
+        message = message if isinstance(message, str) and message.strip() else None
         if err.code == 409:
-            raise RunAlreadyExists("This run ID has already been used. Start the task again.") from err
+            if path == "/runs":
+                raise RunAlreadyExists("This run ID has already been used. Start the task again.") from err
+            raise ValueError(message or "The request conflicts with the run's current state.") from err
         if err.code == 404:
-            raise RunNotFound("Run not found") from err
+            raise RunNotFound(message or "Run not found") from err
         raise RuntimeError(f"Run-store service returned HTTP {err.code}: {detail[:500]}") from err
     except (URLError, TimeoutError, json.JSONDecodeError) as err:
         raise RuntimeError(f"Run-store service is unavailable: {err}") from err
 
 
+def store_identity() -> str:
+    """A short, path-free fingerprint of the database file this process uses for runs.
+
+    The run-store service reports it on /health so the gateway can tell whether that service keeps
+    runs in the same file the gateway would use itself.
+    """
+    resolved = str(Path(telemetry.DB_PATH).expanduser().resolve())
+    if sys.platform in {"win32", "darwin"}:
+        resolved = resolved.lower()
+    return hashlib.sha256(resolved.encode("utf-8")).hexdigest()[:16]
+
+
+_REMOTE_CHECK_SECONDS = 30.0
+_remote_check = {"at": -_REMOTE_CHECK_SECONDS, "matches": True}
+_remote_check_lock = threading.Lock()
+
+
+def _remote_store_matches() -> bool:
+    """False only when the run-store service positively reports a different database file.
+
+    The launchers reuse any healthy service already on the port. A run-store left over from another
+    data folder (another checkout, a test run, a different LOCALAPPDATA or XDG_DATA_HOME) then held
+    the runs, so history seemed to disappear after a restart and finished runs answered 404 for a
+    while (issues #60, #61). An unreachable service keeps the old behaviour: the request fails loudly.
+    """
+    base_url = os.environ.get("POCKPOCK_RUN_STORE_URL", "").rstrip("/")
+    try:
+        with urlopen(f"{base_url}/health", timeout=1) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (OSError, ValueError):
+        return True
+    remote = payload.get("store") if isinstance(payload, dict) else None
+    if not isinstance(remote, str) or remote == store_identity():
+        return True
+    logger.warning(
+        "The run-store service on %s keeps runs in a different database than this gateway; "
+        "using this gateway's own run database instead. Stop the other PockPock services and start again.",
+        base_url,
+    )
+    return False
+
+
 def _use_remote_store() -> bool:
-    return bool(os.environ.get("POCKPOCK_RUN_STORE_URL")) and os.environ.get("POCKPOCK_RUN_STORE_INTERNAL") != "1"
+    if not os.environ.get("POCKPOCK_RUN_STORE_URL") or os.environ.get("POCKPOCK_RUN_STORE_INTERNAL") == "1":
+        return False
+    now = time.monotonic()
+    with _remote_check_lock:
+        if now - _remote_check["at"] >= _REMOTE_CHECK_SECONDS:
+            _remote_check["at"] = now
+            _remote_check["matches"] = _remote_store_matches()
+        return _remote_check["matches"]
 
 
 def initialize_agent_store() -> None:
@@ -503,10 +567,13 @@ def create_agent_approval(run_id: str, approval_id: str, action_hash: str, actio
             raise RunNotFound("Run not found")
         if run["status"] != "running":
             raise ValueError("Approvals can only be requested for an active run")
-        connection.execute(
-            "INSERT INTO agent_run_approvals(approval_id, run_id, action_hash, action_json, status, created_at, expires_at) VALUES (?, ?, ?, ?, 'pending', ?, ?)",
-            (approval_id, run_id, action_hash, action_json, now, expires_at),
-        )
+        try:
+            connection.execute(
+                "INSERT INTO agent_run_approvals(approval_id, run_id, action_hash, action_json, status, created_at, expires_at) VALUES (?, ?, ?, ?, 'pending', ?, ?)",
+                (approval_id, run_id, action_hash, action_json, now, expires_at),
+            )
+        except sqlite3.IntegrityError as err:
+            raise ValueError("This approval ID has already been used.") from err
     return {"approval_id": approval_id, "run_id": run_id, "action_hash": action_hash, "action": action, "status": "pending", "created_at": now, "expires_at": expires_at}
 
 
@@ -682,20 +749,34 @@ def write_agent_task_memory(
 
 async def track_agent_stream(run_id: str, source, encode_event):
     """Persist each complete SSE event before forwarding it to the client."""
-    sequence = 0
-    buffer = ""
-    decoder = json.JSONDecoder()
-    async for frame in source:
-        buffer += frame
-        while "\n\n" in buffer:
-            raw, buffer = buffer.split("\n\n", 1)
-            data = "\n".join(line[5:].lstrip() for line in raw.splitlines() if line.startswith("data:"))
-            if not data:
-                continue
+    try:
+        sequence = 0
+        buffer = ""
+        decoder = json.JSONDecoder()
+        async for frame in source:
+            buffer += frame
+            while "\n\n" in buffer:
+                raw, buffer = buffer.split("\n\n", 1)
+                data = "\n".join(line[5:].lstrip() for line in raw.splitlines() if line.startswith("data:"))
+                if not data:
+                    continue
+                try:
+                    event = decoder.decode(data)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+                sequence += 1
+                event["run_id"] = run_id
+                event["sequence"] = sequence
+                event = _normalize_run_event(event, for_write=True)
+                stored = await asyncio.to_thread(store_agent_event, run_id, sequence, event)
+                if stored:
+                    yield encode_event(event)
+        if buffer.strip():
+            data = "\n".join(line[5:].lstrip() for line in buffer.splitlines() if line.startswith("data:"))
             try:
                 event = decoder.decode(data)
             except (json.JSONDecodeError, TypeError):
-                continue
+                return
             sequence += 1
             event["run_id"] = run_id
             event["sequence"] = sequence
@@ -703,19 +784,13 @@ async def track_agent_stream(run_id: str, source, encode_event):
             stored = await asyncio.to_thread(store_agent_event, run_id, sequence, event)
             if stored:
                 yield encode_event(event)
-    if buffer.strip():
-        data = "\n".join(line[5:].lstrip() for line in buffer.splitlines() if line.startswith("data:"))
-        try:
-            event = decoder.decode(data)
-        except (json.JSONDecodeError, TypeError):
-            return
-        sequence += 1
-        event["run_id"] = run_id
-        event["sequence"] = sequence
-        event = _normalize_run_event(event, for_write=True)
-        stored = await asyncio.to_thread(store_agent_event, run_id, sequence, event)
-        if stored:
-            yield encode_event(event)
+    finally:
+        # A disconnected client leaves this generator unfinished; close the run stream too, so
+        # its own cleanup marks the run finished instead of leaving it "running" (issue #41).
+        close = getattr(source, "aclose", None)
+        if close is not None:
+            with anyio.CancelScope(shield=True):
+                await close()
 
 
 def list_runs_for_conversation(conversation_id: str) -> list[dict[str, Any]]:
@@ -731,7 +806,12 @@ def list_runs_for_conversation(conversation_id: str) -> list[dict[str, Any]]:
 
 def get_run_events(run_id: str, after: int, limit: int) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
     if _use_remote_store():
-        result = _service_request(f"/runs/{quote(run_id, safe='')}/events?after={max(0, after)}&limit={max(1, min(limit, 1000))}")
+        try:
+            result = _service_request(f"/runs/{quote(run_id, safe='')}/events?after={max(0, after)}&limit={max(1, min(limit, 1000))}")
+        except RunNotFound:
+            # Same contract as the local store: an unknown run is "no run", which callers turn into
+            # a 404. Letting it escape made the gateway answer 500 (issue #66).
+            return None, []
         return result.get("run"), result.get("events", [])
     with telemetry.connect_db() as connection:
         run = connection.execute(
