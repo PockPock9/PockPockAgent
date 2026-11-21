@@ -1,7 +1,7 @@
 // Customize pages: Skills, MCP servers, Models, Memory, Settings.
 import { useCallback, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Brain, ChevronDown, Download, Globe, LoaderCircle, Palette, Plug, Power, Puzzle, RefreshCw, Server, Trash2 } from 'lucide-react'
+import { Brain, ChevronDown, Clock, Download, Globe, LoaderCircle, Palette, Plug, Power, Puzzle, RefreshCw, Server, Trash2 } from 'lucide-react'
 import { ExtensionCard, inspectLink } from '../components/ExtensionCard'
 import type { Proposal } from '../components/ExtensionCard'
 import { Empty, MenuItem, Popover } from '../components/ui'
@@ -63,9 +63,9 @@ function AddLink({ kind, onPreview, busy }: { kind: 'skills' | 'mcp'; onPreview:
   const [link, setLink] = useState('')
   return (
     <form className="add-link" onSubmit={(event) => { event.preventDefault(); if (link.trim()) { onPreview(link.trim()); setLink('') } }}>
-      <label htmlFor={`add-${kind}`}>{kind === 'skills' ? 'Add a skill from a GitHub link' : 'Add an MCP server from a GitHub link or server address'}</label>
+      <label htmlFor={`add-${kind}`}>{kind === 'skills' ? 'Add a skill from a GitHub link' : 'Add an MCP server from a GitHub link, a server address, or a command on this PC'}</label>
       <div>
-        <input id={`add-${kind}`} className="input" type="url" placeholder={kind === 'skills' ? 'https://github.com/owner/repo/tree/main/skills/name' : 'https://github.com/owner/repo  or  https://server.example/mcp'} value={link} onChange={(event) => setLink(event.target.value)} spellCheck={false} />
+        <input id={`add-${kind}`} className="input" type={kind === 'skills' ? 'url' : 'text'} placeholder={kind === 'skills' ? 'https://github.com/owner/repo/tree/main/skills/name' : 'https://github.com/owner/repo  ·  https://server.example/mcp  ·  python3 server.py'} value={link} onChange={(event) => setLink(event.target.value)} spellCheck={false} />
         <button type="submit" className="button button--primary" disabled={!link.trim() || busy}>{busy && <LoaderCircle size={13} className="spin" />}{busy ? 'Reading…' : 'Preview'}</button>
       </div>
       <small>You will see exactly what it installs and approve it first. Only add {kind === 'skills' ? 'skills' : 'servers'} from sources you trust.</small>
@@ -100,7 +100,7 @@ export function SkillsPage({ status }: { status: Status }) {
   return (
     <PageFrame eyebrow="Customize · OpenClaw" title="Skills" intro="Instructions the OpenClaw agent follows for a kind of task. Switch one off to stop the agent using it without removing it.">
       <AddLink kind="skills" busy={busy} onPreview={(url) => void preview(url)} />
-      {proposal && <ExtensionCard key={proposal.id} proposal={proposal} onClose={() => { setProposal(null); void load(); void status.refreshCounts() }} onSwitch={(next) => void preview(proposal.source, next)} />}
+      {proposal && <ExtensionCard key={proposal.id} proposal={proposal} onClose={() => { setProposal(null); void load(); void status.refreshCounts() }} onSwitch={(next) => void preview(proposal.source, next)} onOpen={(url) => void preview(url, 'mcp')} />}
       <ErrorNote message={error} />
       {!list && !error && <p className="note"><LoaderCircle size={13} className="spin" /> Loading skills…</p>}
       {list && !list.openclaw_ready && <ErrorNote message={`${list.detail || 'OpenClaw is not reachable.'} Skills cannot be switched until it is running.`} />}
@@ -154,14 +154,14 @@ export function McpPage({ status }: { status: Status }) {
   return (
     <PageFrame eyebrow="Customize · OpenClaw" title="MCP servers" intro="Tool servers the OpenClaw agent can call. Every call still follows the permission you pick in the chat.">
       <AddLink kind="mcp" busy={busy} onPreview={(url) => void preview(url)} />
-      {proposal && <ExtensionCard key={proposal.id} proposal={proposal} onClose={() => { setProposal(null); void load(); void status.refreshCounts() }} onSwitch={(next) => void preview(proposal.source, next)} />}
+      {proposal && <ExtensionCard key={proposal.id} proposal={proposal} onClose={() => { setProposal(null); void load(); void status.refreshCounts() }} onSwitch={(next) => void preview(proposal.source, next)} onOpen={(url) => void preview(url, 'mcp')} />}
       <ErrorNote message={error} />
       {!list && !error && <p className="note"><LoaderCircle size={13} className="spin" /> Loading servers…</p>}
       {list && !list.openclaw_ready && <ErrorNote message={`${list.detail || 'OpenClaw is not reachable.'} Servers cannot be listed until it is running.`} />}
       {list?.openclaw_ready && (
         <>
           <h2 className="list-title">Connected <small>{list.mcp.length}</small></h2>
-          {!list.mcp.length ? <Empty icon={<Plug size={20} />} title="No MCP servers yet"><p>Paste a GitHub link to an MCP server, or a server address, above.</p></Empty> : (
+          {!list.mcp.length ? <Empty icon={<Plug size={20} />} title="No MCP servers yet"><p>Paste a GitHub link to an MCP server, a server address, or a command that starts one on this PC, above.</p></Empty> : (
             <ul className="rows">
               {list.mcp.map((server) => (
                 <li key={server.name} className="row">
@@ -301,6 +301,7 @@ export function SettingsPage({ status, info, onOpen, updates, settings, patchSet
           <button type="button" className="button" onClick={() => void status.refreshClaw(true)}><RefreshCw size={13} /> Check</button>
         </li>
         <OpenClawBrowserRow onMessage={setMessage} />
+        <OpenClawSlowModelsRow onMessage={setMessage} />
         <li className="row">
           <Plug size={16} className="row__icon" />
           <div className="row__text"><strong>NemoClaw sandbox check</strong><span>{status.nemoChecking ? 'Checking the sandbox (this loads its model)…' : status.nemo?.detail || 'Not checked'}</span></div>
@@ -336,6 +337,38 @@ export function SettingsPage({ status, info, onOpen, updates, settings, patchSet
 /** A small preview of a theme: canvas, panel, accent and text colours. Decorative: the name is next to it. */
 function Swatches({ colours }: { colours: string[] }) {
   return <span className="swatches" aria-hidden="true">{colours.map((colour, index) => <span key={index} style={{ background: colour }} />)}</span>
+}
+
+/** How long OpenClaw waits for a slow local model. Without a provider timeout it stops after 300 s. */
+function OpenClawSlowModelsRow({ onMessage }: { onMessage: (text: string) => void }) {
+  const desktop = bridge()
+  const [state, setState] = useState<{ seconds: number | null; recommended: number } | null>(null)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const clean = (reason: unknown, fallback: string) => reason instanceof Error ? reason.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : fallback
+  useEffect(() => {
+    if (!desktop) return
+    desktop.openclaw.slowModels().then(setState, (reason: unknown) => setError(clean(reason, 'OpenClaw is not available.')))
+  }, [desktop])
+  const allow = async () => {
+    if (!desktop) return
+    setBusy(true)
+    try {
+      setState(await desktop.openclaw.allowSlowModels())
+      onMessage('OpenClaw now waits up to 30 minutes for a local model. Its gateway restarted.')
+    } catch (reason) { onMessage(clean(reason, 'The setting could not be changed.')) } finally { setBusy(false) }
+  }
+  const enough = state && state.seconds !== null && state.seconds >= state.recommended
+  return (
+    <li className="row">
+      <Clock size={16} className="row__icon" />
+      <div className="row__text"><strong>Slow local models in OpenClaw</strong>
+        <span>{error || (!state ? 'Checking…' : enough
+          ? `OpenClaw waits up to ${Math.round((state.seconds ?? 0) / 60)} minutes for a local model.`
+          : 'OpenClaw stops waiting for a local model after 5 minutes, which a small model on a computer without a graphics card can need just to read its instructions. Allowing more time restarts the OpenClaw gateway and stops any running OpenClaw chat.')}</span></div>
+      {state && !enough && <button type="button" className="button" disabled={busy} onClick={() => void allow()}>{busy && <LoaderCircle size={13} className="spin" />}Allow slow models</button>}
+    </li>
+  )
 }
 
 /** Which browser OpenClaw drives: its default, or an installed Chromium browser such as Brave. */

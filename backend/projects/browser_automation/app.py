@@ -489,7 +489,7 @@ async def lifespan(_: FastAPI):
         await runtime.close()
 
 
-app = FastAPI(title="PockPock Browser Automation", docs_url=None, redoc_url=None, lifespan=lifespan)
+app = FastAPI(title="PockPock Browser Automation", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 
 
 @app.get("/health")

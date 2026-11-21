@@ -88,6 +88,19 @@ class TaskBriefContractTests(unittest.TestCase):
         }, original_request="Open https://example.com and click the Help link", plan=["Inspect the page"], permission_level="default")
         self.assertEqual(interactive["required_capabilities"], ["browser_read", "browser_action"])
 
+    def test_a_requested_file_gets_the_artifact_tools(self):
+        # Issue #92: the planner returned no capabilities for a plain "save a file" task.
+        brief = normalized_task_brief({"required_capabilities": []}, original_request=(
+            "Save a text artifact named probe-result.md. Its first line must be exactly SKILL-MCP-PROBE-OK."
+        ), plan=["Save the file"], permission_level="auto-review")
+        self.assertEqual(brief["required_capabilities"], ["artifact_creation"])
+        for request in ("Write a memo about the offsite", "Export the table as a spreadsheet"):
+            brief = normalized_task_brief({"required_capabilities": []}, original_request=request, plan=["Do it"], permission_level="default")
+            self.assertIn("artifact_creation", brief["required_capabilities"], request)
+        for request in ("Hello there", "What is 2 plus 2?"):
+            brief = normalized_task_brief({"required_capabilities": []}, original_request=request, plan=["Answer"], permission_level="default")
+            self.assertEqual(brief["required_capabilities"], [], request)
+
     def test_public_research_is_not_added_to_single_page_visual_inspection(self):
         brief = normalized_task_brief({
             "required_capabilities": ["browser_read", "public_research"],

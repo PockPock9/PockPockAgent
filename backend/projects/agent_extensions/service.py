@@ -37,7 +37,9 @@ from .sources import (
     extract_skill,
     fetch_archive,
     find_mcp,
+    find_mcp_folders,
     find_skills,
+    local_candidate,
     parse_link,
     remote_candidate,
 )
@@ -71,6 +73,20 @@ class Proposal:
     mcp: McpCandidate | None
     commit: str = ""
     archive: Path | None = None
+    # Sub-folders that each document their own MCP server (issue #64).
+    mcp_folders: list[dict[str, str]] | None = None
+
+
+def args_hint(mcp: McpCandidate) -> str:
+    """What the user must add before a server can start, when PockPock can tell (issue #65)."""
+    if mcp.transport != "stdio":
+        return ""
+    if any("server-filesystem" in arg for arg in mcp.args):
+        folders = [arg for arg in mcp.args if not arg.startswith("-") and "server-filesystem" not in arg]
+        if not folders:
+            return "This server needs at least one folder it may read and write. Add each folder as its own line."
+        return "Replace the example folders with folders on this PC the server may read and write."
+    return ""
 
 
 class GatewayConfig:
@@ -194,12 +210,23 @@ class ExtensionService:
             link = parse_link(url)
             if link.kind == "remote":
                 proposal = Proposal(secrets.token_urlsafe(16), self.clock(), link, "mcp", [], remote_candidate(link))
+            elif link.kind == "local":
+                proposal = Proposal(secrets.token_urlsafe(16), self.clock(), link, "mcp", [], local_candidate(link))
             else:
                 data = self.fetch(link)
                 snapshot = Snapshot(data, link)
                 skills = find_skills(snapshot)
                 mcp = find_mcp(snapshot)
+                folders = find_mcp_folders(snapshot) if not mcp else []
                 if not skills and not mcp:
+                    if folders:
+                        names = ", ".join(item["name"] for item in folders[:8])
+                        raise SourceError(
+                            "choose_folder",
+                            f"This repository holds {len(folders)} MCP servers, each in its own folder ({names}"
+                            f"{', …' if len(folders) > 8 else ''}). Paste the link to the folder of the one you want.",
+                            422,
+                        )
                     raise SourceError(
                         "unrecognized",
                         "PockPock found no skill (a folder with a SKILL.md file) and no MCP server setup in that repository.",
@@ -210,7 +237,7 @@ class ExtensionService:
                     also = "skills" if kind == "mcp" else "mcp"
                 else:
                     kind = "skills" if skills else "mcp"
-                proposal = Proposal(secrets.token_urlsafe(16), self.clock(), link, kind, skills, mcp, snapshot.commit)
+                proposal = Proposal(secrets.token_urlsafe(16), self.clock(), link, kind, skills, mcp, snapshot.commit, mcp_folders=folders)
                 if kind == "skills":
                     folder = Path(tempfile.gettempdir()) / "pockpock-extensions"
                     folder.mkdir(parents=True, exist_ok=True)
@@ -231,6 +258,7 @@ class ExtensionService:
             "source": source,
             "commit": proposal.commit,
             "expires_in": PROPOSAL_TTL_SECONDS,
+            "mcp_folders": (proposal.mcp_folders or [])[:30],
         }
         if proposal.kind == "skills":
             view["skills"] = [{
@@ -241,6 +269,7 @@ class ExtensionService:
                 "files": skill.files,
                 "size": skill.size,
                 "has_scripts": skill.has_scripts,
+                "adds_header": skill.adds_header,
                 "installed": skill.slug in manifest["skills"],
                 "conflict": skill.slug not in manifest["skills"] and (self.skills_dir / skill.slug).exists(),
             } for skill in proposal.skills]
@@ -257,6 +286,7 @@ class ExtensionService:
                 "origin": mcp.origin,
                 "launcher_available": bool(shutil.which(mcp.command)) if mcp.command else True,
                 "installed": mcp.name in manifest["mcp"],
+                "args_hint": args_hint(mcp),
             }
         return view
 
@@ -363,7 +393,10 @@ class ExtensionService:
                 if headers:
                     server["headers"] = headers
         except mcp_probe.ProbeError as err:
-            raise ExtensionError("connect_failed", str(err), 502) from err
+            message = str(err)
+            if re.search(r"allowed director", message, re.I):
+                message += " Add at least one folder the server may use as the last argument, one per line, then try again."
+            raise ExtensionError("connect_failed", message, 502) from err
         self.gateway.run({"op": "mcp_set", "name": mcp.name, "server": server, "replace": mcp.name in manifest["mcp"]})
         manifest["mcp"][mcp.name] = {"source": proposal.link.url, "installed_at": int(time.time())}
         self._write_manifest(manifest)
@@ -431,7 +464,19 @@ class ExtensionService:
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", name or ""):
             raise ExtensionError("invalid_name", "That name is not valid.")
         if kind == "skill":
-            known = self.gateway.run({"op": "skills_list"}).get("skills") or []
+            try:
+                known = self.gateway.run({"op": "skills_list"}).get("skills") or []
+            except ExtensionError as err:
+                # Issue #63: say "unknown" for a name PockPock does not know, and explain why a known
+                # skill cannot be switched while OpenClaw (which keeps the on/off state) is unavailable.
+                if name not in self._read_manifest()["skills"]:
+                    raise ExtensionError("not_found", "There is no skill with that name.", 404) from err
+                raise ExtensionError(
+                    err.code,
+                    "OpenClaw keeps each skill's on/off switch, and it is not available right now"
+                    f" ({err}). Set up or start OpenClaw on the OpenClaw page, then try again.",
+                    err.status_code,
+                ) from err
             if not any(isinstance(item, dict) and item.get("key") == name for item in known):
                 raise ExtensionError("not_found", "OpenClaw has no skill with that name.", 404)
         self.gateway.run({"op": "skill_enable" if kind == "skill" else "mcp_enable", "name": name, "enabled": bool(enabled)})

@@ -354,6 +354,8 @@ export type DesktopBridge = {
   openclaw: {
     browsers: () => Promise<{ available: Array<{ id: string; name: string }>; current: string; currentPath: string }>
     setBrowser: (id: string) => Promise<string>
+    slowModels: () => Promise<{ seconds: number | null; recommended: number }>
+    allowSlowModels: () => Promise<{ seconds: number | null; recommended: number }>
   }
   setLoginItem: (enabled: boolean) => Promise<boolean>
   openExternal: (url: string) => Promise<void>
