@@ -7,7 +7,7 @@ SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-from projects.agent_core.executor import effective_task_capabilities  # noqa: E402
+from projects.agent_core.executor import effective_task_capabilities, saved_artifact_read_name  # noqa: E402
 
 
 class EffectiveCapabilityTests(unittest.TestCase):
@@ -27,6 +27,42 @@ class EffectiveCapabilityTests(unittest.TestCase):
         self.assertEqual(effective_task_capabilities([], requires_tool=False, has_files=False), [])
         for risky in ("workspace_write", "public_research", "browser_action"):
             self.assertNotIn(risky, effective_task_capabilities([], requires_tool=True, has_files=True))
+
+
+class SavedArtifactReadTests(unittest.TestCase):
+    """Live validation 2026-11-21: with a folder open, reading back a saved file failed and stopped the run."""
+
+    def setUp(self):
+        import tempfile
+        self.temp = tempfile.TemporaryDirectory()
+        base = Path(self.temp.name)
+        self.workspace, self.output = base / "workspace", base / "task"
+        self.workspace.mkdir()
+        self.output.mkdir()
+        (self.output / "codewords.md").write_text("report-01.txt: AMBER-41\n", encoding="utf-8")
+        (self.output / "other.md").write_text("not saved by this run\n", encoding="utf-8")
+        self.artifacts = [{"name": "codewords.md", "path": str(self.output / "codewords.md")}]
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def find(self, requested, **overrides):
+        options = {"workspace_root": self.workspace, "output_dir": self.output, "artifacts": self.artifacts, **overrides}
+        return saved_artifact_read_name(requested, **options)
+
+    def test_a_file_this_run_saved_is_read_from_the_task_folder(self):
+        self.assertEqual(self.find("codewords.md"), "codewords.md")
+        self.assertEqual(self.find("reports/codewords.md"), "codewords.md")
+
+    def test_other_task_folder_files_and_workspace_files_are_not_redirected(self):
+        self.assertIsNone(self.find("other.md"))
+        (self.workspace / "codewords.md").write_text("the user's own file\n", encoding="utf-8")
+        self.assertIsNone(self.find("codewords.md"))
+
+    def test_nothing_to_redirect_without_an_open_folder(self):
+        self.assertIsNone(self.find("codewords.md", workspace_root=None))
+        self.assertIsNone(self.find("", ))
+        self.assertIsNone(self.find(None))
 
 
 class OwnTaskFolderTests(unittest.TestCase):

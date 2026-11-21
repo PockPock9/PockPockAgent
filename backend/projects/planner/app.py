@@ -281,7 +281,8 @@ async def plan(payload: PlanRequest):
         "For a single-page visual inspection with a brief summary, browser_read is sufficient; do not also add public_research unless the user asks for multi-page research or citations. "
         "For text-only public research, required_capabilities must be exactly "
         "[public_research]. Do not include workspace_read, workspace_write, or project_validation unless the user "
-        "explicitly requests changes to a code or project workspace. Choose the minimum capabilities necessary to "
+        "explicitly requests changes to a code or project workspace, or asks to read, review or summarize files in the open "
+        "workspace folder (that needs workspace_read only). Choose the minimum capabilities necessary to "
         "complete the user's request; generic agent instructions are not user requirements. Do not add browser "
         "capabilities to text-only research. Do not invent retrieval limits; "
         "report only limits returned by the selected tool, or state that none were reported. Choose artifact_creation "
@@ -318,6 +319,7 @@ async def plan(payload: PlanRequest):
             original_request=task,
             plan=plan_steps,
             permission_level=payload.permission_mode,
+            has_workspace=bool(payload.workspace_path),
         )
         async def generate_critic_json(messages: list[dict[str, str]]) -> dict:
             return await _request_model_json(selected, messages, timeout=timeout, role="critic", temperature=0)
@@ -335,6 +337,7 @@ async def plan(payload: PlanRequest):
             original_request=task,
             plan=plan_steps,
             permission_level=payload.permission_mode,
+            has_workspace=bool(payload.workspace_path),
         )
         execution_prompt = build_execution_prompt(task, plan_steps, parsed.get("execution_prompt"))
         delegation_plan = normalized_subtask_plan(parsed.get("delegation_plan"))

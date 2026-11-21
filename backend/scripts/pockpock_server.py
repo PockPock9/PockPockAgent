@@ -2,7 +2,7 @@
 
 import asyncio
 import base64
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, closing
 from dataclasses import replace
 import hashlib
 import hmac
@@ -414,7 +414,7 @@ def connect_db():
 
 
 def read_setting(key: str, fallback: str = "") -> str:
-    with connect_db() as connection:
+    with closing(connect_db()) as connection, connection:
         row = connection.execute(
             "SELECT value FROM settings WHERE key = ?", (key,)
         ).fetchone()
@@ -422,7 +422,7 @@ def read_setting(key: str, fallback: str = "") -> str:
 
 
 def write_setting(key: str, value: str) -> None:
-    with telemetry.DB_LOCK, connect_db() as connection:
+    with telemetry.DB_LOCK, closing(connect_db()) as connection, connection:
         connection.execute(
             """INSERT INTO settings (key, value) VALUES (?, ?)
             ON CONFLICT(key) DO UPDATE SET value = excluded.value""",

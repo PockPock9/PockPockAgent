@@ -137,6 +137,19 @@ def save_event(data):
             return max(0, min(int(value), maximum))
         return None
 
+    if event_type == "context_compaction" and not data.get("reason"):
+        # The table has no columns for these, and without them a compaction row says nothing about what was
+        # done (R&D validation 2026-11-21). The stage goes in status, the numbers in reason.
+        data = {
+            **data,
+            "status": data.get("stage") if isinstance(data.get("stage"), str) else "",
+            "reason": (
+                f"{data.get('tokens_before')} -> {data.get('tokens_after')} estimated tokens "
+                f"(threshold {data.get('threshold_tokens')}); pruned {data.get('pruned')}, "
+                f"summarised {data.get('summarised')}"
+            ),
+        }
+
     confidence = data.get("confidence")
     if not isinstance(confidence, (int, float)) or isinstance(confidence, bool):
         confidence = None
@@ -161,7 +174,7 @@ def save_event(data):
         number("duration_ms"),
         number("prompt_chars"),
     )
-    with DB_LOCK, connect_db() as connection:
+    with DB_LOCK, closing(connect_db()) as connection, connection:
         connection.execute(
             """INSERT INTO events (
                 created_at, request_id, call_id, event, model, automatic_model,
@@ -173,7 +186,7 @@ def save_event(data):
 
 
 def current_override():
-    with connect_db() as connection:
+    with closing(connect_db()) as connection, connection:
         row = connection.execute(
             "SELECT value FROM settings WHERE key = 'model_override'"
         ).fetchone()
@@ -200,7 +213,7 @@ def dashboard_state(models_override=None, running_override=None):
         except (OSError, URLError, TimeoutError, ValueError, json.JSONDecodeError):
             ollama_error = "Ollama is responding, but runtime status is unavailable"
 
-    with connect_db() as connection:
+    with closing(connect_db()) as connection, connection:
         aggregates = {
             row["model"]: dict(row)
             for row in connection.execute(

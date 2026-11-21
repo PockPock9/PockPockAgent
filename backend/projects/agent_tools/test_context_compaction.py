@@ -49,20 +49,31 @@ class PruneTests(unittest.TestCase):
     def test_keeps_the_most_recent_tool_results_intact(self):
         messages = [{"role": "system", "content": "sys"}]
         for name in ("a", "b", "c", "d", "e"):
-            messages += _exchange("search_project", f"result-{name}", call_id=name)
+            messages += _exchange("search_project", f"start-{name} " + "x" * 2000 + f" end-{name}", call_id=name)
         pruned, count = prune_tool_results(messages, keep_last=3)
         self.assertEqual(count, 2)
         tool_contents = [m["content"] for m in pruned if m["role"] == "tool"]
-        self.assertEqual(tool_contents[:2], [
-            "[tool result pruned: 8 chars; call record kept above, result no longer in context]",
-            "[tool result pruned: 8 chars; call record kept above, result no longer in context]",
-        ])
-        self.assertEqual(tool_contents[2:], ["result-c", "result-d", "result-e"])
+        for name, content in zip("ab", tool_contents[:2]):
+            self.assertTrue(content.startswith("[tool result pruned to save context: 2014 chars"))
+            self.assertIn("call the same tool again", content)
+            # The start and end survive (R&D validation: a file's last line was invented once dropped).
+            self.assertIn(f"start-{name}", content)
+            self.assertIn(f"end-{name}", content)
+            self.assertLess(len(content), 800)
+        self.assertEqual([c[-5:] for c in tool_contents[2:]], ["end-c", "end-d", "end-e"])
         # The assistant call record survives pruning.
         self.assertEqual(
             [c["function"]["name"] for m in pruned if m.get("tool_calls") for c in m["tool_calls"]],
             ["search_project"] * 5,
         )
+
+    def test_short_results_are_kept_whole(self):
+        messages = [{"role": "system", "content": "sys"}]
+        for name in ("a", "b", "c", "d"):
+            messages += _exchange("search_project", f"result-{name}", call_id=name)
+        pruned, count = prune_tool_results(messages, keep_last=1)
+        self.assertEqual(count, 0)
+        self.assertEqual(pruned, messages)
 
     def test_nothing_to_prune_returns_the_same_messages(self):
         messages = [{"role": "system", "content": "s"}, *_exchange("save_text_artifact", "ok")]

@@ -101,6 +101,28 @@ class TaskBriefContractTests(unittest.TestCase):
             brief = normalized_task_brief({"required_capabilities": []}, original_request=request, plan=["Answer"], permission_level="default")
             self.assertEqual(brief["required_capabilities"], [], request)
 
+    def test_reading_files_in_the_open_folder_gets_the_read_tools(self):
+        # R&D validation 2026-11-21: "read the reports in this folder" planned artifact_creation only.
+        request = ("Read all ten files report-01.txt to report-10.txt in this folder, then save a text "
+                   "artifact named codewords.md listing each file's codeword.")
+        brief = normalized_task_brief({"required_capabilities": ["artifact_creation"]}, original_request=request,
+                                      plan=["Read", "Save"], permission_level="auto-review", has_workspace=True)
+        self.assertEqual(brief["required_capabilities"], ["artifact_creation", "workspace_read"])
+        for request in ("Summarize the notes in my folder", "Review the project files and list open TODOs", "Check data.csv for empty rows"):
+            brief = normalized_task_brief({"required_capabilities": []}, original_request=request,
+                                          plan=["Do it"], permission_level="default", has_workspace=True)
+            self.assertIn("workspace_read", brief["required_capabilities"], request)
+            self.assertNotIn("workspace_write", brief["required_capabilities"], request)
+
+    def test_read_tools_are_not_added_without_an_open_folder_or_a_read_request(self):
+        request = "Summarize the notes in my folder"
+        brief = normalized_task_brief({"required_capabilities": []}, original_request=request, plan=["Do it"], permission_level="default")
+        self.assertNotIn("workspace_read", brief["required_capabilities"])
+        for request in ("Hello there", "What is 2 plus 2?"):
+            brief = normalized_task_brief({"required_capabilities": []}, original_request=request, plan=["Answer"],
+                                          permission_level="default", has_workspace=True)
+            self.assertEqual(brief["required_capabilities"], [], request)
+
     def test_public_research_is_not_added_to_single_page_visual_inspection(self):
         brief = normalized_task_brief({
             "required_capabilities": ["browser_read", "public_research"],

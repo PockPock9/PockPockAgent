@@ -118,9 +118,14 @@ model call, recording a `context_compaction` run event when it acts:
    Other results get a size marker only; the marker never claims the
    full text is stored somewhere it is not.
 2. **Prune old tool results.** All but the most recent 3 tool messages
-   become one-line stubs. The assistant messages that made the calls are
-   kept, so the record of which tool was called with which arguments
-   survives.
+   are cut to their first 200 and last 300 characters, under a note that
+   tells the model the middle was dropped and to call the same tool
+   again rather than guess it (results that short are kept whole). The
+   assistant messages that made the calls are kept, so the record of
+   which tool was called with which arguments survives. An earlier
+   version replaced the whole result with a one-line stub; in a live run
+   (qwen3.5:9b, ten 11 KB files) the model then wrote two made-up values
+   for the files whose results were dropped.
 3. **Summarise the old portion.** If pruning is not enough, the oldest
    messages are replaced by a structured summary — user task, tools used,
    files mentioned, tool calls that errored as open items — while the
@@ -139,6 +144,18 @@ without a restart: `POCKPOCK_CONTEXT_WINDOW_TOKENS`,
 `POCKPOCK_TOOL_OUTPUT_HEAD_CHARS` (default 30,000),
 `POCKPOCK_TOOL_OUTPUT_TAIL_CHARS` (default 10,000),
 `POCKPOCK_PRUNE_KEEP_LAST_TOOL_RESULTS` (default 3).
+
+The `context_compaction` telemetry row stores the stage in `status` and
+the numbers in `reason`, for example `pruned` and `32158 -> 12577
+estimated tokens (threshold 24576); pruned 7, summarised 0`.
+
+**Measured live (2026-11-21, qwen3.5:9b, RTX 4070 SUPER):** an agent
+task with a folder open read ten ~11.7 KB files (about 29K estimated
+tokens) and saved one line per file. Compaction triggered once before
+the save (stage `pruned`, ~32K → ~12.6K estimated tokens); with the
+excerpt stubs the saved file was 10 of 10 correct and the run passed.
+A chat with a 122,000-character history was compacted and the reply
+still quoted a fact from the first message.
 
 ## Configuration
 
