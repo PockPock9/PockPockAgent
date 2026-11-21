@@ -80,7 +80,13 @@ class Maintenance {
 
   defaultFolder() {
     let documents = path.join(home, 'Documents')
-    try { documents = require('electron').app.getPath('documents') } catch { /* tests run outside Electron */ }
+    // paths.cjs only loads the real `electron` module inside Electron; outside it this is
+    // null and the fallback above applies. Requiring 'electron' here directly would make
+    // plain-Node callers (unit tests) lazily download and extract the Electron binary.
+    const electronApp = paths.getElectronApp()
+    if (electronApp) {
+      try { documents = electronApp.getPath('documents') } catch { /* keep the fallback */ }
+    }
     return path.join(documents, 'PockPock', 'PockPockAgent')
   }
 
