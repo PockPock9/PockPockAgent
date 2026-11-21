@@ -82,14 +82,27 @@ def verify_done_condition(
     *,
     workspace: Path | None,
     step_result: dict | None,
+    artifact_dir: Path | None = None,
 ) -> dict:
     """Check one done-condition against files and the recorded step result.
+
+    File conditions look in ``workspace`` and then in ``artifact_dir``, the run's task folder where the
+    artifact tools save files. With a folder open the two differ, and a step that saved its file with
+    save_text_artifact could never pass a check against the open folder alone.
 
     Returns ``{"passed": bool, "evidence": str, "detail": str}``. Never
     raises for bad input.
     """
     try:
-        return _verify(condition, workspace=workspace, step_result=step_result)
+        roots = [root for root in (workspace, artifact_dir) if root is not None]
+        if not roots:
+            return _verify(condition, workspace=None, step_result=step_result)
+        result: dict = {}
+        for root in dict.fromkeys(Path(item).resolve() for item in roots):
+            result = _verify(condition, workspace=root, step_result=step_result)
+            if result.get("passed"):
+                return result
+        return result
     except Exception as exc:  # Defensive: the verifier must never raise.
         return _fail(f"verifier error: {exc}")
 

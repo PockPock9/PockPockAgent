@@ -83,6 +83,29 @@ class PrepareChatMessagesTests(unittest.TestCase):
         self.assertLess(len(messages), len(history) + 1)
 
 
+class ChatFallbackTests(unittest.TestCase):
+    MODELS = [
+        {"name": "nomic-embed-text-v2-moe:latest", "details": {"family": "nomic-bert-moe", "families": ["nomic-bert-moe"]}},
+        {"name": "qwen3.5:27b", "details": {"family": "qwen35", "families": ["qwen35"]}},
+        {"name": "qwen3.5:9b", "details": {"family": "qwen35", "families": ["qwen35"]}},
+        {"name": "bge-m3:latest", "details": {"family": "bert", "families": ["bert"]}},
+    ]
+
+    def test_embedding_models_are_never_chat_fallbacks(self):
+        # R&D validation 2026-11-21: with the router model missing, auto routing chose the newest
+        # model in Ollama's list, an embedding model, and every chat failed before falling back.
+        from unittest.mock import patch
+
+        with patch.object(pockpock_server, "disabled_models", return_value=set()):
+            self.assertEqual(pockpock_server.fallback_chat_models(self.MODELS, set(), set()), ["qwen3.5:27b", "qwen3.5:9b"])
+            # A model already in memory comes first, so no other model is loaded next to it.
+            self.assertEqual(pockpock_server.fallback_chat_models(self.MODELS, {"qwen3.5:9b"}, set())[0], "qwen3.5:9b")
+            self.assertEqual(pockpock_server.fallback_chat_models(self.MODELS, set(), {"qwen3.5:27b"}), ["qwen3.5:9b"])
+        self.assertTrue(pockpock_server.is_embedding_model(self.MODELS[0]))
+        self.assertTrue(pockpock_server.is_embedding_model(self.MODELS[3]))
+        self.assertFalse(pockpock_server.is_embedding_model(self.MODELS[2]))
+
+
 class RequestValidationTests(unittest.TestCase):
     def test_an_empty_message_is_refused(self):
         # Issue #55: empty, whitespace-only and missing content were answered with HTTP 200.

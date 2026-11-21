@@ -61,6 +61,11 @@ class OllamaChatCompletionAdapterTests(unittest.IsolatedAsyncioTestCase):
         FakeSession.response = FakeResponse()
         self.adapter = OllamaChatCompletionAdapter("http://127.0.0.1:11434/")
         self.timeout = aiohttp.ClientTimeout(total=10)
+        # These tests check the context PockPock asks for; a machine-wide Ollama default
+        # (OLLAMA_CONTEXT_LENGTH, set by Setup) would replace it for a model that is not loaded.
+        environment = patch.dict(os.environ, {"OLLAMA_CONTEXT_LENGTH": ""})
+        environment.start()
+        self.addCleanup(environment.stop)
 
     async def test_native_json_request_preserves_context_settings_and_normalizes_response(self):
         FakeSession.response = FakeResponse(result={

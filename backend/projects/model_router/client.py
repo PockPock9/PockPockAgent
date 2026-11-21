@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import json
 import os
+import time
 from typing import Any, AsyncIterator, Mapping, Protocol, Sequence
 
 import aiohttp
@@ -54,6 +55,21 @@ DEFAULT_CONTEXT_WINDOW_TOKENS = 16_384
 def ollama_keep_alive() -> str:
     """Keep-alive sent on local requests (env-overridable)."""
     return os.environ.get("POCKPOCK_OLLAMA_KEEP_ALIVE", "").strip() or DEFAULT_KEEP_ALIVE
+
+
+#: How long the list of loaded models is reused before /api/ps is asked again.
+LOADED_CONTEXT_CACHE_SECONDS = 5.0
+#: A loaded context larger than this is not reused: it would slow every turn of a small request.
+MAX_REUSED_CONTEXT_TOKENS = 65_536
+
+
+def server_context_length() -> int | None:
+    """Ollama's default context size when it was set with OLLAMA_CONTEXT_LENGTH, else None."""
+    try:
+        value = int(os.environ.get("OLLAMA_CONTEXT_LENGTH", "").strip())
+    except ValueError:
+        return None
+    return value if value > 0 else None
 
 
 def default_context_window() -> int:
@@ -153,6 +169,46 @@ class OllamaChatCompletionAdapter:
 
     def __init__(self, base_url: str):
         self.base_url = base_url.rstrip("/")
+        self._loaded: tuple[float, dict[str, int]] = (0.0, {})
+
+    async def _loaded_contexts(self) -> dict[str, int]:
+        """Context length of each model Ollama has in memory (cached for a few seconds)."""
+        now = time.monotonic()
+        if now - self._loaded[0] < LOADED_CONTEXT_CACHE_SECONDS:
+            return self._loaded[1]
+        loaded: dict[str, int] = {}
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=2)) as session:
+                async with session.get(f"{self.base_url}/api/ps") as response:
+                    if response.status < 400:
+                        for item in (await response.json()).get("models", []):
+                            if isinstance(item, dict) and isinstance(item.get("context_length"), int):
+                                loaded[str(item.get("name"))] = item["context_length"]
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, AttributeError):
+            loaded = {}
+        self._loaded = (now, loaded)
+        return loaded
+
+    async def _fit_loaded_context(self, request: ChatCompletionRequest) -> ChatCompletionRequest:
+        """Reuse the context size of an already-loaded model when it is big enough.
+
+        Ollama reloads a model whenever a request asks for a different context size. PockPock asked
+        for 8K when planning and 16K when running (and OpenClaw uses its own size), so one agent
+        task reloaded the same model several times and lost its prompt cache.
+        """
+        wanted = resolve_num_ctx(request)
+        loaded = (await self._loaded_contexts()).get(request.model)
+        if loaded is None:
+            loaded = (await self._loaded_contexts()).get(f"{request.model}:latest")
+        if loaded is None:
+            # Not loaded yet: load it at Ollama's own default size when that is bigger. Tool-call turns
+            # go through Ollama's OpenAI-compatible endpoint, which ignores num_ctx and uses that
+            # default (OLLAMA_CONTEXT_LENGTH, which Setup sets to 32768), so loading the model smaller
+            # here only meant a reload at the first tool call.
+            loaded = server_context_length()
+        if loaded is not None and wanted < loaded <= MAX_REUSED_CONTEXT_TOKENS:
+            return replace(request, context_window=loaded)
+        return request
 
     async def complete(
         self,
@@ -160,6 +216,7 @@ class OllamaChatCompletionAdapter:
         *,
         timeout: aiohttp.ClientTimeout,
     ) -> dict[str, Any]:
+        request = await self._fit_loaded_context(request)
         if request.tools is not None:
             return await self._complete_openai_compatible(request, timeout)
         return await self._complete_native(request, timeout)
@@ -237,6 +294,7 @@ class OllamaChatCompletionAdapter:
     ) -> AsyncIterator[str]:
         if request.tools is not None:
             raise ModelProviderError("Streaming tool calls are not supported by this adapter")
+        request = await self._fit_loaded_context(request)
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(

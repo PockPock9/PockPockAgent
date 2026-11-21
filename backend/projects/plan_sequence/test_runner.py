@@ -193,6 +193,31 @@ class RunnerHappyPathTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(step2_tools, ["save_text_artifact"])
 
 
+class MultiTurnStepTests(unittest.IsolatedAsyncioTestCase):
+    async def test_a_step_can_read_then_write_in_one_attempt(self):
+        # Live validation 2026-11-21: 'read notes.md, then write summary.md' repeated the read three
+        # times, because each attempt was one executor call whose tool results the model never saw.
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            (workspace / "notes.md").write_text("apple")
+            plan = _plan([
+                _step("list", ["list_project_files"], {"type": "no_error"}),
+                _step("summarise", ["read_project_file", "save_text_artifact"], {"type": "file_exists", "path": "summary.md"}, inputs=["list"]),
+            ])
+            chat = FakeChat([
+                {"content": "listed", "tool_calls": [{"name": "list_project_files", "arguments": {}}]},
+                {"content": "reading", "tool_calls": [{"name": "read_project_file", "arguments": {"path": "notes.md"}}]},
+                {"content": "saving", "tool_calls": [{"name": "save_text_artifact", "arguments": {"filename": "summary.md", "content": "1 fruit"}}]},
+            ])
+            runner = SequenceRunner(chat=chat, execute_tool=FakeTools(workspace))
+            result = await runner.run(plan, workspace=workspace, run_id="run-mt", executor_model="qwen3.5:9b")
+            self.assertEqual(result["status"], "completed")
+            self.assertEqual(result["steps"][1]["attempts"], 1)
+            # The second turn saw the read's output.
+            self.assertIn("apple", chat.calls[2]["messages"][-1]["content"])
+            self.assertEqual(len(chat.calls), 3)
+
+
 class RunnerFailureTests(unittest.IsolatedAsyncioTestCase):
     async def test_wrong_step_retries_then_needs_replan(self):
         with tempfile.TemporaryDirectory() as tmp:

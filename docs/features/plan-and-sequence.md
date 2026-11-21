@@ -37,7 +37,7 @@ tests — not through the product surface.
 1. The user asks for a task. The desktop app asks the gateway to plan it
    as a sequence (`POST /api/agents/plan-sequence`, planned — no such
    route exists yet).
-2. The gateway asks the planner service for a validated 5–15 step plan
+2. The gateway asks the planner service for a validated 2–15 step plan
    (`POST /plan-sequence`, implemented — see API contracts).
 3. The user reviews the steps and approves the plan (planned — no UI
    exists yet). Approval binds to the exact plan, as with the existing
@@ -69,7 +69,7 @@ tests — not through the product surface.
 ```
 User task
   → planner service POST /plan-sequence (strong model)
-      → validated SequencePlan (5–15 steps; tools, budgets, typed
+      → validated SequencePlan (2–15 steps; tools, budgets, typed
         done-conditions, inputs = "task" or earlier step ids)
   → [planned] user approves the exact plan
   → SequenceRunner.run(plan, workspace, run_id, executor_model)
@@ -93,9 +93,17 @@ trusting a summary. The capsule is filtered per step: a step sees only the
 entries from the steps named in its `inputs` (plus the task itself).
 
 A plan is validated before anything executes. Validation rejects: wrong
-step count (not 5–15), duplicate step ids, unknown or duplicated tools in
+step count (not 2–15), duplicate step ids, unknown or duplicated tools in
 `tools_allowed`, done-conditions with the wrong fields for their type, and
 dangling inputs (anything that is not `"task"` or an earlier step id).
+
+The minimum was 5 steps; it is 2 since 2026-11-21, because a small task (write two files) plans
+naturally in 3–4 steps and the 5-step minimum rejected those plans with a 502. Before validation the
+planner also swaps the two artifact tools when a step's done-condition names a file the pinned tool
+cannot write: `save_text_artifact` writes `.txt/.md/.csv/.json/.html`, `create_office_document` only
+`.docx/.xlsx/.pptx` (a live run had pinned the Office tool to `notes.md`, which produced
+`notes.md.docx` and never passed). File done-conditions are checked in the open folder and then in
+the run's task folder, where the artifact tools save.
 
 ## API contracts
 
@@ -224,8 +232,8 @@ without retry (see Failure states).
 | Verifier fail | The step is retried ≤2× with the failure detail fed back as grounded feedback. If it still fails, the run stops with `status="needs_replan"`, `remaining_steps` (failed step onwards), and `failure` (step id, detail, attempts). Passed steps and their capsule entries are kept; a re-plan covers the remaining steps only. |
 | Step prompt over budget | The step fails with no retry: the prompt is rebuilt without the capsule and re-checked, and if it still exceeds `budget_tokens` the step reports `needs_replan`. |
 | Step timeout | Each attempt is bounded by the step's `budget_seconds`; a timeout fails that attempt like any other verifier failure (retry, then re-plan). |
-| Planner timeout | Treated as a re-plan trigger, not a fatal error (planner service returns 502 naming it so). **Known bug NOT fixed:** the planner already times out at 111 seconds (issue draft F1). Plan-and-sequence depends on the planner returning; it does not repair the timeout. Until it is fixed, cap plan size (5–15 steps) and treat planner timeout as a re-plan trigger. |
-| Executor zero-tools bug | **Known bug NOT fixed:** the executor can receive zero tools and then be failed for not calling a tool (issue #92). Plan-and-sequence depends on the executor receiving its pinned tools; it does not repair that path. |
+| Planner timeout | Treated as a re-plan trigger, not a fatal error (planner service returns 502 naming it so). **Fixed 2026-11-21:** planner calls stream, so a slow model that keeps writing is no longer cut off at about 111 seconds; only 240 s of silence or the per-call limit (600 s, 900 s for large models) stops it. |
+| Executor zero-tools bug | **Fixed in 0.2.5 (#92, PR #99):** a task that needs a tool but was planned with no capability gets the artifact tools. |
 | Capsule pointer loss | If trimming must drop a `path`/`id` pointer to fit 400 tokens, the capsule records `dropped_pointers=True` and logs a warning; a later step may need to re-derive the pointer. (Not observed in the P1 sample: no capsule dropped pointers.) |
 | Tool outside the pinned subset | Rejected by the runner without executing; recorded as a step error and verified as a failure. |
 
@@ -262,6 +270,15 @@ Results (token counts are the repo's `estimate_tokens`, ~4 chars/token):
   No model was pulled and no service was restarted. Wall-clock for the
   whole eval invocation was 2m42s (120 s cap plus in-flight call
   teardown).
+- **Live run through the gateway, 2026-11-21 (RTX 4070 SUPER, `qwen3.5:9b` as planner and
+  executor):** task "create notes.md listing three fruits, then summary.md saying how many fruits
+  notes.md lists". The first runs exposed four bugs, all fixed: a 5-step minimum rejected the
+  planner's 4-step plan (now 2–15); the planner pinned `create_office_document` to `notes.md`
+  (repaired before validation); file checks ignored the task folder when a folder is open; and a
+  step could not read and then write (now up to 3 executor turns per attempt). After the fixes,
+  **3 of 3 runs completed**: a 3-step plan in 4–11 s, the run in 12–16 s, with the correct
+  `notes.md` and `summary.md` ("notes.md lists 3 fruits."). One small task, one model, three
+  runs: a working path, not a success-rate measurement.
 - **End-to-end task success vs the monolithic path: NOT MEASURED.** There
   is no monolithic runner to run the same tasks through, and no live
   monolithic comparison was attempted. Prior PockPock validation (Nov

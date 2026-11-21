@@ -20,7 +20,7 @@ from planner.contracts import normalized_plan_steps, normalized_subtask_plan, no
 from planner.routing import choose_candidate
 from projects.agent_tools import registered_tool_contracts
 from projects.model_router import ChatCompletionRequest, ModelProviderError, OllamaChatCompletionAdapter
-from projects.plan_sequence.contracts import SEQUENCE_CONTRACT_VERSION, validate_sequence_plan
+from projects.plan_sequence.contracts import SEQUENCE_CONTRACT_VERSION, repair_artifact_tools, validate_sequence_plan
 from projects.plan_sequence.routing import choose_executor_model, choose_planner_model
 from projects.model_router.cloud import OpenAICompatibleAdapter, RoutingChatCompletionProvider
 
@@ -43,26 +43,24 @@ async def _request_model_json(
     role: str,
     temperature: float = 0.1,
 ) -> dict:
+    # Streamed, so the read timeout is the longest silence, not the whole answer: a slow model that
+    # keeps writing is never cut off, while one that stops is. A single non-streamed request used to
+    # end at about 111 seconds on a CPU-only computer, before a small model finished its plan.
+    request = ChatCompletionRequest(
+        model=model,
+        messages=messages,
+        temperature=temperature,
+        response_format={"type": "json_object"},
+        context_window=8192,
+        think=False,
+    )
     try:
-        result = await MODEL_CLIENT.complete(
-            ChatCompletionRequest(
-                model=model,
-                messages=messages,
-                temperature=temperature,
-                response_format={"type": "json_object"},
-                context_window=8192,
-                think=False,
-            ),
-            timeout=timeout,
-        )
+        parts = [token async for token in MODEL_CLIENT.stream_tokens(request, timeout=timeout)]
     except ModelProviderError as err:
         status = f" (HTTP {err.status_code})" if err.status_code is not None else ""
         raise HTTPException(status_code=502, detail=f"The {role} model failed{status}.") from err
-    try:
-        content = result["choices"][0]["message"]["content"]
-    except (KeyError, IndexError, TypeError) as err:
-        raise ValueError(f"{role.capitalize()} model returned an invalid response") from err
-    if not isinstance(content, str):
+    content = "".join(parts)
+    if not content.strip():
         raise ValueError(f"{role.capitalize()} model returned no JSON content")
     parsed = json.loads(content)
     if not isinstance(parsed, dict):
@@ -70,11 +68,30 @@ async def _request_model_json(
     return parsed
 
 
+#: Longest silence allowed while a planner call streams. Ollama sends nothing while it reads the
+#: prompt, which takes a few minutes for a small model on a CPU, so this is generous.
+PLANNER_IDLE_SECONDS = 240
+
+
+def _env_seconds(name: str, default: int) -> int:
+    try:
+        value = int(os.environ.get(name, ""))
+    except ValueError:
+        return default
+    return value if 30 <= value <= 3600 else default
+
+
 def planning_timeout(profiles: list[dict], model: str) -> aiohttp.ClientTimeout:
-    """Give each planner/critic call more time on large models, which run partly on the CPU on 12 GB GPUs."""
+    """Time for one planner/critic call: 10 minutes, 15 for large models that run partly on the CPU.
+
+    ``sock_read`` is the longest silence while the reply streams. Override with
+    POCKPOCK_PLANNER_TIMEOUT_SECONDS and POCKPOCK_PLANNER_IDLE_SECONDS.
+    """
     size = next((item.get("parameter_billions") for item in profiles if item.get("name") == model), None)
-    seconds = 300 if isinstance(size, (int, float)) and size >= LARGE_MODEL_BILLIONS else 120
-    return aiohttp.ClientTimeout(total=seconds, sock_read=seconds - 10)
+    large = isinstance(size, (int, float)) and size >= LARGE_MODEL_BILLIONS
+    total = _env_seconds("POCKPOCK_PLANNER_TIMEOUT_SECONDS", 900 if large else 600)
+    idle = min(total, _env_seconds("POCKPOCK_PLANNER_IDLE_SECONDS", PLANNER_IDLE_SECONDS))
+    return aiohttp.ClientTimeout(total=total, sock_read=idle)
 
 
 class PlanRequest(BaseModel):
@@ -151,11 +168,13 @@ def build_sequence_plan_prompt(task: str, tool_names: list[str], workspace_path:
         '{"contract_version": 1, "task": "<the request>", "steps": [{"id": "find-invoices", "goal": "<one sentence>", '
         '"tools_allowed": ["<tool>"], "budget_tokens": 4000, "budget_seconds": 300, '
         '"done_condition": {"type": "file_exists", "path": "summary.md"}, "inputs": ["task"]}]}. '
-        "Rules: 5-15 sequential steps, in execution order. Each step id is lowercase letters, digits, dashes or underscores "
+        "Rules: 2-15 sequential steps, in execution order: as few as the task needs (5-15 for a larger task). Each step id is lowercase letters, digits, dashes or underscores "
         "(max 32 characters) and unique. Each goal is one sentence (max 280 characters) stating only what that step achieves. "
         "Each tools_allowed lists 1-3 tools, drawn only from this list: "
         f"{tools}. "
         "Use no other tool names: the plan is validated and rejected if a step names a tool that does not exist. "
+        "To create a .txt, .md, .csv, .json or .html file use save_text_artifact; create_office_document makes only "
+        ".docx, .xlsx and .pptx files. "
         "Each budget_tokens is 500-16000 and each budget_seconds is 30-900. "
         "Each done_condition is one typed, code-checkable condition, never prose: "
         "file_exists needs path; file_contains needs path and pattern; command_exit_0 needs no fields; "
@@ -175,7 +194,7 @@ def build_sequence_plan_fixup_prompt(error: str, previous_plan: dict, tool_names
     return (
         "Your previous sequence plan was rejected by validation. Fix it and return the complete corrected plan as JSON only. "
         f"Validation error: {error[:2_000]} "
-        "The plan must have 5-15 sequential steps; every tools_allowed entry must come from this list: "
+        "The plan must have 2-15 sequential steps; every tools_allowed entry must come from this list: "
         f"{tools}; every done_condition must be a typed, code-checkable condition "
         "(file_exists needs path; file_contains needs path and pattern; command_exit_0 needs no fields; "
         "value_equals needs field and expected; no_error needs no fields); "
@@ -184,9 +203,9 @@ def build_sequence_plan_fixup_prompt(error: str, previous_plan: dict, tool_names
     )
 
 
-#: A planner timeout is a re-plan trigger, not a fatal error (the known
-#: 111-second planner timeout bug is out of scope here; see the
-#: Plan-and-Sequence design page). The 502 detail says so explicitly.
+#: A planner timeout is a re-plan trigger, not a fatal error. Planner calls stream (see
+#: _request_model_json), so this now means the model went silent or ran past planning_timeout,
+#: not the old fixed ~111-second limit. The 502 detail says so explicitly.
 PLANNER_TIMEOUT_DETAIL = (
     "Planner timed out while writing the sequence plan; "
     "treat this as a re-plan trigger, not a fatal error, and retry planning."
@@ -378,7 +397,7 @@ async def plan_sequence(payload: SequencePlanRequest):
             detail=f"Planner returned unusable JSON for the sequence plan: {err}",
         ) from err
     try:
-        validated = validate_sequence_plan(raw, allowed_tools=set(tool_names))
+        validated = validate_sequence_plan(repair_artifact_tools(raw), allowed_tools=set(tool_names))
     except ValueError as err:
         fixup_prompt = build_sequence_plan_fixup_prompt(str(err), raw, tool_names)
         try:
@@ -391,7 +410,7 @@ async def plan_sequence(payload: SequencePlanRequest):
                 detail=f"Planner returned unusable JSON for the sequence plan: {retry_err}",
             ) from retry_err
         try:
-            validated = validate_sequence_plan(raw_retry, allowed_tools=set(tool_names))
+            validated = validate_sequence_plan(repair_artifact_tools(raw_retry), allowed_tools=set(tool_names))
         except ValueError as retry_err:
             raise HTTPException(
                 status_code=502,

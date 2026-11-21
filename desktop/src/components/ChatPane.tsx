@@ -188,7 +188,8 @@ export function ChatPane(props: Props) {
     if (next === 'openclaw' && !status.claw?.ready) void status.refreshClaw(true)
   }
 
-  const models = (status.state?.models ?? []).filter((model) => model.enabled).map((model) => model.name)
+  // Embedding models (nomic-embed-text, used for tool retrieval) cannot chat, so they are not offered.
+  const models = (status.state?.models ?? []).filter((model) => model.enabled && !model.embedding).map((model) => model.name)
   // Cloud models are named "<provider>/<model id>"; the menus show the model id and the provider.
   const cloudModels = status.state?.cloud_models ?? []
   const cloudNames = new Set(cloudModels.map((model) => model.name))

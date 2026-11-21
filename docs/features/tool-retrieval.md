@@ -178,21 +178,27 @@ without a restart: `POCKPOCK_CONTEXT_WINDOW_TOKENS`,
   `search_public_site` 6th behind the single-page scrape tool — a
   genuinely ambiguous single-page vs multi-page research request.
 
-## Dense embeddings — wired, untested live on this VM
+## Dense embeddings — measured 2026-11-21
 
-The dense path is implemented (`OllamaEmbedder`, `/api/embed` with
+The dense path (`OllamaEmbedder`, `/api/embed` with
 `nomic-embed-text-v2-moe`, hybrid mean of normalised BM25 + cosine
-scores) but has not been exercised end to end: the model is not
-installed in Ollama on this machine, and three pull attempts on
-2026-11-18 all failed at the manifest fetch (`pull model manifest:
-context deadline exceeded` after the 60 s client deadline), even though
-the registry itself answers curl. Running the eval with `--embed` falls
-back to the keyword-only path and reports identical numbers — no dense
-numbers exist yet, and none are claimed. To measure the hybrid path,
-install the model (`ollama pull nomic-embed-text-v2-moe`, on a machine
-where the registry manifest fetch succeeds) and rerun the eval with
-`--embed`; expect Recall@5/Recall@10, latency, and token reduction for
-dense on vs off to be recorded then.
+scores) is switched on automatically when that model is installed. It
+was measured on the RTX 4070 SUPER PC with the model installed
+(`ollama pull nomic-embed-text-v2-moe`, 957 MB), same 131 cases:
+
+| Measure | Keyword-only | Hybrid (dense on) |
+|---|---|---|
+| Recall@5 combined / real-only | 0.992 / 0.990 | **1.000 / 1.000** |
+| Recall@10 | 1.000 | 1.000 |
+| Schema tokens per turn | ~1,227 (−36%) | ~1,218 (−36%) |
+| Retrieval latency, mean / max | 0.36 ms / 16 ms | **195 ms / 4,844 ms** |
+
+Dense retrieval fixes the one keyword miss (the developer.mozilla.org
+research request) but costs an embedding call per turn: about 0.2 s,
+and several seconds when Ollama first loads the embedding model. That
+is above the plan's 50 ms latency target; it is small next to a model
+turn. The embedding model is never offered as a chat model (the chat
+model menu and automatic chat fallback skip embedding models).
 
 ## Failure states
 

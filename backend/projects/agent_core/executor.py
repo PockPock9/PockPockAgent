@@ -113,7 +113,7 @@ _BACKSTOP_CAPABILITIES = ("artifact_creation", "attachment_read")
 
 
 def effective_task_capabilities(
-    planned: list[str], *, requires_tool: bool, has_files: bool
+    planned: list[str], *, requires_tool: bool, has_files: bool, own_task_folder: bool = False
 ) -> list[str]:
     """The planned capabilities, plus low-risk ones a tool-requiring task cannot run without.
 
@@ -128,6 +128,11 @@ def effective_task_capabilities(
     if requires_tool and not any(item not in _BACKSTOP_CAPABILITIES for item in capabilities):
         if "artifact_creation" not in capabilities:
             capabilities.append("artifact_creation")
+    # With no folder open the agent works in its own task folder, which holds only files this run
+    # created. Reading it lets the agent check what it saved; without it a plan check such as "read
+    # the file back" could only end INCOMPLETE (R&D validation 2026-11-21).
+    if own_task_folder and "artifact_creation" in capabilities and "workspace_read" not in capabilities:
+        capabilities.append("workspace_read")
     return capabilities
 
 
@@ -1178,6 +1183,7 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                     payload.task_brief.required_capabilities,
                     requires_tool=requires_tool,
                     has_files=bool(payload.files),
+                    own_task_folder=workspace_root is None,
                 )
                 needs_no_tools = not task_capabilities and not payload.files
                 if needs_no_tools:

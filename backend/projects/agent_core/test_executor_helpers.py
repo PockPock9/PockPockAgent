@@ -29,6 +29,20 @@ class EffectiveCapabilityTests(unittest.TestCase):
             self.assertNotIn(risky, effective_task_capabilities([], requires_tool=True, has_files=True))
 
 
+class OwnTaskFolderTests(unittest.TestCase):
+    def test_an_artifact_run_may_read_its_own_task_folder(self):
+        # Live validation 2026-11-21: a plan check 'read the file back' could only end INCOMPLETE.
+        self.assertEqual(
+            effective_task_capabilities(["artifact_creation"], requires_tool=True, has_files=False, own_task_folder=True),
+            ["artifact_creation", "workspace_read"],
+        )
+        # With a folder of the user's open, reading it still needs the approved plan.
+        self.assertEqual(
+            effective_task_capabilities(["artifact_creation"], requires_tool=True, has_files=False, own_task_folder=False),
+            ["artifact_creation"],
+        )
+
+
 class TelemetryEventTests(unittest.TestCase):
     def test_every_event_the_executor_records_is_accepted(self):
         # Issue #50: build_review (and other diagnostics) were rejected as "Unsupported event type".

@@ -91,6 +91,16 @@ def installed_models():
         return None
 
 
+def is_embedding_model(item):
+    """An embedding-only model (nomic-embed-text, bge, ...): it answers no chat request.
+
+    Ollama lists them with the chat models; /api/tags reports a BERT-family architecture for them.
+    """
+    details = item.get("details") if isinstance(item.get("details"), dict) else {}
+    families = [str(name).lower() for name in (details.get("families") or [details.get("family") or ""])]
+    return "embed" in str(item.get("name") or "").lower() or any("bert" in name for name in families)
+
+
 SUPPORTED_EVENTS = frozenset({
     "request_received",
     "route_decision",
@@ -250,6 +260,7 @@ def dashboard_state(models_override=None, running_override=None):
             "modified_at": model.get("modified_at", ""),
             "installed": True,
             "running": name in running_models,
+            "embedding": is_embedding_model(model),
             "decisions": counts.get("decisions") or 0,
             "calls": counts.get("calls") or 0,
             "successes": counts.get("successes") or 0,
