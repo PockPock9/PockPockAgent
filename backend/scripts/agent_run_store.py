@@ -534,7 +534,9 @@ def store_agent_event(run_id: str, sequence: int, event: dict[str, Any]) -> bool
         if event_type == "done":
             status = "completed" if event.get("status") not in {"partial", "awaiting_approval"} else str(event.get("status"))
         elif event_type == "error":
-            status = "failed"
+            # An error that says the run ended partial (for example a research answer that could
+            # not be validated) is stored as partial, matching the stream (issue #53).
+            status = "partial" if event.get("status") == "partial" else "failed"
         elif event_type == "cancelled":
             status = "cancelled"
         elif event_type == "timed_out":

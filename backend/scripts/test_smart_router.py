@@ -53,6 +53,15 @@ class SmartRouterPipeTests(unittest.IsolatedAsyncioTestCase):
         # reasoning/planning stays on the larger configured models.
         self.assertEqual(Pipe.Valves().quick_model, "qwen3.5:2b")
 
+    async def test_algorithm_questions_route_to_the_code_model(self):
+        # Issue #56: "time complexity" questions were sent to the quick model.
+        pipe = Pipe()
+        for question in ("What is the time complexity of binary search and why?", "Explain big-O of quicksort"):
+            decision = pipe._heuristic_check(question, [{"role": "user", "content": question}])
+            self.assertEqual((decision["category"], decision["model"]), ("code", pipe.valves.code_model), question)
+        decision = pipe._heuristic_check("What is the capital of France?", [{"role": "user", "content": "What is the capital of France?"}])
+        self.assertEqual(decision["category"], "quick")
+
     async def test_heuristic_routes_greeting_to_small_model(self):
         pipe = Pipe()
         decision = pipe._heuristic_check(

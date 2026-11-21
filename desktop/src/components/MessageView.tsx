@@ -208,7 +208,9 @@ export function MessageView({ message, live, onChange, onReport }: { message: Me
   const copy = () => void navigator.clipboard.writeText(message.content).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1400) })
   const waiting = live && !message.content && !message.plan && !(message.steps?.length)
   const phases = live ? null : turnPhases(message)
-  const openFolder = () => { if (message.workspacePath) void bridge()?.openPath(message.workspacePath) }
+  // The task folder holds the run's files; older runs only recorded the workspace (issue #76).
+  const taskFolder = message.taskFolder || message.workspacePath
+  const openFolder = () => { if (taskFolder) void bridge()?.openPath(taskFolder) }
   return (
     <article className="message message--assistant">
       <div className="message__meta">
@@ -239,9 +241,9 @@ export function MessageView({ message, live, onChange, onReport }: { message: Me
           ))}
         </div>
       ) : null}
-      {message.workspacePath && (
+      {taskFolder && (
         <div className="artifacts">
-          <button type="button" className="artifact" onClick={openFolder} title={message.workspacePath}><FolderOpen size={14} /><span>Task folder</span><small>Open</small></button>
+          <button type="button" className="artifact" onClick={openFolder} title={taskFolder}><FolderOpen size={14} /><span>Task folder</span><small>Open</small></button>
         </div>
       )}
       {!live && (

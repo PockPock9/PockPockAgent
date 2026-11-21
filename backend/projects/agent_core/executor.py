@@ -1906,6 +1906,9 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                             "status": final_status,
                             "duration_ms": round((time.monotonic() - started) * 1000),
                             "workspace_path": str((task_workspace_root or output_dir or task_output_root()).resolve()),
+                            # Where this run saved its files; differs from workspace_path when a folder
+                            # is open (issue #76).
+                            "task_folder": str((output_dir or task_output_root()).resolve()),
                             "artifacts": context.artifacts,
                         })
                         return

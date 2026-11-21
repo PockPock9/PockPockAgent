@@ -113,6 +113,7 @@ from projects.agent_core.executor import AgentCoreServices, create_agent_runner
 from projects.agent_skills.distiller import RunRecord
 from projects.agent_skills.service import AgentSkillsService
 from projects.local_memory import LocalPreferenceMemory
+from projects.local_memory.preferences import MEMORY_NOT_SAVED, unsaved_memory_request
 from projects.model_router import (
     ChatCompletionRequest,
     ModelProviderError,
@@ -3140,10 +3141,17 @@ async def chat(payload: ChatPayload):
         "",
     )
     LOCAL_PREFERENCE_MEMORY.remember_from_text(latest_user_message)
+    memory_notice = (
+        MEMORY_NOT_SAVED
+        if LOCAL_PREFERENCE_MEMORY.is_enabled() and unsaved_memory_request(latest_user_message)
+        else ""
+    )
     request_id = uuid.uuid4().hex
 
     async def stream():
         started = time.monotonic()
+        if memory_notice:
+            yield sse({"type": "notice", "message": memory_notice})
         primary_id = uuid.uuid4().hex
         fallback_id = ""
         decision = None
@@ -3195,10 +3203,10 @@ async def chat(payload: ChatPayload):
                 preferred = router.resolve_routed_model(model, available_names)
                 if preferred in candidates:
                     model = preferred
-                    decision["reason"] = "Automatic selection was disabled or not installed; using the default model."
+                    decision["reason"] = "The model chosen for this request is switched off or not installed; using the default model."
                 else:
                     model = candidates[0]
-                    decision["reason"] = "Automatic selection was disabled; using the first enabled model."
+                    decision["reason"] = "The model chosen for this request is switched off or not installed; using the first enabled model."
                 decision["model"] = model
 
             if model not in available_names:

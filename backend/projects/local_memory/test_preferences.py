@@ -63,5 +63,22 @@ class LocalPreferenceMemoryTests(unittest.TestCase):
         self.assertEqual(self.memory.list_preferences()[0]["preference"], "Prefer detailed responses.")
 
 
+class MemoryRequestTests(unittest.TestCase):
+    def test_reply_language_is_learned(self):
+        from projects.local_memory.preferences import extract_safe_preferences
+
+        self.assertEqual(extract_safe_preferences("Please always answer in Japanese"), [("reply_language", "Reply in Japanese.")])
+        self.assertEqual(extract_safe_preferences("I prefer replies in Khmer."), [("reply_language", "Reply in Khmer.")])
+
+    def test_a_request_memory_cannot_keep_is_reported(self):
+        # Issue #62: such requests were silently dropped.
+        from projects.local_memory.preferences import unsaved_memory_request
+
+        for text in ("Remember that I work 9 to 5", "My name is Sam", "From now on, use emoji"):
+            self.assertTrue(unsaved_memory_request(text), text)
+        for text in ("I prefer concise answers", "Please remember to answer in Spanish", "What is 2 plus 2?"):
+            self.assertFalse(unsaved_memory_request(text), text)
+
+
 if __name__ == "__main__":
     unittest.main()

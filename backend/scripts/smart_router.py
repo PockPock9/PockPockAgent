@@ -203,6 +203,8 @@ class Pipe:
             r"```[\w]*\n",
             r"\b(def |class |public static void|fn main|#include|import React|SELECT .* FROM|docker-compose|traceback|syntaxerror)\b",
             r"\b(git commit|k8s|kubernetes|npm install|cargo build|pip install)\b",
+            # Algorithm questions are code questions, even when short (issue #56).
+            r"\b(time|space) complexity\b|\bbig[- ]?o\b|\bbinary search\b|\b(algorithms?|recursion|data structures?)\b",
         ]
         if any(re.search(p, text, re.IGNORECASE) for p in code_patterns):
             return {
@@ -220,7 +222,7 @@ class Pipe:
         ]
         if len(text.strip()) < 60 and any(re.search(p, text, re.IGNORECASE) for p in quick_patterns):
             # Ensure it doesn't contain code or math keywords
-            if not any(k in text.lower() for k in ["code", "function", "formula", "proof", "prove", "solve", "algorithm", "python", "rust"]):
+            if not any(k in text.lower() for k in ["code", "function", "formula", "proof", "prove", "solve", "algorithm", "python", "rust", "complexity", "big-o", "big o", "javascript", "sql", "regex"]):
                 return {
                     "category": "quick",
                     "reason": "Direct factual lookup or conversational greeting pattern identified",

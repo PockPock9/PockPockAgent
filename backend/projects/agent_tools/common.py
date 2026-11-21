@@ -75,8 +75,8 @@ _PROJECT_IGNORED_DIRS = {
 }
 
 _PROJECT_EXTENSIONS = {
-    ".bat", ".cmd", ".conf", ".css", ".example", ".gitignore", ".html", ".ini",
-    ".js", ".json", ".jsx", ".md", ".ps1", ".py", ".sh", ".sql",
+    ".bat", ".cjs", ".cmd", ".conf", ".css", ".example", ".gitignore", ".html", ".ini",
+    ".js", ".json", ".jsx", ".md", ".mjs", ".ps1", ".py", ".sh", ".sql",
     ".toml", ".ts", ".tsx", ".txt", ".xml", ".yaml", ".yml",
 }
 
