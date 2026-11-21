@@ -83,11 +83,11 @@ class CommandTests(unittest.TestCase):
         runner = FakeRunner(turn_json())
         bridge = NemoClawBridge(NemoClawConfig(), runner=runner)
         hostile = '"; rm -rf / #`whoami` $HOME'
-        bridge.run_turn("conv-1", hostile)
+        bridge.run_turn("pockpock-conv-1", hostile)
         command, env, timeout = runner.calls[0]
         self.assertTrue(all(hostile not in part for part in command))
         self.assertEqual(env["NC_MESSAGE"], hostile)
-        self.assertEqual(env["NC_SESSION"], "conv-1")
+        self.assertEqual(env["NC_SESSION"], "pockpock-conv-1")
         self.assertIn("NC_MESSAGE/u", env["WSLENV"].split(":"))
         self.assertGreater(timeout, NemoClawConfig().timeout_seconds)
 
@@ -124,10 +124,14 @@ class BridgeTests(unittest.TestCase):
         bridge = NemoClawBridge(NemoClawConfig(), runner=FakeRunner(turn_json()))
         with self.assertRaises(NemoClawError):
             bridge.run_turn("../etc", "hi")
-        with self.assertRaises(NemoClawError):
-            bridge.run_turn("ok", "   ")
+        # Issue #75: the same pockpock-<id> contract as OpenClaw.
         with self.assertRaises(NemoClawError) as ctx:
-            bridge.run_turn("ok", "x" * (MAX_MESSAGE_CHARS + 1))
+            bridge.run_turn("bogus-123", "hi")
+        self.assertEqual(ctx.exception.status_code, 422)
+        with self.assertRaises(NemoClawError):
+            bridge.run_turn("pockpock-ok", "   ")
+        with self.assertRaises(NemoClawError) as ctx:
+            bridge.run_turn("pockpock-ok", "x" * (MAX_MESSAGE_CHARS + 1))
         self.assertEqual(ctx.exception.status_code, 413)
 
     def test_rejects_concurrent_turn(self):
@@ -140,11 +144,11 @@ class BridgeTests(unittest.TestCase):
             return 0, turn_json(), ""
 
         bridge = NemoClawBridge(NemoClawConfig(), runner=slow_runner)
-        worker = threading.Thread(target=bridge.run_turn, args=("a", "first"))
+        worker = threading.Thread(target=bridge.run_turn, args=("pockpock-a", "first"))
         worker.start()
         started.wait(5)
         with self.assertRaises(NemoClawError) as ctx:
-            bridge.run_turn("b", "second")
+            bridge.run_turn("pockpock-b", "second")
         self.assertEqual(ctx.exception.code, "busy")
         release.set()
         worker.join(5)
@@ -152,7 +156,7 @@ class BridgeTests(unittest.TestCase):
     def test_failed_process_without_json_reports_actionable_error(self):
         bridge = NemoClawBridge(NemoClawConfig(), runner=FakeRunner("", code=1))
         with self.assertRaises(NemoClawError) as ctx:
-            bridge.run_turn("s", "hello")
+            bridge.run_turn("pockpock-s", "hello")
         self.assertIn("nemoclaw pockpock status", str(ctx.exception))
 
     def test_status_without_probe_never_runs_the_sandbox_check(self):

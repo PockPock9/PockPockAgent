@@ -10,6 +10,7 @@ import asyncio
 import hashlib
 import os
 import re
+import sqlite3
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
@@ -168,10 +169,17 @@ def _service_request(path: str, *, method: str = "GET", payload: dict[str, Any] 
             return json.loads(response.read().decode("utf-8"))
     except HTTPError as err:
         detail = err.read().decode("utf-8", errors="replace")
+        try:
+            message = json.loads(detail).get("detail")
+        except (ValueError, AttributeError):
+            message = None
+        message = message if isinstance(message, str) and message.strip() else None
         if err.code == 409:
-            raise RunAlreadyExists("This run ID has already been used. Start the task again.") from err
+            if path == "/runs":
+                raise RunAlreadyExists("This run ID has already been used. Start the task again.") from err
+            raise ValueError(message or "The request conflicts with the run's current state.") from err
         if err.code == 404:
-            raise RunNotFound("Run not found") from err
+            raise RunNotFound(message or "Run not found") from err
         raise RuntimeError(f"Run-store service returned HTTP {err.code}: {detail[:500]}") from err
     except (URLError, TimeoutError, json.JSONDecodeError) as err:
         raise RuntimeError(f"Run-store service is unavailable: {err}") from err
@@ -503,10 +511,13 @@ def create_agent_approval(run_id: str, approval_id: str, action_hash: str, actio
             raise RunNotFound("Run not found")
         if run["status"] != "running":
             raise ValueError("Approvals can only be requested for an active run")
-        connection.execute(
-            "INSERT INTO agent_run_approvals(approval_id, run_id, action_hash, action_json, status, created_at, expires_at) VALUES (?, ?, ?, ?, 'pending', ?, ?)",
-            (approval_id, run_id, action_hash, action_json, now, expires_at),
-        )
+        try:
+            connection.execute(
+                "INSERT INTO agent_run_approvals(approval_id, run_id, action_hash, action_json, status, created_at, expires_at) VALUES (?, ?, ?, ?, 'pending', ?, ?)",
+                (approval_id, run_id, action_hash, action_json, now, expires_at),
+            )
+        except sqlite3.IntegrityError as err:
+            raise ValueError("This approval ID has already been used.") from err
     return {"approval_id": approval_id, "run_id": run_id, "action_hash": action_hash, "action": action, "status": "pending", "created_at": now, "expires_at": expires_at}
 
 
@@ -731,7 +742,12 @@ def list_runs_for_conversation(conversation_id: str) -> list[dict[str, Any]]:
 
 def get_run_events(run_id: str, after: int, limit: int) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
     if _use_remote_store():
-        result = _service_request(f"/runs/{quote(run_id, safe='')}/events?after={max(0, after)}&limit={max(1, min(limit, 1000))}")
+        try:
+            result = _service_request(f"/runs/{quote(run_id, safe='')}/events?after={max(0, after)}&limit={max(1, min(limit, 1000))}")
+        except RunNotFound:
+            # Same contract as the local store: an unknown run is "no run", which callers turn into
+            # a 404. Letting it escape made the gateway answer 500 (issue #66).
+            return None, []
         return result.get("run"), result.get("events", [])
     with telemetry.connect_db() as connection:
         run = connection.execute(

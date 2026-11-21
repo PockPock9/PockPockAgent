@@ -161,7 +161,7 @@ Decision: permission modes are enforced by a plugin inside OpenClaw rather than 
 
 ### NemoClaw turn
 
-1. In NemoClaw mode, the desktop app posts the newest message and a per-conversation session id to `/api/nemoclaw/chat`.
+1. In NemoClaw mode, the desktop app posts the newest message and a per-conversation `pockpock-` session id to `/api/nemoclaw/chat`.
 2. The gateway applies the same-PC request check and rate limit, then `nemoclaw_bridge` runs `nemoclaw <sandbox> agent --json` through `wsl.exe` in a worker thread. Only one turn runs at a time.
 3. OpenClaw runs inside the OpenShell sandbox with its own tools and network policy, using the Windows Ollama model through Docker Desktop. Session history lives in the sandbox, not in PockPock storage.
 4. The bridge parses the JSON result and streams `decision`, `token`, and `done` events in the `/api/chat` format. A dropped connection kills the WSL process. Nothing is written to telemetry or run tables.

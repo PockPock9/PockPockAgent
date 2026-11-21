@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
-SESSION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$")
+SESSION_ID = re.compile(r"^pockpock-[A-Za-z0-9][A-Za-z0-9_-]{0,69}$")
 MAX_MESSAGE_CHARS = 16_000
 DEFAULT_TIMEOUT_SECONDS = 300
 STATUS_TTL_SECONDS = 20.0
@@ -113,6 +113,16 @@ class TurnResult:
     status: str
     duration_ms: int
     truncated: bool = False
+
+
+def docker_name() -> str:
+    """What runs the sandbox's containers here: Docker Desktop on Windows and macOS, Docker on Linux (#52)."""
+    return "Docker" if sys.platform.startswith("linux") else "Docker Desktop"
+
+
+def sandbox_place() -> str:
+    """Where the sandbox runs, for user-facing text (#52)."""
+    return "in WSL" if sys.platform == "win32" else "in its OpenShell sandbox"
 
 
 def validate_session_id(value: str) -> str:
@@ -307,7 +317,7 @@ class NemoClawBridge:
             if parsed.get("ready"):
                 detail = "Ready"
             elif code == -1:
-                detail = "NemoClaw did not respond. Start Docker Desktop" + (" and check WSL." if sys.platform == "win32" else ".")
+                detail = f"NemoClaw did not respond. Start {docker_name()}" + (" and check WSL." if sys.platform == "win32" else ".")
             elif parsed.get("phase"):
                 detail = f"Sandbox is {parsed['phase']}; inference {'healthy' if parsed.get('inference_healthy') else 'unavailable'}."
             else:
@@ -336,7 +346,7 @@ class NemoClawBridge:
         code, stdout, _ = self._script(ROUTE_GET_SCRIPT, {})
         current = parse_route_output(stdout)
         if code != 0 or not current["provider"]:
-            raise NemoClawError("route_unknown", "NemoClaw's model setting could not be read. Make sure Docker Desktop is running.")
+            raise NemoClawError("route_unknown", f"NemoClaw's model setting could not be read. Make sure {docker_name()} is running.")
         cloud = current["provider"] == CLOUD_PROVIDER
         return {"cloud": cloud, "model": current["model"], "provider": current["provider"], "local": current if not cloud else self._saved_local_route()}
 
@@ -407,7 +417,7 @@ class NemoClawBridge:
                 raise NemoClawError(
                     "turn_failed",
                     "The NemoClaw agent did not answer. Check `nemoclaw "
-                    f"{self.config.sandbox} status` and make sure Docker Desktop is running.",
+                    f"{self.config.sandbox} status` and make sure {docker_name()} is running.",
                 )
             return parse_turn_output(stdout, duration_ms)
         finally:
