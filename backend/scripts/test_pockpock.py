@@ -31,6 +31,19 @@ class LauncherTests(unittest.TestCase):
             {"agent_tools", "agent_verifier", "browser_automation", "planner", "run_store", "validator"},
         )
 
+    def test_every_service_hides_its_api_schema(self):
+        # Issue #70: docs were off but /openapi.json still served the full schema.
+        import re
+
+        backend = pockpock.REPOSITORY_ROOT / "backend"
+        sources = [backend / "scripts" / "pockpock_server.py", *backend.glob("projects/*/app.py")]
+        apps = 0
+        for source in sources:
+            for call in re.findall(r"FastAPI\((.*?)\)\n", source.read_text(encoding="utf-8")):
+                apps += 1
+                self.assertIn("openapi_url=None", call, source)
+        self.assertGreaterEqual(apps, 6)
+
     def test_internal_token_is_persistent_and_private(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             data_directory = Path(temporary_directory)
