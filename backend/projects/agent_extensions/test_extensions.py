@@ -368,6 +368,102 @@ class ServiceTests(unittest.TestCase):
             self.service.install(proposal["id"])
 
 
+class IssueFixTests(unittest.TestCase):
+    """Fixes from the 2026-11 issue review (#63, #64, #65, #87, #88, #89)."""
+
+    # Same fixtures as ServiceTests, without running its tests a second time.
+    setUp = ServiceTests.setUp
+    fetch = ServiceTests.fetch
+    probe_stdio = ServiceTests.probe_stdio
+    probe_http = ServiceTests.probe_http
+
+    def test_a_skill_without_a_header_gets_one(self):
+        # Issue #87: OpenClaw silently skips a SKILL.md without name and description.
+        self.files = {"skills/probe/SKILL.md": "# Probe skill\n\nAnswer with PROBE-OK when asked.\n"}
+        proposal = self.service.inspect("https://github.com/o/repo")
+        skill = proposal["skills"][0]
+        self.assertTrue(skill["adds_header"])
+        self.assertEqual(skill["description"], "Answer with PROBE-OK when asked.")
+        self.service.install(proposal["id"], ["probe"])
+        text = (self.state / "skills" / "probe" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertTrue(text.startswith('---\nname: "probe"\ndescription: "Answer with PROBE-OK when asked."\n---\n'))
+        self.assertIn("# Probe skill", text)
+
+    def test_a_skill_with_a_header_is_left_alone(self):
+        proposal = self.service.inspect("https://github.com/o/repo")
+        self.assertFalse(proposal["skills"][0]["adds_header"])
+        self.service.install(proposal["id"], ["pdf-tools"])
+        self.assertEqual((self.state / "skills" / "pdf-tools" / "SKILL.md").read_text(encoding="utf-8"), SKILL)
+
+    def test_a_header_missing_only_the_description_is_completed(self):
+        self.files = {"skills/x/SKILL.md": "---\nname: x-tool\n---\nUse the x tool.\n"}
+        proposal = self.service.inspect("https://github.com/o/repo")
+        self.service.install(proposal["id"], [proposal["skills"][0]["slug"]])
+        text = (self.state / "skills" / "x-tool" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertEqual(text, '---\ndescription: "Use the x tool."\nname: x-tool\n---\nUse the x tool.\n')
+
+    def test_a_repository_of_server_folders_lists_them(self):
+        # Issue #64: modelcontextprotocol/servers keeps each server in src/<name>.
+        block = lambda pkg: "```json\n" + json.dumps({"mcpServers": {"x": {"command": "npx", "args": ["-y", pkg]}}}) + "\n```"
+        self.files = {"README.md": "# Servers\nSee each folder.", "src/fetch/README.md": block("fetch"), "src/git/README.md": block("git"), "src/notes/README.md": "no server here"}
+        with self.assertRaises(ExtensionError) as caught:
+            self.service.inspect("https://github.com/o/repo")
+        self.assertEqual(caught.exception.code, "choose_folder")
+        self.assertIn("2 MCP servers", str(caught.exception))
+        self.files["skills/pdf/SKILL.md"] = SKILL
+        proposal = self.service.inspect("https://github.com/o/repo")
+        self.assertEqual(proposal["kind"], "skills")
+        self.assertEqual([item["path"] for item in proposal["mcp_folders"]], ["src/fetch", "src/git"])
+        self.assertEqual(proposal["mcp_folders"][0]["url"], "https://github.com/o/repo/tree/HEAD/src/fetch")
+
+    def test_filesystem_server_says_it_needs_a_folder(self):
+        # Issue #65: the filesystem server cannot start without an allowed folder.
+        self.files = {"README.md": "```json\n" + json.dumps({"mcpServers": {"fs": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem"]}}}) + "\n```"}
+        proposal = self.service.inspect("https://github.com/o/repo")
+        self.assertIn("at least one folder", proposal["mcp"]["args_hint"])
+
+        def refuse(command, args, env):
+            raise mcp_probe.ProbeError("Server cannot operate: No allowed directories available.")
+
+        self.service.probe_stdio = refuse
+        with self.assertRaises(ExtensionError) as caught:
+            self.service.install(proposal["id"])
+        self.assertIn("Add at least one folder", str(caught.exception))
+
+    def test_a_local_command_is_probed_then_saved(self):
+        # Issue #88: a stdio server already on this PC could not be added.
+        proposal = self.service.inspect("python3 /opt/tools/weather_server.py --verbose")
+        self.assertEqual(proposal["kind"], "mcp")
+        self.assertEqual((proposal["mcp"]["command"], proposal["mcp"]["args"], proposal["mcp"]["name"]), ("python3", ["/opt/tools/weather_server.py", "--verbose"], "weather-server"))
+        self.assertEqual(self.fetched, 0)
+        self.service.install(proposal["id"])
+        self.assertEqual(self.probes, [("python3", ["/opt/tools/weather_server.py", "--verbose"], {})])
+        self.assertEqual(self.gateway.servers["weather-server"], {"command": "python3", "args": ["/opt/tools/weather_server.py", "--verbose"]})
+        with self.assertRaises(ExtensionError):
+            self.service.inspect("bash -c 'curl x | sh'")
+
+    def test_a_local_address_gets_a_readable_name(self):
+        # Issue #89: http://127.0.0.1:18799/mcp was named "127".
+        self.assertEqual(self.service.inspect("http://127.0.0.1:18799/mcp")["mcp"]["name"], "local-18799")
+        self.assertEqual(self.service.inspect("http://localhost:3000/weather/mcp")["mcp"]["name"], "local-weather")
+        self.assertEqual(self.service.inspect("https://mcp.example.com/mcp")["mcp"]["name"], "example")
+
+    def test_toggle_errors_when_openclaw_is_unavailable(self):
+        # Issue #63: an unknown name gave 503 instead of 404.
+        self.gateway.offline = True
+        with self.assertRaises(ExtensionError) as caught:
+            self.service.set_enabled("skill", "unknown", False)
+        self.assertEqual(caught.exception.status_code, 404)
+        proposal = self.service.inspect("https://github.com/o/repo")
+        self.gateway.offline = False
+        self.service.install(proposal["id"], ["pdf-tools"])
+        self.gateway.offline = True
+        with self.assertRaises(ExtensionError) as caught:
+            self.service.set_enabled("skill", "pdf-tools", False)
+        self.assertEqual(caught.exception.status_code, 503)
+        self.assertIn("OpenClaw page", str(caught.exception))
+
+
 class ProbeTests(unittest.TestCase):
     SERVER = (
         "import sys, json\n"

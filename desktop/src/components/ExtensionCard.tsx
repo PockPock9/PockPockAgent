@@ -11,8 +11,10 @@ export type Proposal = {
   source: string
   commit: string
   also: '' | 'skills' | 'mcp'
-  skills?: Array<{ slug: string; name: string; description: string; files: number; size: number; has_scripts: boolean; installed: boolean; conflict: boolean }>
-  mcp?: { name: string; transport: string; command: string; args: string[]; env_keys: string[]; url: string; origin: string; launcher_available: boolean; installed: boolean }
+  /** Folders of a repository that each document their own MCP server. */
+  mcp_folders?: Array<{ name: string; path: string; url: string }>
+  skills?: Array<{ slug: string; name: string; description: string; files: number; size: number; has_scripts: boolean; installed: boolean; conflict: boolean; adds_header?: boolean }>
+  mcp?: { name: string; transport: string; command: string; args: string[]; env_keys: string[]; url: string; origin: string; launcher_available: boolean; installed: boolean; args_hint?: string }
 }
 
 type Result = { kind: 'skills' | 'mcp'; installed?: Array<{ name: string }>; name?: string; verified?: boolean; tools?: Array<{ name: string }> }
@@ -35,12 +37,15 @@ export function inspectLink(url: string, prefer?: 'skills' | 'mcp') {
   return sendJson<Proposal>('/api/extensions/inspect', { url, prefer })
 }
 
-export function ExtensionCard({ proposal, onClose, onSwitch, onInstalled }: {
+export function ExtensionCard({ proposal, onClose, onSwitch, onOpen, onInstalled }: {
   proposal: Proposal
   onClose: () => void
   onSwitch: (kind: 'skills' | 'mcp') => void
+  /** Preview another link, such as one server folder of a repository that holds several. */
+  onOpen?: (url: string) => void
   onInstalled?: () => void
 }) {
+  const folders = proposal.mcp_folders ?? []
   const id = useId()
   const skills = proposal.skills ?? []
   const mcp = proposal.mcp
@@ -102,7 +107,7 @@ export function ExtensionCard({ proposal, onClose, onSwitch, onInstalled }: {
                   <input type="checkbox" checked={selected.includes(skill.slug)} disabled={skill.conflict || busy} onChange={(event) => setSelected((previous) => event.target.checked ? [...previous, skill.slug] : previous.filter((slug) => slug !== skill.slug))} />
                   <span>
                     <strong>{skill.name}</strong>
-                    <small>{skill.files} files · {formatBytes(skill.size)}{skill.has_scripts ? ' · includes scripts' : ''}{skill.installed ? ' · will replace installed copy' : ''}{skill.conflict ? ' · name already used in OpenClaw' : ''}</small>
+                    <small>{skill.files} files · {formatBytes(skill.size)}{skill.has_scripts ? ' · includes scripts' : ''}{skill.installed ? ' · will replace installed copy' : ''}{skill.conflict ? ' · name already used in OpenClaw' : ''}{skill.adds_header ? ' · PockPock adds the name and description OpenClaw needs' : ''}</small>
                     <em>{skill.description}</em>
                   </span>
                 </label>
@@ -112,10 +117,10 @@ export function ExtensionCard({ proposal, onClose, onSwitch, onInstalled }: {
         </>
       ) : mcp?.transport === 'stdio' ? (
         <>
-          <p>Connecting starts this program on your PC with your account's access. The command comes from {mcp.origin}.</p>
+          <p>Connecting starts this program on your PC with your account's access. {mcp.origin === 'the command you entered' ? 'PockPock tests it first, then saves it.' : `The command comes from ${mcp.origin}.`}</p>
           <code className="card__detail">{[mcp.command, ...args.split('\n').map((line) => line.trim()).filter(Boolean)].join(' ')}</code>
-          {!mcp.launcher_available && <p className="card__error">{mcp.command} is not installed on this PC. Install it, then paste the link again.</p>}
-          <label className="field" htmlFor={`${id}-args`}>Arguments, one per line<small>Replace placeholders such as folder paths.</small></label>
+          {!mcp.launcher_available && <p className="card__error">{mcp.command} is not installed on this PC. Install it, then paste it again.</p>}
+          <label className="field" htmlFor={`${id}-args`}>Arguments, one per line<small>{mcp.args_hint || 'Replace placeholders such as folder paths.'}</small></label>
           <textarea id={`${id}-args`} className="input" rows={Math.min(6, Math.max(2, args.split('\n').length))} value={args} onChange={(event) => setArgs(event.target.value)} disabled={busy} spellCheck={false} />
           {mcp.env_keys.map((key) => (
             <div key={key}>
@@ -133,6 +138,16 @@ export function ExtensionCard({ proposal, onClose, onSwitch, onInstalled }: {
         </>
       )}
       {proposal.also && <button type="button" className="link-button" disabled={busy} onClick={() => onSwitch(proposal.also as 'skills' | 'mcp')}>This repository also has {proposal.also === 'skills' ? 'skills' : 'an MCP server'}. Show {proposal.also === 'skills' ? 'those' : 'that'} instead</button>}
+      {folders.length > 0 && onOpen && (
+        <div className="card__folders">
+          <p>This repository also has {folders.length} MCP server{folders.length === 1 ? '' : 's'}, each in its own folder:</p>
+          <ul>
+            {folders.slice(0, 12).map((folder) => (
+              <li key={folder.path}><button type="button" className="link-button" disabled={busy} onClick={() => onOpen(folder.url)}>{folder.name}</button> <small>{folder.path}</small></li>
+            ))}
+          </ul>
+        </div>
+      )}
       {error && <p className="card__error" role="alert">{error}</p>}
       <div className="card__actions">
         <button type="submit" className="button button--primary" disabled={busy || blocked}>{busy ? <LoaderCircle size={13} className="spin" /> : <Check size={13} />}{busy ? (proposal.kind === 'skills' ? 'Installing…' : 'Connecting… this can take a minute') : proposal.kind === 'skills' ? `Install ${selected.length || ''} skill${selected.length === 1 ? '' : 's'}`.replace('  ', ' ') : 'Connect'}</button>

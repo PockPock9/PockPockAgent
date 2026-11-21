@@ -11,7 +11,9 @@ import io
 import json
 import posixpath
 import re
+import shlex
 import stat
+import sys
 import tomllib
 import urllib.error
 import urllib.parse
@@ -51,7 +53,7 @@ class SourceError(Exception):
 
 @dataclass(frozen=True)
 class Link:
-    kind: str  # "github" or "remote"
+    kind: str  # "github", "remote", or "local" (a command that starts a server on this PC)
     url: str
     owner: str = ""
     repo: str = ""
@@ -69,6 +71,8 @@ class SkillCandidate:
     files: int
     size: int
     has_scripts: bool
+    # SKILL.md lacks the name/description header OpenClaw needs; PockPock adds it on install (#87).
+    adds_header: bool = False
 
 
 @dataclass(frozen=True)
@@ -89,8 +93,12 @@ def slugify(value: str, fallback: str = "extension") -> str:
 
 def parse_link(raw: str) -> Link:
     value = (raw or "").strip()
+    if value and not re.match(r"^[a-z][a-z0-9+.-]*://", value, re.I) and len(value) <= MAX_LINK_CHARS:
+        command = _parse_command(value)
+        if command:
+            return Link(kind="local", url=value)
     if not value or len(value) > MAX_LINK_CHARS or any(ord(char) < 33 for char in value):
-        raise SourceError("invalid_link", "Paste one link, without spaces.")
+        raise SourceError("invalid_link", "Paste one link, without spaces, or a command that starts an MCP server on this PC.")
     try:
         parsed = urllib.parse.urlsplit(value)
         host = (parsed.hostname or "").lower()
@@ -104,6 +112,39 @@ def parse_link(raw: str) -> Link:
     if parsed.scheme != "https" and host not in LOCAL_HOSTS:
         raise SourceError("insecure_link", "Remote MCP servers must use https://. Only servers on this PC may use http://.")
     return Link(kind="remote", url=urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path or "/", parsed.query, "")))
+
+
+def _parse_command(value: str) -> list[str] | None:
+    """Split a pasted command such as ``python3 C:\\servers\\server.py`` when it starts with a launcher
+    PockPock allows. Nothing is run here (issue #88)."""
+    if any(ord(char) < 32 for char in value):
+        return None
+    try:
+        parts = shlex.split(value, posix=sys.platform != "win32")
+    except ValueError:
+        return None
+    parts = [part[1:-1] if len(part) >= 2 and part[0] == part[-1] == '"' else part for part in parts]
+    if not parts or launcher_name(parts[0]) not in LAUNCHERS or len(parts) > 41:
+        return None
+    return parts
+
+
+def local_candidate(link: Link) -> McpCandidate:
+    """The stdio server a pasted local command starts; it is tested before it is saved."""
+    parts = _parse_command(link.url) or []
+    args = tuple(parts[1:41])
+    target = next((arg for arg in args if not arg.startswith("-")), "")
+    stem = re.sub(r"\.(py|js|mjs|cjs|ts)$", "", target.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1], flags=re.I)
+    if stem.lower() in {"server", "index", "main", "app", "mcp"}:
+        parent = target.replace("\\", "/").rstrip("/").rsplit("/", 2)
+        stem = parent[-2] if len(parent) >= 2 else stem
+    return McpCandidate(
+        name=slugify(stem.split("@", 1)[0] if not stem.startswith("@") else stem.rsplit("/", 1)[-1], "local-mcp-server")[:40].strip("-") or "local-mcp-server",
+        transport="stdio",
+        command=launcher_name(parts[0]) if parts else "",
+        args=args,
+        origin="the command you entered",
+    )
 
 
 def _parse_github(parsed: urllib.parse.SplitResult) -> Link:
@@ -224,6 +265,37 @@ def _frontmatter(text: str) -> dict[str, str]:
     return result
 
 
+def _first_paragraph(text: str) -> str:
+    """The first line of prose in a SKILL.md, used when it has no description header."""
+    body = re.sub(r"^\ufeff?---[ \t]*\r?\n.*?\r?\n---[ \t]*(?:\r?\n|$)", "", text, count=1, flags=re.S)
+    for line in body.splitlines():
+        line = line.strip()
+        if line and not line.startswith(("#", "```", "|", "<", "---", "!")):
+            return " ".join(re.sub(r"[*_`]", "", line).split())[:400]
+    return ""
+
+
+def skill_header(text: str, name: str, description: str) -> str:
+    """``text`` with the ``name`` and ``description`` header OpenClaw requires.
+
+    OpenClaw silently skips a SKILL.md without them ("description is required"), so a skill that
+    looked installed never reached the agent (issue #87). Existing header fields are kept.
+    """
+    meta = _frontmatter(text)
+    missing = []
+    if not meta.get("name"):
+        missing.append(f"name: {json.dumps(name)}")
+    if not meta.get("description"):
+        missing.append(f"description: {json.dumps(description)}")
+    if not missing:
+        return text
+    newline = "\r\n" if "\r\n" in text else "\n"
+    match = re.match(r"(\ufeff?---[ \t]*\r?\n)", text)
+    if match and re.match(r"\ufeff?---[ \t]*\r?\n.*?\r?\n---[ \t]*(?:\r?\n|$)", text, re.S):
+        return text[:match.end()] + newline.join(missing) + newline + text[match.end():]
+    return "---" + newline + newline.join(missing) + newline + "---" + newline + newline + text.lstrip("\ufeff")
+
+
 def find_skills(snapshot: Snapshot) -> list[SkillCandidate]:
     """Every folder under the linked path that holds a SKILL.md."""
     skill_files = sorted(
@@ -238,7 +310,8 @@ def find_skills(snapshot: Snapshot) -> list[SkillCandidate]:
         size = sum(info.file_size for info in members)
         if len(members) > MAX_SKILL_FILES or size > MAX_SKILL_BYTES:
             continue
-        meta = _frontmatter(snapshot.read_text(skill_file))
+        text = snapshot.read_text(skill_file)
+        meta = _frontmatter(text)
         folder = posixpath.basename(directory) if directory != snapshot.root else snapshot.link.repo
         slug = slugify(meta.get("name") or folder, slugify(folder, "skill"))
         base_slug, count = slug[:58].strip("-"), 1
@@ -249,12 +322,13 @@ def find_skills(snapshot: Snapshot) -> list[SkillCandidate]:
         candidates.append(SkillCandidate(
             slug=slug,
             name=(meta.get("name") or folder)[:80],
-            description=(meta.get("description") or "No description provided.")[:400],
+            description=(meta.get("description") or _first_paragraph(text) or f"Skill {meta.get('name') or folder}.")[:400],
             directory=directory,
             path=snapshot.relative(directory) if directory != snapshot.root else "",
             files=len(members),
             size=size,
             has_scripts=any(re.search(r"\.(py|js|mjs|ts|sh|ps1|bat|cmd|exe|rb|pl)$", info.filename, re.I) for info in members),
+            adds_header=not (meta.get("name") and meta.get("description")),
         ))
     return candidates
 
@@ -283,6 +357,10 @@ def extract_skill(snapshot: Snapshot, candidate: SkillCandidate, destination: Pa
                 if remaining < 0:
                     raise SourceError("too_large", "The skill is larger than its archive listing claims.", 413)
                 output.write(chunk)
+    if candidate.adds_header:
+        skill_file = root / "SKILL.md"
+        text = skill_file.read_text(encoding="utf-8", errors="replace")
+        skill_file.write_text(skill_header(text, candidate.slug, candidate.description), encoding="utf-8", newline="")
 
 
 def _server_entries(document: Any) -> list[tuple[str, dict[str, Any]]]:
@@ -373,7 +451,58 @@ def remote_candidate(link: Link) -> McpCandidate:
     parsed = urllib.parse.urlsplit(link.url)
     host = (parsed.hostname or "server").removeprefix("www.").removeprefix("mcp.")
     transport = "sse" if parsed.path.rstrip("/").endswith("/sse") else "streamable-http"
-    return McpCandidate(name=slugify(host.split(".")[0] if "." in host else host, "mcp-server")[:40], transport=transport, url=link.url, origin="the link you pasted")
+    if host in LOCAL_HOSTS or re.fullmatch(r"[0-9.]+|[0-9a-f:]+", host):
+        # "127.0.0.1" used to become the name "127" (issue #89): use the path, else the port.
+        generic = {"mcp", "sse", "api", "v1", "v2", "stream", "http"}
+        words = [part for part in parsed.path.split("/") if part and part.lower() not in generic]
+        name = slugify(f"local-{words[-1]}" if words else f"local-{parsed.port or 'server'}", "local-mcp-server")
+    else:
+        name = slugify(host.split(".")[0] if "." in host else host, "mcp-server")
+    return McpCandidate(name=name[:40].strip("-"), transport=transport, url=link.url, origin="the link you pasted")
+
+
+def find_mcp_folders(snapshot: Snapshot, limit: int = 30) -> list[dict[str, str]]:
+    """Sub-folders whose own README documents an MCP server, for a repository that holds several.
+
+    modelcontextprotocol/servers keeps each server in src/<name> with its own README, so the root
+    never proposed one (issue #64). The user picks a folder and inspects that link instead.
+    """
+    if snapshot.link.kind != "github":
+        return []
+    folders: list[dict[str, str]] = []
+    base_depth = snapshot.base.count("/")
+    seen: set[str] = set()
+    for info in snapshot.entries:
+        name = info.filename
+        folder = posixpath.dirname(name)
+        if folder in seen or folder == snapshot.base or folder.count("/") - base_depth > 2:
+            continue
+        if posixpath.basename(name).lower() not in {"readme.md", "readme.mdx", "readme"}:
+            continue
+        seen.add(folder)
+        readme = snapshot.read_text(name)
+        if not any(_server_entries(_loose_json(block)) for block in FENCED_JSON.findall(readme)[:20]):
+            continue
+        relative = snapshot.relative(folder)
+        ref = snapshot.link.ref or "HEAD"
+        folders.append({
+            "name": posixpath.basename(folder),
+            "path": relative,
+            "url": f"{snapshot.link.url}/tree/{ref}/{relative}",
+        })
+        if len(folders) >= limit:
+            break
+    return sorted(folders, key=lambda item: item["path"])
+
+
+def _loose_json(block: str) -> Any:
+    try:
+        return json.loads(block)
+    except ValueError:
+        try:
+            return json.loads("{" + block.strip().rstrip(",") + "}")
+        except ValueError:
+            return None
 
 
 Fetcher = Callable[[Link], bytes]

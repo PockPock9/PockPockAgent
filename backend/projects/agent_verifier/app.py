@@ -33,7 +33,7 @@ except ImportError:  # running from inside backend/projects/agent_verifier/
 
 from projects.internal_auth import require_internal_token
 
-app = FastAPI(title="PockPock Agent Verifier", docs_url=None, redoc_url=None)
+app = FastAPI(title="PockPock Agent Verifier", docs_url=None, redoc_url=None, openapi_url=None)
 LEDGER = Ledger()
 HARNESS = Harness(LEDGER)
 

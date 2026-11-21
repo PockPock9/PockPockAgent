@@ -230,7 +230,7 @@ export function ChatPane(props: Props) {
               onReport={message.role === 'assistant' ? () => setReporting(message) : undefined} />
           ))}
           {proposal && (
-            <ExtensionCard key={proposal.id} proposal={proposal} onClose={() => { setProposal(null); void status.refreshCounts() }} onSwitch={(kind) => void preview(proposal.source, kind)} onInstalled={() => void status.refreshCounts()} />
+            <ExtensionCard key={proposal.id} proposal={proposal} onClose={() => { setProposal(null); void status.refreshCounts() }} onSwitch={(kind) => void preview(proposal.source, kind)} onOpen={(url) => void preview(url, 'mcp')} onInstalled={() => void status.refreshCounts()} />
           )}
         </div>
       </div>

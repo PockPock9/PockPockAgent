@@ -39,6 +39,47 @@ def incomplete_success_checks(answer: object, checks: list[str]) -> list[str]:
     return incomplete
 
 
+# Evidence a check can only have if one of these tools succeeded in the run.
+_EVIDENCE_GROUPS = (
+    (
+        re.compile(r"\b(screenshot|browser|web\s?page|page|visible\s+text|website|site)\b", re.IGNORECASE),
+        lambda name: name.startswith(("browse", "browser")) or name == "scrape_public_page",
+    ),
+    (
+        re.compile(r"\b(search(?:\s+results?)?|sources?|citations?|cited)\b", re.IGNORECASE),
+        lambda name: name in {"search_public_site", "scrape_public_page"},
+    ),
+)
+
+
+def unsupported_pass_checks(
+    answer: object,
+    checks: list[str],
+    succeeded_tools: set[str],
+    failed_tools: set[str],
+) -> list[str]:
+    """Checks reported as PASS although the only tool that could prove them failed (issue #43).
+
+    A model can write "CHECK 2: PASS - a screenshot was saved" after the browser failed to start.
+    A check is refused when its text or evidence names browser or research evidence, a tool of that
+    kind failed in this run, and no tool of that kind succeeded.
+    """
+    text = answer if isinstance(answer, str) else ""
+    refused = []
+    for index, check in enumerate(checks, 1):
+        match = re.search(rf"(?im)^\W*\[?CHECK\s+{index}\s*:\s*PASS\]?\s*[-:]?\s*(.*)$", text)
+        if not match:
+            continue
+        claim = f"{check} {match.group(1)}"
+        for pattern, belongs in _EVIDENCE_GROUPS:
+            if not pattern.search(claim):
+                continue
+            if any(belongs(name) for name in failed_tools) and not any(belongs(name) for name in succeeded_tools):
+                refused.append(check)
+                break
+    return refused
+
+
 class ReplanningBudget:
     def __init__(self) -> None:
         self._failures: Counter[str] = Counter()

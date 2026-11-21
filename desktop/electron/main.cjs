@@ -164,12 +164,12 @@ function registerIpc() {
   handle('workspace:list', (relative) => workspace.list(workspaceRoot(), typeof relative === 'string' ? relative : ''))
   handle('workspace:read', (relative) => workspace.read(workspaceRoot(), String(relative)))
   handle('workspace:open', async (relative) => {
-    const error = await shell.openPath(workspace.inside(workspaceRoot(), String(relative || '')))
+    const error = await shell.openPath(await workspace.insideReal(workspaceRoot(), String(relative || '')))
     if (error) throw new Error(error)
     return true
   })
-  handle('workspace:reveal', (relative) => {
-    shell.showItemInFolder(workspace.inside(workspaceRoot(), String(relative || '')))
+  handle('workspace:reveal', async (relative) => {
+    shell.showItemInFolder(await workspace.insideReal(workspaceRoot(), String(relative || '')))
     return true
   })
 
@@ -207,6 +207,24 @@ function registerIpc() {
     try { const parsed = JSON.parse(result.stdout.trim().split('\n').pop()); currentPath = typeof parsed === 'string' ? parsed : '' } catch { currentPath = '' }
     const current = available.find((browser) => browser.path.toLowerCase() === currentPath.toLowerCase())?.id || (currentPath ? 'custom' : 'default')
     return { available: available.map(({ id, name }) => ({ id, name })), current, currentPath }
+  })
+  // How long OpenClaw waits for a slow local model (issue #83). Without this provider setting it
+  // gives up after 300 seconds, before a small model on a CPU has read OpenClaw's prompt.
+  const SLOW_MODEL_KEY = 'models.providers.ollama.timeoutSeconds'
+  const SLOW_MODEL_SECONDS = 1800
+  handle('openclaw:slowModels', async () => {
+    const result = await openclawCli(['config', 'get', SLOW_MODEL_KEY, '--json'], 30000)
+    let seconds = null
+    try { const parsed = JSON.parse(result.stdout.trim().split('\n').pop()); seconds = typeof parsed === 'number' ? parsed : null } catch { seconds = null }
+    return { seconds, recommended: SLOW_MODEL_SECONDS }
+  })
+  handle('openclaw:allowSlowModels', async () => {
+    const result = await openclawCli(['config', 'set', SLOW_MODEL_KEY, String(SLOW_MODEL_SECONDS), '--strict-json'])
+    if (!result.ok) throw new Error((result.stderr || result.stdout).trim().split('\n').slice(-2).join(' ') || 'OpenClaw did not accept the setting.')
+    // OpenClaw reads provider settings when its gateway starts.
+    await services.stop('openclaw').catch(() => undefined)
+    await services.start('openclaw')
+    return { seconds: SLOW_MODEL_SECONDS, recommended: SLOW_MODEL_SECONDS }
   })
   handle('openclaw:setBrowser', async (id) => {
     const available = installedBrowsers()

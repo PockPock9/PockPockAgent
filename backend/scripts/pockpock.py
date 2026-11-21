@@ -73,6 +73,22 @@ def check_python_version(python: Path) -> None:
         raise RuntimeError(f"Python {required} or newer is required; the project environment uses {actual}.")
 
 
+def install_browser(python: Path, root: Path, attempts: int = 3, delay_seconds: float = 5.0, run=subprocess.run, sleep=time.sleep) -> None:
+    """Install Playwright's Chromium, retrying: one slow or failed download should not fail setup (#51)."""
+    for attempt in range(1, attempts + 1):
+        try:
+            run([str(python), "-m", "playwright", "install", "chromium"], cwd=root, check=True)
+            return
+        except subprocess.CalledProcessError:
+            if attempt == attempts:
+                raise RuntimeError(
+                    f"Could not download the agent browser after {attempts} tries. Check the internet connection, "
+                    f"then run '{sys.executable} backend/scripts/pockpock.py setup' again."
+                ) from None
+            print(f"The agent browser download failed (try {attempt} of {attempts}); trying again.", flush=True)
+            sleep(delay_seconds * attempt)
+
+
 def setup_environment(root: Path = REPOSITORY_ROOT) -> None:
     if sys.version_info[:2] < MINIMUM_PYTHON:
         required = ".".join(str(part) for part in MINIMUM_PYTHON)
@@ -91,7 +107,7 @@ def setup_environment(root: Path = REPOSITORY_ROOT) -> None:
     for requirements in requirements_files(root):
         install_args.extend(["-r", str(requirements)])
     subprocess.run(install_args, cwd=root, check=True)
-    subprocess.run([str(python), "-m", "playwright", "install", "chromium"], cwd=root, check=True)
+    install_browser(python, root)
     print(f"Backend dependencies are installed in {root / '.venv'}.")
     print("Run this command again with 'start' to launch the local backend services.")
 
