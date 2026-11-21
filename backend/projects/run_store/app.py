@@ -17,7 +17,7 @@ os.environ["POCKPOCK_RUN_STORE_INTERNAL"] = "1"
 from internal_auth import require_internal_token
 import agent_run_store as store
 
-app = FastAPI(title="PockPock Run Store", docs_url=None, redoc_url=None)
+app = FastAPI(title="PockPock Run Store", docs_url=None, redoc_url=None, openapi_url=None)
 store.initialize_agent_store()
 
 

@@ -7,6 +7,7 @@ and inside the run-store process itself.
 
 import json
 import asyncio
+import anyio
 import hashlib
 import os
 import re
@@ -693,20 +694,34 @@ def write_agent_task_memory(
 
 async def track_agent_stream(run_id: str, source, encode_event):
     """Persist each complete SSE event before forwarding it to the client."""
-    sequence = 0
-    buffer = ""
-    decoder = json.JSONDecoder()
-    async for frame in source:
-        buffer += frame
-        while "\n\n" in buffer:
-            raw, buffer = buffer.split("\n\n", 1)
-            data = "\n".join(line[5:].lstrip() for line in raw.splitlines() if line.startswith("data:"))
-            if not data:
-                continue
+    try:
+        sequence = 0
+        buffer = ""
+        decoder = json.JSONDecoder()
+        async for frame in source:
+            buffer += frame
+            while "\n\n" in buffer:
+                raw, buffer = buffer.split("\n\n", 1)
+                data = "\n".join(line[5:].lstrip() for line in raw.splitlines() if line.startswith("data:"))
+                if not data:
+                    continue
+                try:
+                    event = decoder.decode(data)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+                sequence += 1
+                event["run_id"] = run_id
+                event["sequence"] = sequence
+                event = _normalize_run_event(event, for_write=True)
+                stored = await asyncio.to_thread(store_agent_event, run_id, sequence, event)
+                if stored:
+                    yield encode_event(event)
+        if buffer.strip():
+            data = "\n".join(line[5:].lstrip() for line in buffer.splitlines() if line.startswith("data:"))
             try:
                 event = decoder.decode(data)
             except (json.JSONDecodeError, TypeError):
-                continue
+                return
             sequence += 1
             event["run_id"] = run_id
             event["sequence"] = sequence
@@ -714,19 +729,13 @@ async def track_agent_stream(run_id: str, source, encode_event):
             stored = await asyncio.to_thread(store_agent_event, run_id, sequence, event)
             if stored:
                 yield encode_event(event)
-    if buffer.strip():
-        data = "\n".join(line[5:].lstrip() for line in buffer.splitlines() if line.startswith("data:"))
-        try:
-            event = decoder.decode(data)
-        except (json.JSONDecodeError, TypeError):
-            return
-        sequence += 1
-        event["run_id"] = run_id
-        event["sequence"] = sequence
-        event = _normalize_run_event(event, for_write=True)
-        stored = await asyncio.to_thread(store_agent_event, run_id, sequence, event)
-        if stored:
-            yield encode_event(event)
+    finally:
+        # A disconnected client leaves this generator unfinished; close the run stream too, so
+        # its own cleanup marks the run finished instead of leaving it "running" (issue #41).
+        close = getattr(source, "aclose", None)
+        if close is not None:
+            with anyio.CancelScope(shield=True):
+                await close()
 
 
 def list_runs_for_conversation(conversation_id: str) -> list[dict[str, Any]]:

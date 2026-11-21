@@ -173,7 +173,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-api = FastAPI(title="PockPock AI Local API", docs_url=None, redoc_url=None, lifespan=lifespan)
+api = FastAPI(title="PockPock AI Local API", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 
 
 @api.middleware("http")
@@ -369,6 +369,13 @@ async def cancel_agent_run(run_id: str, request: Request):
         event = AGENT_RUN_CANCEL_EVENTS.get(run_id)
         if event is not None:
             event.set()
+        else:
+            # No live stream is running this run any more (its client went away), so nothing would
+            # move it out of "cancelling"; finish it here (issue #41).
+            try:
+                await asyncio.to_thread(finish_incomplete_agent_run, run_id)
+            except Exception:
+                logger.exception("Could not finalize cancelled agent run %s", run_id)
         browser_url = os.environ.get("POCKPOCK_BROWSER_AUTOMATION_URL", "").rstrip("/")
         if browser_url:
             try:
@@ -1786,8 +1793,18 @@ async def decide_agent_plan(plan_id: str, payload: AgentPlanDecisionPayload, req
     if not plan or plan["expires_at"] <= time.monotonic():
         AGENT_PLAN_TICKETS.pop(plan_id, None)
         raise HTTPException(status_code=410, detail="Plan expired. Create a fresh plan before starting work.")
-    if plan["status"] != "pending" or plan["action_hash"] != payload.action_hash:
-        raise HTTPException(status_code=409, detail="This plan was already decided or its contents changed. Create a fresh plan.")
+    # An approved plan is what authorises its run, so it is never edited in place (issue #58):
+    # say which case this is and how to go on.
+    if plan["status"] != "pending":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"This plan was already {plan['status']}. An approved plan cannot be changed; "
+                "to run an edited version, create a new plan from the edited request and approve that one."
+            ),
+        )
+    if plan["action_hash"] != payload.action_hash:
+        raise HTTPException(status_code=409, detail="This plan's contents changed since it was shown. Reload the plan and decide again.")
     if "sequence_plan" in plan:
         # ---- Sequence-plan branch (Plan-and-Sequence P3) ----
         # A sequence ticket is approved or rejected as a whole: there are
