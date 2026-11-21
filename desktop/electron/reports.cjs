@@ -131,6 +131,8 @@ class ReportStore {
 
   create({ category, description, capture }, context = redactionContext()) {
     if (!CATEGORIES.includes(category)) throw new Error('Choose what went wrong.')
+    // A report without a description gives the Maintenance Manager nothing to work from (issue #77).
+    if (typeof description !== 'string' || !description.trim()) throw new Error('Describe what happened.')
     const prepared = prepareCapture(capture, context)
     const now = Date.now()
     const report = {
@@ -157,7 +159,7 @@ class ReportStore {
       ...report,
       ...(patch.category !== undefined ? { category: patch.category } : {}),
       ...(patch.status !== undefined ? { status: patch.status } : {}),
-      ...(patch.description !== undefined ? { description: redactText(cut(String(patch.description), MAX_DESCRIPTION)).text } : {}),
+      ...(patch.description !== undefined ? { description: redactText(cut(String(patch.description), MAX_DESCRIPTION)).text || report.description } : {}),
       updatedAt: Date.now(),
     }
     return this.write(next)

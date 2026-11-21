@@ -31,6 +31,40 @@ class LauncherTests(unittest.TestCase):
             {"agent_tools", "agent_verifier", "browser_automation", "planner", "run_store", "validator"},
         )
 
+    def test_the_browser_download_is_retried(self):
+        # Issue #51: one failed Chromium download failed the whole setup.
+        import subprocess
+
+        calls, sleeps = [], []
+
+        def flaky(command, **kwargs):
+            calls.append(command)
+            if len(calls) < 3:
+                raise subprocess.CalledProcessError(1, command)
+
+        pockpock.install_browser(Path("python"), Path("."), run=flaky, sleep=sleeps.append)
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(sleeps, [5.0, 10.0])
+
+        def broken(command, **kwargs):
+            raise subprocess.CalledProcessError(1, command)
+
+        with self.assertRaisesRegex(RuntimeError, "after 3 tries"):
+            pockpock.install_browser(Path("python"), Path("."), run=broken, sleep=lambda seconds: None)
+
+    def test_every_service_hides_its_api_schema(self):
+        # Issue #70: docs were off but /openapi.json still served the full schema.
+        import re
+
+        backend = pockpock.REPOSITORY_ROOT / "backend"
+        sources = [backend / "scripts" / "pockpock_server.py", *backend.glob("projects/*/app.py")]
+        apps = 0
+        for source in sources:
+            for call in re.findall(r"FastAPI\((.*?)\)\n", source.read_text(encoding="utf-8")):
+                apps += 1
+                self.assertIn("openapi_url=None", call, source)
+        self.assertGreaterEqual(apps, 6)
+
     def test_internal_token_is_persistent_and_private(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             data_directory = Path(temporary_directory)

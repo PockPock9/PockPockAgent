@@ -263,5 +263,21 @@ class BrowserEngineTests(unittest.IsolatedAsyncioTestCase):
         )
 
 
+class BrowserStartErrorTests(unittest.TestCase):
+    def test_the_cause_is_reported_not_only_the_type(self):
+        # Issue #46: the detail was only "Could not start isolated browser: Error".
+        from projects.browser_automation.app import browser_start_error
+
+        class Error(Exception):
+            pass
+
+        err = Error("BrowserType.launch: Executable doesn't exist at /home/u/.cache/ms-playwright/chromium-1255/chrome-linux/chrome\n" + "=" * 40 + "\nLooks like Playwright was just installed")
+        detail = browser_start_error(err)
+        self.assertIn("Executable doesn't exist at /home/u/.cache/ms-playwright", detail)
+        self.assertIn("run PockPock Setup", detail)
+        self.assertNotIn("BrowserType.launch", detail)
+        self.assertEqual(browser_start_error(Error()), "Could not start isolated browser: Error")
+
+
 if __name__ == "__main__":
     unittest.main()

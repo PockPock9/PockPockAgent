@@ -3,7 +3,8 @@
 Automatically captures a narrow allowlist of reusable response-style preferences from the latest user request. It stores only normalized values such as “Prefer concise responses.”; source messages and arbitrary user text are never written to the preference table.
 
 - Storage: `local_preferences` and the enable/disable setting in the existing local app SQLite database.
-- Minimization: only fixed response-style and code-example-language values are recognized. No names, addresses, credentials, task content, or free-form notes are accepted.
+- Minimization: only fixed response-style, reply-language and code-example-language values are recognized (for example "Prefer concise responses.", "Reply in Japanese."). No names, addresses, credentials, task content, or free-form notes are accepted.
+- Feedback: when a chat message asks PockPock to remember something it does not keep ("remember that…", "my name is…", "from now on…"), the chat stream sends a `notice` event and the reply shows "Not saved to memory" with what memory does keep, so the user is not left believing it was saved.
 - Runtime: the gateway adds stored preferences as optional style guidance for chat and agent model calls. They cannot change task scope, permissions, tools, or safety behavior.
 - Controls: `GET /api/memory/preferences`, `PUT /api/memory/preferences/settings`, and DELETE routes support local review, disabling, individual deletion, and clearing all items. The React Memory page exposes these controls.
 - Verification: run `python -m unittest projects.local_memory.test_preferences` from `backend`.

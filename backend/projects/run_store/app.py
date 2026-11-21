@@ -17,7 +17,7 @@ os.environ["POCKPOCK_RUN_STORE_INTERNAL"] = "1"
 from internal_auth import require_internal_token
 import agent_run_store as store
 
-app = FastAPI(title="PockPock Run Store", docs_url=None, redoc_url=None)
+app = FastAPI(title="PockPock Run Store", docs_url=None, redoc_url=None, openapi_url=None)
 store.initialize_agent_store()
 
 
@@ -81,7 +81,9 @@ class ResearchSourceNote(BaseModel):
 
 @app.get("/health")
 async def health():
-    return {"ok": True, "service": "run-store"}
+    # "store" fingerprints the database file, so the gateway can detect a run-store that keeps runs
+    # somewhere else (issues #60, #61).
+    return {"ok": True, "service": "run-store", "store": store.store_identity()}
 
 
 @app.post("/runs", dependencies=[Depends(require_internal_token)])
@@ -121,7 +123,7 @@ async def append_event(run_id: str, payload: NewEvent):
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
     if payload.event.get("type") == "delegate_result":
-        expected_parent = (run or {}).get("delegation", {}).get("parent_run_id")
+        expected_parent = ((run or {}).get("delegation") or {}).get("parent_run_id")
         if not expected_parent or payload.event.get("parent_run_id") != expected_parent:
             raise HTTPException(status_code=422, detail="Delegation result parent does not match the child run relationship.")
     try:
@@ -136,6 +138,9 @@ async def append_event(run_id: str, payload: NewEvent):
 @app.post("/runs/{run_id}/finish", dependencies=[Depends(require_internal_token)])
 async def finish_run(run_id: str):
     if not _valid_id(run_id):
+        raise HTTPException(status_code=404, detail="Run not found")
+    run, _ = store.get_run_events(run_id, 0, 1)
+    if not run:
         raise HTTPException(status_code=404, detail="Run not found")
     store.finish_incomplete_agent_run(run_id)
     return {"finished": True}

@@ -104,7 +104,8 @@ def validate_project(context: ProjectAgentContext) -> dict[str, Any]:
                 _check_blocking_dialogs(source, relative, checks, issues)
         except (SyntaxError, UnicodeError, OSError, subprocess.SubprocessError) as err:
             issues.append({"path": relative, "message": str(err)[:2000]})
-            checks.append({"name": f"{suffix.lstrip('.')} syntax", "path": relative, "status": "failed"})
+            # Same names as the passing checks, so one file keeps one check name (issue #53).
+            checks.append({"name": "Python syntax" if suffix == ".py" else "JavaScript syntax", "path": relative, "status": "failed"})
 
     class LocalReferences(HTMLParser):
         def __init__(self) -> None:

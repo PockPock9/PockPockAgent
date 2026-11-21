@@ -135,6 +135,7 @@ async function runChat({ history, prompt, attachments, signal, patch, chatModel 
       if (event.type !== 'token') tokens.flush()
       if (event.type === 'token') tokens.push(text(event.content))
       else if (event.type === 'decision') patch((message) => ({ ...message, model: [text(event.model), text(event.category)].filter(Boolean).join(' · ') }))
+      else if (event.type === 'notice') patch((message) => ({ ...message, notice: text(event.message) || message.notice }))
       else if (event.type === 'error') throw new Error(text(event.message) || 'Chat request failed.')
     })
   } finally {
@@ -383,6 +384,7 @@ function handleAgentEvent(event: StreamEvent, patch: TurnOptions['patch'], pushT
       patch((message) => ({
         ...settleSteps(message, 'done'),
         workspacePath: text(event.workspace_path) || message.workspacePath,
+        taskFolder: text(event.task_folder) || message.taskFolder,
         taskId: text(event.task_id) || message.taskId,
         notice: event.status === 'partial' ? 'Finished, but not every success check was met.' : message.notice,
       }))

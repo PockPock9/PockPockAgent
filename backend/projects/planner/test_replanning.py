@@ -1,6 +1,6 @@
 import unittest
 
-from projects.planner.replanning import ReplanningBudget, incomplete_success_checks
+from projects.planner.replanning import ReplanningBudget, incomplete_success_checks, unsupported_pass_checks
 
 
 class ReplanningBudgetTests(unittest.TestCase):
@@ -32,6 +32,28 @@ class ReplanningBudgetTests(unittest.TestCase):
     def test_completion_accepts_evidence_check_appended_to_summary(self):
         answer = "The page explains its use for documentation examples. CHECK 1: PASS - The summary reflects visible page text."
         self.assertEqual(incomplete_success_checks(answer, ["Summarize the page"]), [])
+
+
+class UnsupportedPassCheckTests(unittest.TestCase):
+    CHECKS = ["The summary describes the visible text of example.com", "A browser screenshot artifact was saved"]
+    ANSWER = (
+        "Example Domain is a placeholder page.\n"
+        "- CHECK 1: PASS - summary describes the actual visible text of example.com\n"
+        "- CHECK 2: PASS - a browser screenshot artifact was saved\n"
+    )
+
+    def test_pass_is_refused_when_the_browser_failed(self):
+        # Issue #43: the browser never started, yet both checks were reported as PASS.
+        refused = unsupported_pass_checks(self.ANSWER, self.CHECKS, set(), {"browse_public_page"})
+        self.assertEqual(refused, self.CHECKS)
+
+    def test_pass_stands_when_the_browser_succeeded(self):
+        self.assertEqual(unsupported_pass_checks(self.ANSWER, self.CHECKS, {"browse_public_page"}, {"browse_public_page"}), [])
+        self.assertEqual(unsupported_pass_checks(self.ANSWER, self.CHECKS, set(), set()), [])
+
+    def test_unrelated_checks_are_not_affected(self):
+        answer = "- CHECK 1: PASS - the file probe.md was saved with the exact first line"
+        self.assertEqual(unsupported_pass_checks(answer, ["probe.md exists"], set(), {"search_public_site"}), [])
 
 
 if __name__ == "__main__":
