@@ -163,12 +163,12 @@ Typical roles on the reference PC (any installed models can be used):
 |---|---|---|
 | Router | `qwen3.5:2b` | Classifies every request |
 | Quick / triage | `qwen3.5:2b` | Greetings, short factual questions, and other simple turns |
-| General / default | `qwen3.5:9b` | Everyday questions and agent work |
+| General / default | `qwen3.5:9b` (or `qwen3.5:4b`, the model Setup installs) | Everyday questions and agent work. The router's built-in general model is `qwen2.5:14b`; when it is not installed, PockPock uses the first enabled model other than the router's |
 | Accurate, slow | `qwen3.5:27b` | Complex tasks (pick it in the model picker) |
 | Coder | `qwen2.5-coder:7b`, `qwen2.5-coder:14b` | Code and DevOps |
 | Reasoner | `deepseek-r1:14b` | Math and step-by-step logic |
 | Vision | `llava:7b` | Screenshots and images |
-| Tool calling | `mistral-nemo:12b`, `llama3.2:3b` | Agent tool loops |
+| Tool calling | `mistral-nemo:12b` | Agent tool loops |
 
 ### Agent safety
 

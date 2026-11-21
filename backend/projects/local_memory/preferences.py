@@ -29,6 +29,13 @@ _CODE_LANGUAGES = {
     "rust": "Rust",
     "typescript": "TypeScript",
 }
+_REPLY_LANGUAGES = {
+    "arabic": "Arabic", "chinese": "Chinese", "dutch": "Dutch", "english": "English", "french": "French",
+    "german": "German", "hindi": "Hindi", "indonesian": "Indonesian", "italian": "Italian",
+    "japanese": "Japanese", "khmer": "Khmer", "korean": "Korean", "polish": "Polish",
+    "portuguese": "Portuguese", "russian": "Russian", "spanish": "Spanish", "thai": "Thai",
+    "turkish": "Turkish", "vietnamese": "Vietnamese",
+}
 _PREFERENCE_PATTERNS = (
     (
         "response_style",
@@ -57,6 +64,29 @@ _PREFERENCE_PATTERNS = (
             re.IGNORECASE,
         ),
     ),
+    (
+        "reply_language",
+        re.compile(
+            r"\b(?:always\s+|please\s+(?:always\s+)?)?(?:answer|reply|respond|write\s+back)\s+(?:to\s+me\s+)?in\s+"
+            r"(" + "|".join(_REPLY_LANGUAGES) + r")\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "reply_language",
+        re.compile(
+            r"\bi\s+prefer\s+(?:answers?|replies|responses?)\s+in\s+(" + "|".join(_REPLY_LANGUAGES) + r")\b",
+            re.IGNORECASE,
+        ),
+    ),
+)
+
+# Phrases that ask PockPock to keep something for later. When one is present but nothing above
+# matched, the user is told it was not saved instead of believing it was (issue #62).
+_MEMORY_REQUEST = re.compile(
+    r"\b(?:remember\s+(?:that|this|my|me|i)|please\s+remember|don'?t\s+forget|keep\s+in\s+mind|"
+    r"from\s+now\s+on|next\s+time|my\s+name\s+is|call\s+me|i\s+(?:usually|always)\s+work|my\s+working\s+hours)\b",
+    re.IGNORECASE,
 )
 
 
@@ -76,7 +106,24 @@ def extract_safe_preferences(text: str) -> list[tuple[str, str]]:
                 language = _CODE_LANGUAGES.get(raw_value)
                 if language:
                     found[category] = f"Prefer {language} for code examples."
+            elif category == "reply_language":
+                language = _REPLY_LANGUAGES.get(raw_value)
+                if language:
+                    found[category] = f"Reply in {language}."
     return sorted(found.items())
+
+
+def unsaved_memory_request(text: str) -> bool:
+    """True when the text asks to remember something that memory does not keep."""
+    if not isinstance(text, str) or not text:
+        return False
+    return bool(_MEMORY_REQUEST.search(text[:20_000])) and not extract_safe_preferences(text)
+
+
+MEMORY_NOT_SAVED = (
+    "Not saved to memory: PockPock remembers only how you like answers (concise, detailed, step by step, "
+    "plain language), the language for replies, and the language for code examples. Other details are not kept."
+)
 
 
 class LocalPreferenceMemory:

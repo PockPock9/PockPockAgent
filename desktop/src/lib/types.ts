@@ -95,6 +95,8 @@ export type Message = {
   runId?: string
   taskId?: string
   workspacePath?: string
+  /** The folder where an agent run saved its files (its task folder). */
+  taskFolder?: string
   notice?: string
   timing?: Timing
 }

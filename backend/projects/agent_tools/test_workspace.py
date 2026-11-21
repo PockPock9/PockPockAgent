@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import ssl
 import sys
@@ -63,6 +64,23 @@ class WorkspaceToolTests(unittest.TestCase):
                     run.call_args.kwargs["creationflags"],
                     subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
                 )
+
+        def test_cjs_and_mjs_files_are_validated_with_one_check_name(self):
+            # Issues #69 and #53: .cjs/.mjs were never listed, so a broken one passed with 0 files.
+            from projects.agent_tools.workspace import validate_project
+            with tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                (root / "bad.cjs").write_text("module.exports = {\n", encoding="utf-8")
+                (root / "ok.mjs").write_text("export const ok = 1\n", encoding="utf-8")
+                (root / "bad.py").write_text("def broken(:\n", encoding="utf-8")
+                self.assertIn("bad.cjs", list_project_files(ProjectAgentContext("files", root)))
+                result = validate_project(ProjectAgentContext("validation", root))
+                names = {check["path"]: (check["name"], check["status"]) for check in result["checks"] if "syntax" in check["name"]}
+                self.assertEqual(names["bad.py"], ("Python syntax", "failed"))
+                if shutil.which("node"):
+                    self.assertEqual(names["bad.cjs"], ("JavaScript syntax", "failed"))
+                    self.assertEqual(names["ok.mjs"], ("JavaScript syntax", "passed"))
+                self.assertFalse(result["valid"])
 
         def test_validation_flags_blocking_dialogs_that_freeze_games(self):
             from projects.agent_tools.workspace import validate_project

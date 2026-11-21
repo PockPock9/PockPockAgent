@@ -407,6 +407,17 @@ class RunEventContractTests(unittest.TestCase):
             run, _ = agent_run_store.get_run_events(run_id, 0, 10)
             self.assertEqual(run["status"], "cancelled")
 
+    def test_a_partial_error_is_stored_as_partial(self):
+        # Issue #53: the stream said partial while the stored run said failed.
+        with isolated_store():
+            agent_run_store.initialize_agent_store()
+            agent_run_store.create_agent_run("6" * 32, None, "agent", "partial run")
+            agent_run_store.store_agent_event("6" * 32, 1, {"type": "error", "message": "not validated", "status": "partial"})
+            self.assertEqual(agent_run_store.get_run_events("6" * 32, 0, 5)[0]["status"], "partial")
+            agent_run_store.create_agent_run("7" * 32, None, "agent", "failed run")
+            agent_run_store.store_agent_event("7" * 32, 1, {"type": "error", "message": "broken"})
+            self.assertEqual(agent_run_store.get_run_events("7" * 32, 0, 5)[0]["status"], "failed")
+
     def test_approval_is_durable_payload_bound_and_replayable(self):
         with isolated_store():
             agent_run_store.initialize_agent_store()
