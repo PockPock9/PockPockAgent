@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from .bridge import MAX_MESSAGE_CHARS, NemoClawBridge, NemoClawError
+from .bridge import MAX_MESSAGE_CHARS, NemoClawBridge, NemoClawError, sandbox_place, validate_message, validate_session_id
 
 HEARTBEAT_SECONDS = 10
 logger = logging.getLogger("pockpock.nemoclaw")
@@ -68,6 +68,14 @@ def create_router(
 
     @router.post("/chat")
     async def nemoclaw_chat(payload: NemoClawChatPayload):
+        # Refuse a malformed session id or an empty message before the stream starts, as OpenClaw
+        # does, instead of opening a turn that can only fail later (issue #75).
+        try:
+            validate_session_id(payload.session_id)
+            validate_message(payload.message)
+        except NemoClawError as err:
+            raise HTTPException(status_code=err.status_code, detail=str(err)) from err
+
         async def stream():
             started = time.monotonic()
             turn = asyncio.create_task(asyncio.to_thread(bridge.run_turn, payload.session_id, payload.message))
@@ -77,7 +85,7 @@ def create_router(
                     "model": f"NemoClaw · {bridge.config.sandbox}",
                     "category": "nemoclaw",
                     "source": "nemoclaw",
-                    "reason": "Sent to the sandboxed NemoClaw agent in WSL",
+                    "reason": f"Sent to the sandboxed NemoClaw agent {sandbox_place()}",
                 })
                 while True:
                     done, _ = await asyncio.wait({turn}, timeout=HEARTBEAT_SECONDS)

@@ -68,7 +68,8 @@ The run store also owns task/workspace-scoped `research_collections`, `research_
 ## Failure and recovery behavior
 
 - Duplicate run IDs are rejected with HTTP 409.
-- Invalid or missing run IDs return 404 for replay/open routes.
+- Invalid or missing run IDs return 404 for replay/open routes, the events route, research-collection routes and the run-store `finish` route. A reused approval ID returns 409, a delegation result posted to a run that is not delegated returns 422, and gateway errors keep the run-store's own message (for example "Approval not found").
+- Starting agent runs is limited to 10 per minute for all local clients together (concurrent runs are limited separately); a 429 carries `Retry-After` and says how many seconds to wait.
 - The Stop control posts to the local cancel endpoint. The gateway persists the request, signals the live run, and cancels its active model/tool await. The user sees a `cancelled` terminal event and the run remains cancelled after reload.
 - In Auto-review mode, proposed workspace file changes are staged and held behind a durable approval tied to the run, approval ID, and SHA-256 hash of the exact action summary and diff. The chat shows the diff with Approve and Reject controls; only the matching active pending action can be resolved. Full Access allows the staged workspace change to apply without a second prompt. Pending approval expires after five minutes; rejection, expiry, cancellation, or restart does not apply the staged patch. Approval requests and outcomes replay from the run event history.
 - Runs have a 15-minute total deadline. The deadline follows the same durable cancellation path and ends as `timed_out`. Registered per-tool timeouts remain independently enforced.
