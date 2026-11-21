@@ -81,7 +81,9 @@ class ResearchSourceNote(BaseModel):
 
 @app.get("/health")
 async def health():
-    return {"ok": True, "service": "run-store"}
+    # "store" fingerprints the database file, so the gateway can detect a run-store that keeps runs
+    # somewhere else (issues #60, #61).
+    return {"ok": True, "service": "run-store", "store": store.store_identity()}
 
 
 @app.post("/runs", dependencies=[Depends(require_internal_token)])
