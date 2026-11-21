@@ -63,9 +63,9 @@ function AddLink({ kind, onPreview, busy }: { kind: 'skills' | 'mcp'; onPreview:
   const [link, setLink] = useState('')
   return (
     <form className="add-link" onSubmit={(event) => { event.preventDefault(); if (link.trim()) { onPreview(link.trim()); setLink('') } }}>
-      <label htmlFor={`add-${kind}`}>{kind === 'skills' ? 'Add a skill from a GitHub link' : 'Add an MCP server from a GitHub link or server address'}</label>
+      <label htmlFor={`add-${kind}`}>{kind === 'skills' ? 'Add a skill from a GitHub link' : 'Add an MCP server from a GitHub link, a server address, or a command on this PC'}</label>
       <div>
-        <input id={`add-${kind}`} className="input" type="url" placeholder={kind === 'skills' ? 'https://github.com/owner/repo/tree/main/skills/name' : 'https://github.com/owner/repo  or  https://server.example/mcp'} value={link} onChange={(event) => setLink(event.target.value)} spellCheck={false} />
+        <input id={`add-${kind}`} className="input" type={kind === 'skills' ? 'url' : 'text'} placeholder={kind === 'skills' ? 'https://github.com/owner/repo/tree/main/skills/name' : 'https://github.com/owner/repo  ·  https://server.example/mcp  ·  python3 server.py'} value={link} onChange={(event) => setLink(event.target.value)} spellCheck={false} />
         <button type="submit" className="button button--primary" disabled={!link.trim() || busy}>{busy && <LoaderCircle size={13} className="spin" />}{busy ? 'Reading…' : 'Preview'}</button>
       </div>
       <small>You will see exactly what it installs and approve it first. Only add {kind === 'skills' ? 'skills' : 'servers'} from sources you trust.</small>
@@ -100,7 +100,7 @@ export function SkillsPage({ status }: { status: Status }) {
   return (
     <PageFrame eyebrow="Customize · OpenClaw" title="Skills" intro="Instructions the OpenClaw agent follows for a kind of task. Switch one off to stop the agent using it without removing it.">
       <AddLink kind="skills" busy={busy} onPreview={(url) => void preview(url)} />
-      {proposal && <ExtensionCard key={proposal.id} proposal={proposal} onClose={() => { setProposal(null); void load(); void status.refreshCounts() }} onSwitch={(next) => void preview(proposal.source, next)} />}
+      {proposal && <ExtensionCard key={proposal.id} proposal={proposal} onClose={() => { setProposal(null); void load(); void status.refreshCounts() }} onSwitch={(next) => void preview(proposal.source, next)} onOpen={(url) => void preview(url, 'mcp')} />}
       <ErrorNote message={error} />
       {!list && !error && <p className="note"><LoaderCircle size={13} className="spin" /> Loading skills…</p>}
       {list && !list.openclaw_ready && <ErrorNote message={`${list.detail || 'OpenClaw is not reachable.'} Skills cannot be switched until it is running.`} />}
@@ -154,14 +154,14 @@ export function McpPage({ status }: { status: Status }) {
   return (
     <PageFrame eyebrow="Customize · OpenClaw" title="MCP servers" intro="Tool servers the OpenClaw agent can call. Every call still follows the permission you pick in the chat.">
       <AddLink kind="mcp" busy={busy} onPreview={(url) => void preview(url)} />
-      {proposal && <ExtensionCard key={proposal.id} proposal={proposal} onClose={() => { setProposal(null); void load(); void status.refreshCounts() }} onSwitch={(next) => void preview(proposal.source, next)} />}
+      {proposal && <ExtensionCard key={proposal.id} proposal={proposal} onClose={() => { setProposal(null); void load(); void status.refreshCounts() }} onSwitch={(next) => void preview(proposal.source, next)} onOpen={(url) => void preview(url, 'mcp')} />}
       <ErrorNote message={error} />
       {!list && !error && <p className="note"><LoaderCircle size={13} className="spin" /> Loading servers…</p>}
       {list && !list.openclaw_ready && <ErrorNote message={`${list.detail || 'OpenClaw is not reachable.'} Servers cannot be listed until it is running.`} />}
       {list?.openclaw_ready && (
         <>
           <h2 className="list-title">Connected <small>{list.mcp.length}</small></h2>
-          {!list.mcp.length ? <Empty icon={<Plug size={20} />} title="No MCP servers yet"><p>Paste a GitHub link to an MCP server, or a server address, above.</p></Empty> : (
+          {!list.mcp.length ? <Empty icon={<Plug size={20} />} title="No MCP servers yet"><p>Paste a GitHub link to an MCP server, a server address, or a command that starts one on this PC, above.</p></Empty> : (
             <ul className="rows">
               {list.mcp.map((server) => (
                 <li key={server.name} className="row">
