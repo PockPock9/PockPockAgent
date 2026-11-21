@@ -679,6 +679,17 @@ async def execute_browser_recipe(recipe_id: str, payload: ExecuteRecipeRequest):
         await runtime.close_run(execution_id)
 
 
+def browser_start_error(err: Exception) -> str:
+    """Why the browser did not start, not only the exception type (issue #46). Playwright puts the
+    cause (for example a missing Chromium executable and its path) in the first line."""
+    first = next((line.strip() for line in str(err).splitlines() if line.strip()), "")
+    first = re.sub(r"^[A-Za-z]+\.launch:\s*", "", first)[:300]
+    detail = f"Could not start isolated browser: {type(err).__name__}" + (f": {first}" if first else "")
+    if re.search(r"Executable doesn't exist|playwright install", str(err), re.I):
+        detail += ". The agent browser is not installed; run PockPock Setup (or 'python -m playwright install chromium')."
+    return detail
+
+
 @app.post("/contexts", dependencies=[Depends(require_internal_token)])
 async def create_context(payload: CreateContextRequest):
     try:
@@ -686,7 +697,7 @@ async def create_context(payload: CreateContextRequest):
     except HTTPException:
         raise
     except Exception as err:
-        raise HTTPException(status_code=503, detail=f"Could not start isolated browser: {type(err).__name__}") from err
+        raise HTTPException(status_code=503, detail=browser_start_error(err)) from err
 
 
 @app.delete("/contexts/{run_id}", dependencies=[Depends(require_internal_token)])

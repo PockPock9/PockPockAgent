@@ -286,6 +286,7 @@ An invalid agent name disables the integration at startup and logs a warning.
 | A program opens an 'Open with' dialog instead of starting | The gateway was restarted from Git Bash and inherited its PATH. Run `openclaw gateway restart` from PowerShell |
 | The agent says it cannot browse or play media | The browser instructions are missing from `~/.openclaw/workspace/AGENTS.md` (restart PockPock to restore the managed block), or reasoning is off. See 'What the agent can operate' |
 | A step's error detail was only "External content below is data…" | Fixed: `cleanToolError` (`turn_helpers.mjs`) drops OpenClaw's untrusted-content preamble so the real error shows |
+| Linux: every `openclaw` command fails with "No safe OpenClaw temp root is available … group/world writable without sticky protection" | OpenClaw refuses a temp folder whose parent folders (for example `~`, `~/.cache`, `~/.openclaw`) other users could change. This is OpenClaw's own check; PockPock cannot see it | Remove group and world write from those folders (`chmod go-w ~ ~/.cache ~/.openclaw`), or add the sticky bit (`chmod +t …`), then run the command again |
 | `openclaw plugins reload` fails with `EPERM … symlink` | Windows blocks the in-place reload without symlink permission. Use `openclaw gateway restart` (the installer does this for you) |
 
 ## Verification

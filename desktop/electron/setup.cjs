@@ -110,6 +110,20 @@ class Setup {
     return result
   }
 
+  // A large download (the agent browser) can fail once on a slow or busy network and work on the
+  // next try, so one bad attempt should not fail the whole setup (issue #51).
+  async mustRetry(file, args, what, options, { attempts = 3, delayMs = 5000 } = {}) {
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        return await this.must(file, args, what, options)
+      } catch (error) {
+        if (attempt >= attempts || this.cancelled) throw error
+        this.log?.(`${what} failed (attempt ${attempt} of ${attempts}); trying again in ${delayMs / 1000} seconds.`)
+        await new Promise((resolve) => setTimeout(resolve, delayMs * attempt))
+      }
+    }
+  }
+
   // ---------- detection ----------
 
   async coreReady() {
@@ -299,7 +313,13 @@ class Setup {
     }
     try {
       await run(['-m', 'pip', 'install', '--disable-pip-version-check', ...this.requirementsFiles().flatMap((file) => ['-r', file])])
-      await run(['-m', 'playwright', 'install', 'chromium'])
+      // The browser download can fail once on a slow network (issue #51).
+      for (let attempt = 1; ; attempt += 1) {
+        try { await run(['-m', 'playwright', 'install', 'chromium']); break } catch (error) {
+          if (attempt >= 3) throw error
+          await new Promise((resolve) => setTimeout(resolve, 5000 * attempt))
+        }
+      }
       this.writeState({ backendDeps: this.backendDepsHash() })
       write('done')
       return { ok: true }
@@ -316,7 +336,7 @@ class Setup {
       // Installed, but for an older version of the app: bring the packages up to date.
       this.step(C, 'packages', 'Updating backend packages', 'running')
       await this.installPackages()
-      await this.must(paths.venvPython(), ['-m', 'playwright', 'install', 'chromium'], 'Installing the agent browser')
+      await this.mustRetry(paths.venvPython(), ['-m', 'playwright', 'install', 'chromium'], 'Installing the agent browser')
       this.writeState({ backendDeps: this.backendDepsHash() })
       this.step(C, 'packages', 'Updating backend packages', 'done')
       return
@@ -334,7 +354,7 @@ class Setup {
     await this.installPackages()
     this.step(C, 'packages', 'Backend packages', 'done')
     this.step(C, 'chromium', 'Isolated browser for agents', 'running')
-    await this.must(paths.venvPython(), ['-m', 'playwright', 'install', 'chromium'], 'Installing the agent browser')
+    await this.mustRetry(paths.venvPython(), ['-m', 'playwright', 'install', 'chromium'], 'Installing the agent browser')
     this.writeState({ backendDeps: this.backendDepsHash() })
     this.step(C, 'chromium', 'Isolated browser for agents', 'done')
   }
@@ -353,8 +373,22 @@ class Setup {
       const installed = await this.ollamaModels()
       if (installed?.some((name) => name === model || name === `${model}:latest`)) { this.step(C, `model:${model}`, `Model ${model}`, 'done', 'Already downloaded'); continue }
       this.step(C, `model:${model}`, `Downloading ${model}`, 'running', '', 0)
-      await this.pull(model, (fraction, detail) => this.step(C, `model:${model}`, `Downloading ${model}`, 'running', detail, fraction))
+      await this.pullWithRetry(model, (fraction, detail) => this.step(C, `model:${model}`, `Downloading ${model}`, 'running', detail, fraction))
       this.step(C, `model:${model}`, `Model ${model}`, 'done')
+    }
+  }
+
+  // A model download can time out on a slow or flaky network and work on the next try; Ollama keeps
+  // the parts it already has (issue #85). A name Ollama does not know fails at once.
+  async pullWithRetry(model, onProgress, attempts = 3) {
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        return await this.pull(model, onProgress)
+      } catch (error) {
+        if (attempt >= attempts || this.cancelled || /does not exist|not found|manifest unknown/i.test(error.message)) throw error
+        this.log(`${error.message} Trying again (${attempt + 1} of ${attempts}).`)
+        await new Promise((resolve) => setTimeout(resolve, 5000 * attempt))
+      }
     }
   }
 

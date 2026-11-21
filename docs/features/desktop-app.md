@@ -57,7 +57,7 @@ On first launch the app opens **Setup** on a welcome screen made for people who 
 
 The skills list is what `openclaw skills list --json` reports as eligible on this computer once OpenClaw is installed; before that, the bundled `desktop/electron/openclaw-skills.json` (19 skills for OpenClaw 2026.11.3). Unticked skills are installed but switched off and can be switched on later on the Skills page.
 
-Setup skips anything already installed. If it stops (failure, cancel, a needed restart, or a step the user must finish: the Ubuntu account, the Command Line Tools window, or Docker Desktop's first start), the plan is saved in `setup.json` and the next launch opens Setup with **Continue**. **Settings → Run setup** opens it any time to repair or add components.
+Setup skips anything already installed. The agent browser download is tried up to three times, and a model download whose error looks temporary (a timeout or a dropped connection) is tried again too; Ollama keeps what it already downloaded. A model name Ollama does not know fails at once. If it stops (failure, cancel, a needed restart, or a step the user must finish: the Ubuntu account, the Command Line Tools window, or Docker Desktop's first start), the plan is saved in `setup.json` and the next launch opens Setup with **Continue**. **Settings → Run setup** opens it any time to repair or add components.
 
 Code: `setup.cjs` (shared steps and the final check), `hardware.cjs` (hardware check, model choice, download and disk estimates), `setup-win.cjs` and `setup-mac.cjs` (installers for each system), `platform.cjs` (process control, NemoClaw's shell and Docker for each system).
 

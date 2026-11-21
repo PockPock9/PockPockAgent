@@ -28,7 +28,7 @@ The SQLite schema remains compatible. If `POCKPOCK_RUN_STORE_URL` is unset, the 
 
 ## Operations and boundaries
 
-- Run `backend/scripts/pockpock.py setup` once to create `.venv`, install all service dependencies, and download Playwright Chromium. Run `backend/scripts/pockpock.py start` to supervise the API and workflow services; Ctrl+C stops the processes started by that command. The Windows PowerShell launchers remain available for existing Windows workflows.
+- Run `backend/scripts/pockpock.py setup` once to create `.venv`, install all service dependencies, and download Playwright Chromium (tried up to three times, because one slow download should not fail setup). Run `backend/scripts/pockpock.py start` to supervise the API and workflow services; Ctrl+C stops the processes started by that command. The Windows PowerShell launchers remain available for existing Windows workflows.
 - Health endpoints are `http://127.0.0.1:8771/health` through `http://127.0.0.1:8774/health`.
 - Services currently share the repository and Python virtual environment. They are process-separated components, not independently versioned or packaged projects yet. Install and start the backend separately from the browser frontend; Ollama and model files are also separate optional installs.
 - Agent execution now has an in-process application boundary in `backend/projects/agent_core/`; it shares the gateway process and runtime state. A separate worker service remains deferred until concurrency limits and durable run leases have a defined contract.

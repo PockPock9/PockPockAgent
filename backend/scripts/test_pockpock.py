@@ -31,6 +31,27 @@ class LauncherTests(unittest.TestCase):
             {"agent_tools", "agent_verifier", "browser_automation", "planner", "run_store", "validator"},
         )
 
+    def test_the_browser_download_is_retried(self):
+        # Issue #51: one failed Chromium download failed the whole setup.
+        import subprocess
+
+        calls, sleeps = [], []
+
+        def flaky(command, **kwargs):
+            calls.append(command)
+            if len(calls) < 3:
+                raise subprocess.CalledProcessError(1, command)
+
+        pockpock.install_browser(Path("python"), Path("."), run=flaky, sleep=sleeps.append)
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(sleeps, [5.0, 10.0])
+
+        def broken(command, **kwargs):
+            raise subprocess.CalledProcessError(1, command)
+
+        with self.assertRaisesRegex(RuntimeError, "after 3 tries"):
+            pockpock.install_browser(Path("python"), Path("."), run=broken, sleep=lambda seconds: None)
+
     def test_internal_token_is_persistent_and_private(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             data_directory = Path(temporary_directory)
