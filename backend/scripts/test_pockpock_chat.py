@@ -83,5 +83,37 @@ class PrepareChatMessagesTests(unittest.TestCase):
         self.assertLess(len(messages), len(history) + 1)
 
 
+class RequestValidationTests(unittest.TestCase):
+    def test_an_empty_message_is_refused(self):
+        # Issue #55: empty, whitespace-only and missing content were answered with HTTP 200.
+        for message in ({"role": "user", "content": ""}, {"role": "user", "content": "   "}, {"role": "user"}):
+            with self.assertRaises(pockpock_server.HTTPException) as ctx:
+                pockpock_server.safe_messages([message])
+            self.assertEqual(ctx.exception.status_code, 422)
+        # Earlier history and image-only messages are still accepted.
+        kept = pockpock_server.safe_messages([
+            {"role": "user", "content": ""}, {"role": "assistant", "content": "ok"}, {"role": "user", "content": "next"},
+        ])
+        self.assertEqual(len(kept), 3)
+        self.assertEqual(len(pockpock_server.safe_messages([{"role": "user", "content": "", "images": ["aGk="]}])), 1)
+
+    def test_a_blank_plan_task_is_a_validation_error(self):
+        # Issue #73: a whitespace-only task surfaced as a 502 from the planner.
+        with self.assertRaises(ValueError):
+            pockpock_server.AgentPlanPayload(task="   ")
+        self.assertEqual(pockpock_server.AgentPlanPayload(task="Plan it").task, "Plan it")
+
+    def test_nemoclaw_refuses_a_bogus_session_before_the_stream(self):
+        # Issue #75: a malformed session id opened a stream and failed later.
+        import asyncio
+
+        from projects.nemoclaw_bridge.api import NemoClawChatPayload, create_router
+
+        route = next(r for r in create_router(None, lambda request: None).routes if r.path == "/api/nemoclaw/chat")
+        with self.assertRaises(pockpock_server.HTTPException) as ctx:
+            asyncio.run(route.endpoint(NemoClawChatPayload(session_id="bogus-123", message="hi")))
+        self.assertEqual(ctx.exception.status_code, 422)
+
+
 if __name__ == "__main__":
     unittest.main()

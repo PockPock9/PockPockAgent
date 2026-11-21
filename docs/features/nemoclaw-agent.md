@@ -78,7 +78,7 @@ Rate limit: 60 per minute. Results are cached for 20 seconds unless `refresh=1`.
 
 ### `POST /api/nemoclaw/chat`
 
-Rate limit: 8 per minute. Body: `{"session_id": "<1-80 chars [A-Za-z0-9_-]>", "message": "<1-16,000 chars>"}`. The response is `text/event-stream` using the same event shapes as `/api/chat`:
+Rate limit: 8 per minute. Body: `{"session_id": "pockpock-<1-70 chars [A-Za-z0-9_-]>", "message": "<1-16,000 chars>"}`, the same session id format as OpenClaw. A malformed session id or an empty message is refused with 422 before the stream starts. The response is `text/event-stream` using the same event shapes as `/api/chat`:
 
 | Event | Fields |
 | --- | --- |
