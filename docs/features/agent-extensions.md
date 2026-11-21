@@ -63,7 +63,13 @@ Each page covers loading (a spinner), empty (a note with what to do), error (the
 | GitHub repository whose README has an `mcpServers` JSON block | MCP server using that block's command or URL. `npx`, then `uvx`, is preferred when several are documented |
 | GitHub repository with a `package.json` that has a `bin` entry | `npx -y <package name>` (assumes the package is published to npm) |
 | GitHub repository with a `pyproject.toml` that has scripts | `uvx <project name>` (assumes the package is published to PyPI) |
-| Any other `https://` address, or `http://localhost` | Remote MCP server at that address (`…/sse` uses the older SSE transport) |
+| Any other `https://` address, or `http://localhost` | Remote MCP server at that address (`…/sse` uses the older SSE transport). A local address is named after its path or port, such as `local-weather` or `local-18799` |
+| A command that starts with an allowed launcher, such as `python3 C:\servers\weather_server.py` (MCP servers page only) | A stdio MCP server on this PC, named after its script or package. It is tested and saved the same way as a server from GitHub |
+| A repository whose root documents no server but whose sub-folders do, such as `modelcontextprotocol/servers` | The card lists those folders; choosing one previews that folder's server |
+
+A skill whose `SKILL.md` has no `name` or `description` header is still offered, with a note: OpenClaw silently skips such a skill, so PockPock adds the missing header on install (the folder name, and the first line of prose as the description). Existing header fields are kept.
+
+The filesystem server (`@modelcontextprotocol/server-filesystem`) cannot start without a folder it may use; the card says so, and a failed test that reports no allowed directories asks for a folder argument.
 
 When a repository has both skills and a README-documented MCP server, the server is shown first. A server guessed from `package.json` or `pyproject.toml` never takes priority over skills.
 
@@ -127,7 +133,7 @@ Status codes: `400` invalid link or input, `404` not found on GitHub or not inst
 
 ## Security boundaries
 
-- **Preview runs nothing.** `inspect` only downloads a zip from `codeload.github.com` (redirects outside GitHub are refused) and reads files inside it. A remote address is not contacted until you approve.
+- **Preview runs nothing.** `inspect` only downloads a zip from `codeload.github.com` (redirects outside GitHub are refused) and reads files inside it. A remote address is not contacted until you approve. A pasted command is only split into its launcher and arguments; it first runs when you press **Connect**, as the test connection. Commands are accepted only on the MCP servers page, never from a chat message.
 - **You approve exactly what is installed.** `install` takes a proposal id, not a link. Skills are extracted from the archive that was previewed, at the commit shown on the card, never from a fresh download. A proposal can be used once.
 - **Extraction is confined.** Symbolic links, absolute paths, `..`, and `.git` are refused. A skill is written to a staging folder and moved into place only when complete.
 - **Only known launchers start MCP servers:** `npx`, `uvx`, `uv`, `node`, `python`, `python3`, `py`, `docker`, `bunx`, `bun`, `deno`, `pnpm`, `pipx`. The command itself cannot be edited; arguments can. On Windows, arguments containing `& | < > ^ % " !` are refused for `.cmd` launchers such as `npx`.
@@ -140,6 +146,7 @@ Status codes: `400` invalid link or input, `404` not found on GitHub or not inst
 
 | What you see | Cause | What to do |
 |---|---|---|
+| "This repository holds N MCP servers, each in its own folder" | The root documents no server, but sub-folders do | Paste the link to one folder, or pick one from the list on the card |
 | "found no skill … and no MCP server setup" | The repository has no `SKILL.md` and no recognizable MCP setup | Link to the folder that contains the skill, or connect the server's address directly |
 | "GitHub has no public repository, branch or folder at that link" | Private repository, typo, or a branch name containing `/` | Use a public repository; link to the default branch |
 | "`uvx` is not installed on this PC" (or another launcher) | The server needs a program that is missing | Install it, then paste the link again |
@@ -149,6 +156,7 @@ Status codes: `400` invalid link or input, `404` not found on GitHub or not inst
 | "That preview has expired" | More than 15 minutes passed, or it was already used | Paste the link again |
 | "OpenClaw already has … that PockPock did not install" | Name conflict with something added outside PockPock | Remove it in OpenClaw first |
 | MCP list shows "The OpenClaw gateway is not running" | Gateway stopped | `openclaw gateway start` from PowerShell |
+| "OpenClaw keeps each skill's on/off switch, and it is not available right now" | A skill was switched while OpenClaw is not set up or not running (an unknown name answers 404 instead) | Set up or start OpenClaw, then switch it |
 | The agent does not use a new skill or tool | The thread started before it was added, or the small local model did not pick it up | Start a new chat and name the skill or tool in the request |
 
 ## Limits
