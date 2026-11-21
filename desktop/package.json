@@ -137,6 +137,9 @@
   "allowScripts": {
     "electron-winstaller": false
   },
+  "overrides": {
+    "minimatch": "11.0.9"
+  },
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
