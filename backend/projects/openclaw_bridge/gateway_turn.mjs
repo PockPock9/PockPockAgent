@@ -10,7 +10,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import readline from 'node:readline'
-import { buildSubtaskMessage, cleanToolError, DEFAULT_STALL_SECONDS, isStalled, subtaskTimeoutSeconds, validateSubtask } from './turn_helpers.mjs'
+import { buildSubtaskMessage, cleanToolError, DEFAULT_STALL_SECONDS, explainTurnError, isStalled, subtaskTimeoutSeconds, validateSubtask } from './turn_helpers.mjs'
 
 const DEBUG = process.env.POCKPOCK_OPENCLAW_DEBUG === '1'
 const STATE_DIR = process.env.OPENCLAW_STATE_DIR || path.join(os.homedir(), '.openclaw')
@@ -278,7 +278,7 @@ async function run(start) {
       } else if (payload.state === 'aborted') {
         finish({ type: 'error', code: 'aborted', message: 'The OpenClaw turn was stopped.' })
       } else {
-        fail('turn_failed', String(payload.errorMessage ?? payload.error?.message ?? 'OpenClaw could not complete this turn.').slice(0, 600))
+        fail('turn_failed', explainTurnError(String(payload.errorMessage ?? payload.error?.message ?? 'OpenClaw could not complete this turn.')).slice(0, 600))
       }
     }
   }

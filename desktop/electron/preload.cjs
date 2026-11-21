@@ -57,6 +57,8 @@ contextBridge.exposeInMainWorld('pockpock', {
   openclaw: {
     browsers: () => ipcRenderer.invoke('openclaw:browsers'),
     setBrowser: (id) => ipcRenderer.invoke('openclaw:setBrowser', id),
+    slowModels: () => ipcRenderer.invoke('openclaw:slowModels'),
+    allowSlowModels: () => ipcRenderer.invoke('openclaw:allowSlowModels'),
   },
   connectors: {
     list: () => ipcRenderer.invoke('connectors:list'),

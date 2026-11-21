@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildSubtaskMessage, cleanToolError, isStalled, subtaskTimeoutSeconds, validateSubtask, DEFAULT_STALL_SECONDS } from './turn_helpers.mjs'
+import { buildSubtaskMessage, cleanToolError, explainTurnError, isStalled, subtaskTimeoutSeconds, validateSubtask, DEFAULT_STALL_SECONDS, OLLAMA_TIMEOUT_KEY } from './turn_helpers.mjs'
 
 test('a turn is stalled only after the limit with no approval waiting', () => {
   const stallMs = DEFAULT_STALL_SECONDS * 1000
@@ -89,4 +89,14 @@ test('the subtask budget replaces the caller timeout, otherwise the fallback sta
   assert.equal(subtaskTimeoutSeconds({ id: 's1', goal: 'g', tools_allowed: ['a'] }, 1800), 1800)
   assert.equal(subtaskTimeoutSeconds(null, 1800), 1800)
   assert.equal(subtaskTimeoutSeconds(undefined, 1800), 1800)
+})
+
+test('a slow local model gets advice with the exact setting (issues #83, #84)', () => {
+  const openclaw = 'The model did not produce a response before the model idle timeout. Please try again, or increase `models.providers.<id>.timeoutSeconds` for slow local or self-hosted providers.'
+  const explained = explainTurnError(openclaw)
+  assert.match(explained, /did not start answering in time/)
+  assert.ok(explained.includes(`openclaw config set ${OLLAMA_TIMEOUT_KEY} 1800 --strict-json`))
+  assert.doesNotMatch(explained, /<id>/)
+  assert.equal(explainTurnError('Some other failure.'), 'Some other failure.')
+  assert.equal(explainTurnError(undefined), '')
 })

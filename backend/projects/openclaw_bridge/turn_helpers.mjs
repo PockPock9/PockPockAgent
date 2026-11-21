@@ -26,6 +26,25 @@ export function cleanToolError(text, limit = 400) {
   return clean.length > limit ? `${clean.slice(0, limit - 1)}…` : clean
 }
 
+/** The setting that lets OpenClaw wait longer for a slow local model. PockPock's setup sets it. */
+export const OLLAMA_TIMEOUT_KEY = 'models.providers.ollama.timeoutSeconds'
+export const OLLAMA_TIMEOUT_SECONDS = 1800
+
+/** OpenClaw's turn error, with advice that works when a local model was too slow to answer.
+ *
+ * OpenClaw waits 300 seconds for a local model's first output unless the provider's
+ * `timeoutSeconds` is set. A small model on a CPU can take longer just to read OpenClaw's long
+ * prompt (issue #83). OpenClaw's own text names the setting with a placeholder that users
+ * followed to a key OpenClaw rejects (issue #84), so the advice is replaced with the exact key. */
+export function explainTurnError(message) {
+  const text = String(message ?? '')
+  if (!/model idle timeout|did not produce a response before/i.test(text)) return text
+  return 'The local model did not start answering in time. OpenClaw waits 300 seconds for a local model unless a longer limit is set, ' +
+    'and a small model on a computer without a graphics card can need longer than that just to read OpenClaw\'s instructions. ' +
+    `Fix it in Settings with Allow slow models, or run: openclaw config set ${OLLAMA_TIMEOUT_KEY} ${OLLAMA_TIMEOUT_SECONDS} --strict-json, ` +
+    'then restart the OpenClaw gateway. A model running on a graphics card answers much sooner.'
+}
+
 // --- Plan-and-Sequence subtask mode (P4) -------------------------------------
 //
 // The sequenced runner hands OpenClaw ONE subtask at a time. The bridge builds a
