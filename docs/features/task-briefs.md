@@ -14,7 +14,9 @@ Planner responses use top-level `contract_version: 1` and a validated `task_brie
 
 The planner model cannot elevate permissions. The gateway validates the brief contract version and schema before returning it to the browser. A planner service that does not return version 1 receives a clear unavailable/unsupported-contract error; older browser consumers can ignore the additive `task_brief` response field while continuing to use the existing `plan` and `execution_prompt` fields.
 
-When a model omits optional structured details, the planner supplies bounded compatibility defaults from the validated plan, while preserving the original request. Invalid capability names, milestone shapes, oversized lists, unsupported versions, or inconsistent clarification fields fail validation.
+When a model omits optional structured details, the planner supplies bounded compatibility defaults from the validated plan, while preserving the original request. Deterministic guards also correct the capability list: web capabilities are removed when the request never mentions the web, build requests get workspace read/write/validation, and a request to save a file or document (a report, memo, spreadsheet, or a named `.md`, `.docx`, `.html` … file) gets `artifact_creation` unless it already has workspace write or public research.
+
+The executor adds a final backstop. Tools are filtered by capability, so a task that needs a tool but was planned with no capability would reach the model with no tools. In that case the executor adds `artifact_creation`, and `attachment_read` when files are attached. These two only create files in the run's own task folder or read the user's attachments; workspace edits, web access and browser actions are never added outside the approved plan. Invalid capability names, milestone shapes, oversized lists, unsupported versions, or inconsistent clarification fields fail validation.
 
 ## Routing examples
 
@@ -33,7 +35,13 @@ During execution, the gateway records successful tool steps and tool failures. A
 
 The gateway stops after two identical tool failures or five failure-triggered revisions. It hashes tool arguments in memory to detect repeats and does not include arguments in the revision event. Existing per-tool timeouts, the 15-minute run deadline, the 20-model-call ceiling, and payload-bound approvals continue to apply. A stop is reported as a partial failure; a changed action may proceed only through the same tool permission and approval checks as before.
 
-The revision event is replayed from durable run history and shown in the chat timeline. This is bounded adaptation, not autonomous permission or scope expansion. The gateway enforces presence and status of each check report; evidence quality is assessed by the model, while workspace validation and required artifact checks are enforced directly by the gateway.
+The revision event is replayed from durable run history and shown in the chat timeline. This is bounded adaptation, not autonomous permission or scope expansion. The gateway enforces presence and status of each check report; evidence quality is assessed by the model, while workspace validation and required artifact checks are enforced directly by the gateway. A `PASS` is also refused when its check or evidence names browser evidence (page, screenshot, visible text) or research evidence (search results, sources, citations), a tool of that kind failed in the run, and no tool of that kind succeeded; that check counts as incomplete.
+
+Other completion rules:
+
+- A request that names a file to save (for example "save it as summary.html") is complete once that file is saved, even if the wording also reads like a workspace edit.
+- An image request is never a success without an image; the error names the local image engines PockPock supports (ComfyUI on port 8188, Stable Diffusion WebUI on port 7860).
+- Research runs whose search or page fetch retrieved no source end at once with "no source retrieved" instead of retrying the citation validation, which cannot pass without sources. The research answer format is given to the model whenever `public_research` is planned.
 
 ## Model routing
 

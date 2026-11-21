@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import anyio
 import hashlib
 import json
 import logging
@@ -44,7 +45,7 @@ from projects.model_router import (
     resolve_think,
 )
 from projects.model_router.cloud import is_cloud_model
-from projects.planner.replanning import ReplanningBudget, incomplete_success_checks
+from projects.planner.replanning import ReplanningBudget, incomplete_success_checks, unsupported_pass_checks
 from projects.run_store.contracts import (
     DelegationContract, DelegationResult, bounded_dependency_results, build_delegate_context,
     restrict_delegate_tools,
@@ -104,6 +105,30 @@ class AgentCoreServices:
         if missing:
             raise RuntimeError("Agent core dependencies are missing: " + ", ".join(missing))
         return cls(**{name: values[name] for name in names})
+
+
+# Capabilities that only create new things in the run's own task folder or read what the user
+# attached, so the executor may add them when the approved plan forgot them.
+_BACKSTOP_CAPABILITIES = ("artifact_creation", "attachment_read")
+
+
+def effective_task_capabilities(
+    planned: list[str], *, requires_tool: bool, has_files: bool
+) -> list[str]:
+    """The planned capabilities, plus low-risk ones a tool-requiring task cannot run without.
+
+    The planner sometimes returns no capabilities for a task that must save a file (issue #92). Tools
+    are filtered by capability, so the model was then called with no tools and failed for not calling
+    one. Only capabilities in _BACKSTOP_CAPABILITIES are ever added; workspace edits, web access and
+    browser actions still need the approved plan.
+    """
+    capabilities = list(planned)
+    if has_files and "attachment_read" not in capabilities:
+        capabilities.append("attachment_read")
+    if requires_tool and not any(item not in _BACKSTOP_CAPABILITIES for item in capabilities):
+        if "artifact_creation" not in capabilities:
+            capabilities.append("artifact_creation")
+    return capabilities
 
 
 def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any]:
@@ -288,6 +313,8 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
             get_cancel_reason = lambda: AGENT_RUN_CANCEL_REASONS.get(task_id, "user")
             call_count = 0
             tool_errors = 0
+            succeeded_tools: set[str] = set()
+            failed_tools: set[str] = set()
             delegate_results: dict[str, dict[str, Any]] = {}
             delegate_patch_proposals: list[dict[str, Any]] = []
             delegate_patch_outcomes: dict[str, list[dict[str, str]]] = {}
@@ -1147,7 +1174,12 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                     )
                 # Greetings and plain questions plan no capabilities; they should read like a normal reply,
                 # not a checklist (local models otherwise squeeze the whole answer into a CHECK line).
-                needs_no_tools = not payload.task_brief.required_capabilities and not payload.files
+                task_capabilities = effective_task_capabilities(
+                    payload.task_brief.required_capabilities,
+                    requires_tool=requires_tool,
+                    has_files=bool(payload.files),
+                )
+                needs_no_tools = not task_capabilities and not payload.files
                 if needs_no_tools:
                     system_prompt += (
                         " This request needs no tools. Reply to the user directly and naturally, as in a normal conversation. "
@@ -1158,10 +1190,9 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                         " If you use search_public_site for this task, do not create a duplicate report with artifact tools; "
                         "the gateway creates the requested cited report from the validated research records."
                     )
-                if (
-                    "public_research" in payload.task_brief.required_capabilities
-                    and "search_public_site" in payload.task
-                ):
+                # The answer format is required whenever research is planned, not only when the task
+                # happens to name the tool (issue #48).
+                if "public_research" in task_capabilities:
                     system_prompt += (
                         " After any search_public_site call, the final response must be one bare JSON object without Markdown fences, matching this schema: "
                         + json.dumps(research_answer_json_schema(), ensure_ascii=False, separators=(",", ":"))
@@ -1242,7 +1273,7 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                 else:
                     permitted_tool_names = tool_names_for_task_capabilities(
                         tool_contracts,
-                        payload.task_brief.required_capabilities,
+                        task_capabilities,
                     )
                     tool_contracts = {
                         name: contract for name, contract in tool_contracts.items()
@@ -1462,7 +1493,9 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                                 answer = render_research_answer(research_answer, list(research_sources.values()))
                             except ResearchAnswerValidationError as err:
                                 validation_error = err.category
-                                if research_answer_retry_count < 2:
+                                # With no retrieved source no answer can ever validate, so retrying only
+                                # burns time; report the missing sources instead (issue #47).
+                                if research_answer_retry_count < 2 and research_sources:
                                     retry_sources = []
                                     retry_evidence = []
                                     for source in research_sources.values():
@@ -1514,8 +1547,12 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                                         "rationale": "The generated research answer did not meet the evidence citation contract.",
                                     })
                                     continue
-                                message = "The research answer could not be validated against retrieved source excerpts. The run is incomplete; no unsupported citation was presented as verified."
-                                safe_answer = "## Research answer not validated\n\nNo findings are presented because the generated claims could not be verified against retrieved excerpts."
+                                if research_sources:
+                                    message = "The research answer could not be validated against retrieved source excerpts. The run is incomplete; no unsupported citation was presented as verified."
+                                    safe_answer = "## Research answer not validated\n\nNo findings are presented because the generated claims could not be verified against retrieved excerpts."
+                                else:
+                                    message = "No public source could be retrieved (the search or page fetch failed or found nothing), so no research answer can be verified. The run is incomplete."
+                                    safe_answer = "## No sources retrieved\n\nNo findings are presented because no public source could be retrieved for this task."
                                 yield sse({"type": "token", "content": safe_answer})
                                 record({
                                     "event": "agent_task_completed",
@@ -1578,6 +1615,13 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                             build_review_passed = missing_features == []
                             build_review_rounds = 3  # reviewed and complete (or the review was unavailable); do not review again
                         incomplete_checks = [] if needs_no_tools or build_review_passed else incomplete_success_checks(answer, payload.success_checks)
+                        if not needs_no_tools:
+                            incomplete_checks += [
+                                check for check in unsupported_pass_checks(
+                                    answer, payload.success_checks, succeeded_tools, failed_tools,
+                                )
+                                if check not in incomplete_checks
+                            ]
                         if incomplete_checks:
                             builds_files = "workspace_write" in payload.task_brief.required_capabilities
                             if validation_retry_count < (3 if builds_files else 2):
@@ -1670,7 +1714,16 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                             answer,
                             re.IGNORECASE,
                         ))
-                        if workspace_edit_requested and (workspace_edits_applied == 0 or incomplete_workspace_report):
+                        # A request such as "write a meeting summary page and save it as summary.html" reads
+                        # like a workspace edit, but saving the named file is the deliverable (issue #57).
+                        named_extension = requested_artifact_extension(source_task)
+                        saved_named_artifact = (
+                            workspace_edits_applied == 0
+                            and named_extension is not None
+                            and bool(context.artifacts)
+                            and requested_artifact_exists(context.artifacts, named_extension)
+                        )
+                        if workspace_edit_requested and not saved_named_artifact and (workspace_edits_applied == 0 or incomplete_workspace_report):
                             if workspace_retry_count < 4:
                                 messages.append({"role": "assistant", "content": raw_answer if research_requested else (answer if isinstance(answer, str) else "")})
                                 messages.append({
@@ -1766,6 +1819,26 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                                 "category": "agentic",
                                 "status": "error",
                                 "error": message,
+                                "duration_ms": round((time.monotonic() - started) * 1000),
+                            })
+                            yield sse({"type": "error", "message": message})
+                            return
+                        # An image task is never a success without an image (issue #59).
+                        image_requested = "local_image_generation" in task_capabilities or bool(re.search(
+                            r"\b(?:generate|create|make|draw|paint|render)\b.{0,60}\b(?:image|picture|illustration|drawing|png)\b",
+                            source_task, flags=re.IGNORECASE | re.DOTALL,
+                        ))
+                        if image_requested and not any(item.get("kind") == "image" for item in context.artifacts):
+                            message = (
+                                "No image was produced, so this task is incomplete. PockPock makes images only with a local "
+                                "engine: start ComfyUI (port 8188) or Stable Diffusion WebUI with its API (port 7860), then run the task again."
+                            )
+                            record({
+                                "event": "agent_task_completed",
+                                "request_id": request_id,
+                                "category": "agentic",
+                                "status": "error",
+                                "error": message[:240],
                                 "duration_ms": round((time.monotonic() - started) * 1000),
                             })
                             yield sse({"type": "error", "message": message})
@@ -2221,6 +2294,7 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                             "tool_call_id": call_id,
                             "content": result_text,
                         })
+                        (succeeded_tools if tool_status == "success" else failed_tools).add(name)
                         record({
                             "event": "agent_tool_completed",
                             "request_id": request_id,
@@ -2343,40 +2417,44 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                 })
                 yield sse({"type": "error", "message": "The local agent task failed. Check the PockPock AI server logs."})
             finally:
-                timeout_handle.cancel()
-                if acquired:
-                    AGENT_TASK_SEMAPHORE.release()
-                browser_url = os.environ.get("POCKPOCK_BROWSER_AUTOMATION_URL", "").rstrip("/")
-                if browser_url and not (
-                    context and context.visible_browser and not cancel_event.is_set()
-                ):
+                # When the client disconnects, Starlette cancels this task's scope and every later await
+                # in this block would be cancelled too, so the run was never marked finished and stayed
+                # "running" (issue #41). The cleanup is short and bounded, so shield it.
+                with anyio.CancelScope(shield=True):
+                    timeout_handle.cancel()
+                    if acquired:
+                        AGENT_TASK_SEMAPHORE.release()
+                    browser_url = os.environ.get("POCKPOCK_BROWSER_AUTOMATION_URL", "").rstrip("/")
+                    if browser_url and not (
+                        context and context.visible_browser and not cancel_event.is_set()
+                    ):
+                        try:
+                            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=3)) as session:
+                                await session.delete(
+                                    f"{browser_url}/runs/{task_id}",
+                                    headers={"X-PockPock-Internal-Token": os.environ.get("POCKPOCK_INTERNAL_TOKEN", "")},
+                                )
+                        except (aiohttp.ClientError, asyncio.TimeoutError):
+                            logger.warning("Could not close browser context for completed run %s", task_id)
                     try:
-                        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=3)) as session:
-                            await session.delete(
-                                f"{browser_url}/runs/{task_id}",
-                                headers={"X-PockPock-Internal-Token": os.environ.get("POCKPOCK_INTERNAL_TOKEN", "")},
-                            )
-                    except (aiohttp.ClientError, asyncio.TimeoutError):
-                        logger.warning("Could not close browser context for completed run %s", task_id)
-                try:
-                    await asyncio.to_thread(finish_incomplete_agent_run, task_id)
-                except Exception:
-                    logger.exception("Could not finalize agent run %s", task_id)
-                if output_dir is not None:
-                    try:
-                        memory_path = output_dir / "task-memory.md"
-                        if not memory_path.exists():
-                            write_agent_task_memory(
-                                task_id,
-                                source_task,
-                                task_workspace_root or output_dir,
-                                output_dir,
-                                payload.plan,
-                            )
-                    except OSError:
-                        logger.exception("Could not save task memory for agent run %s", task_id)
-                AGENT_RUN_CANCEL_EVENTS.pop(task_id, None)
-                AGENT_RUN_CANCEL_REASONS.pop(task_id, None)
+                        await asyncio.to_thread(finish_incomplete_agent_run, task_id)
+                    except Exception:
+                        logger.exception("Could not finalize agent run %s", task_id)
+                    if output_dir is not None:
+                        try:
+                            memory_path = output_dir / "task-memory.md"
+                            if not memory_path.exists():
+                                write_agent_task_memory(
+                                    task_id,
+                                    source_task,
+                                    task_workspace_root or output_dir,
+                                    output_dir,
+                                    payload.plan,
+                                )
+                        except OSError:
+                            logger.exception("Could not save task memory for agent run %s", task_id)
+                    AGENT_RUN_CANCEL_EVENTS.pop(task_id, None)
+                    AGENT_RUN_CANCEL_REASONS.pop(task_id, None)
 
         return StreamingResponse(track_agent_stream(task_id, stream(), sse), media_type="text/event-stream", headers={
             "Cache-Control": "no-cache",
