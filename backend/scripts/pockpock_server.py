@@ -173,7 +173,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-api = FastAPI(title="PockPock AI Local API", docs_url=None, redoc_url=None, lifespan=lifespan)
+api = FastAPI(title="PockPock AI Local API", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 
 
 @api.middleware("http")

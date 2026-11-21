@@ -14,7 +14,7 @@ sys.path.insert(0, str(ROOT))
 from projects.internal_auth import require_internal_token
 from projects.agent_tools import ProjectAgentContext, validate_project
 
-app = FastAPI(title="PockPock Validator", docs_url=None, redoc_url=None)
+app = FastAPI(title="PockPock Validator", docs_url=None, redoc_url=None, openapi_url=None)
 
 
 class ValidationRequest(BaseModel):
