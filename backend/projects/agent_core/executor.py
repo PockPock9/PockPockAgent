@@ -1295,6 +1295,30 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                                 })
                         except Exception:
                             logger.exception("Tool retrieval failed; using the full tool list")
+                    # Skill/memory retrieval (agentic Phase 1): promoted
+                    # skills + active reasoning tips from past runs, behind
+                    # POCKPOCK_SKILLS_ENABLED (default off). Unverified
+                    # candidates are never returned by the service, so a
+                    # retrieval miss here costs context, never correctness.
+                    # A failure falls back to no skill context, never a
+                    # failed task.
+                    try:
+                        from projects.agent_skills.service import AgentSkillsService
+                        from projects.agent_skills.skills import skills_enabled
+
+                        if skills_enabled():
+                            skill_block = AgentSkillsService().context_block_for_task(
+                                payload.task.strip()
+                            )
+                            if skill_block:
+                                messages[0]["content"] += "\n" + skill_block
+                                record({
+                                    "event": "skill_retrieval",
+                                    "task_id": task_id,
+                                    "skill_context_chars": len(skill_block),
+                                })
+                    except Exception:
+                        logger.exception("Skill retrieval failed; continuing without skill context")
                 profile = router._tune_execution_parameters("agentic", decision.get("complexity", 5))
 
                 tool_call_limit = payload.delegation_contract.max_tool_calls if payload.delegation_contract else 20

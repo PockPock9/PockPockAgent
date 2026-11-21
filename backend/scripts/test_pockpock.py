@@ -28,7 +28,7 @@ class LauncherTests(unittest.TestCase):
         )
         self.assertEqual(
             {path.parent.name for path in files[1:]},
-            {"agent_tools", "browser_automation", "planner", "run_store", "validator"},
+            {"agent_tools", "agent_verifier", "browser_automation", "planner", "run_store", "validator"},
         )
 
     def test_internal_token_is_persistent_and_private(self):
