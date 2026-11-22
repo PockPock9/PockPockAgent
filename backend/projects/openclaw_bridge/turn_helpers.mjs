@@ -139,3 +139,8 @@ export function subtaskTimeoutSeconds(subtask, fallbackSeconds) {
   }
   return fallbackSeconds
 }
+
+/** What an "Allow for this task" grant covers: the exact command for exec, the tool for plugin approvals. */
+export function grantKey(approval) {
+  return approval.kind === 'exec' ? `exec:${approval.description}` : `plugin:${approval.toolName || approval.title}`
+}

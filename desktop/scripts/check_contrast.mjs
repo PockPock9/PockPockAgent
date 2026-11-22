@@ -102,6 +102,18 @@ export const PAIRS = [
   ['accent-strong', 'border@bg-panel', UI, 'run bar: working track on its rail'],
   ['text', 'accent-bg@bg-popover', TEXT, 'palette: selected result'],
   ['accent-strong', 'bg-active', TEXT, 'Workshop: active page icon and inspector meter'],
+  // Agent Studio thread: plan card, approvals, failed card, menus.
+  ['accent-strong', 'accent-bg@bg-panel', TEXT, 'badge: waiting for you'],
+  ['ok-text', 'ok-bg@bg-panel', TEXT, 'badge: pre-check passed'],
+  ['warn-text', 'warn-bg-strong@bg-panel', TEXT, 'badge: pre-check warning'],
+  ['text', 'warn-bg@bg-panel', TEXT, 'plan: question text'],
+  ['warn-text', 'warn-bg@bg-panel', TEXT, 'plan: question heading and warnings'],
+  ['text-2', 'warn-bg@bg-panel', TEXT, 'plan: question hint'],
+  ['err-text', 'err-bg@bg-panel', TEXT, 'failed card heading'],
+  ['text-2', 'err-bg@bg-panel', TEXT, 'failed card hint'],
+  ['text-2', 'off-bg@bg-popover', TEXT, 'menu: status badge'],
+  ['warn-text', 'warn-bg-strong@bg-popover', TEXT, 'menu: risky badge'],
+  ['err', 'err-bg@bg-panel', UI, 'failed card icon'],
 ]
 
 const all = themes()

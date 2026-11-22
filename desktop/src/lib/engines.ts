@@ -4,7 +4,7 @@
 import { sendJson, stream, text, uid } from './api'
 import type { StreamEvent } from './api'
 import { stampTiming } from './timing'
-import type { AgentPermission, Approval, Artifact, Attachment, ClawPermission, Engine, Message, PlanCard, Step, TouchedFile } from './types'
+import type { AgentPermission, Approval, Artifact, Attachment, ClawPermission, Engine, Message, PlanCard, PlanCheck, Step, TouchedFile } from './types'
 
 export type TurnOptions = {
   engine: Engine
@@ -20,9 +20,11 @@ export type TurnOptions = {
   agentPermission: AgentPermission
   clawPermission: ClawPermission
   workspacePath?: string
+  /** Where agent runs save files (/api/state output_directory), for the plan card's task folder. */
+  outputDirectory?: string
 }
 
-type PlanDecision = { approved: boolean; plan: string[]; checks: string[]; planHash?: string; versionHash?: string }
+type PlanDecision = { approved: boolean; plan: string[]; checks: string[]; planHash?: string; versionHash?: string; answer?: { question: string; answer: string } }
 
 /** Plan cards resolve the waiting agent turn through this registry, keyed by message id. */
 const planWaiters = new Map<string, (decision: PlanDecision) => void>()
@@ -186,8 +188,11 @@ async function runOpenClaw({ sessionId, prompt, attachments, signal, patch, claw
           break
         case 'approval':
           patch((message) => upsertApproval(message, {
-            id: text(event.id), source: 'openclaw', title: text(event.title) || 'Approval required', description: text(event.description), status: 'pending',
+            id: text(event.id), source: 'openclaw', title: text(event.title) || 'Approval required', description: text(event.description), status: 'pending', grantable: true,
           }))
+          break
+        case 'approval_auto':
+          patch((message) => addStep(message, { label: `Allowed for this task: ${text(event.title)} ${text(event.description)}`.trim().slice(0, 160), status: 'done' }, false))
           break
         case 'approval_resolved':
           patch((message) => setApprovalStatus(message, text(event.id), event.decision === 'deny' ? 'rejected' : 'approved'))
@@ -229,6 +234,7 @@ type Prepared = {
   selected_model: string
   task_brief: Record<string, unknown>
   critic_review?: { summary?: string; findings?: string[] }
+  precheck?: PlanCheck[]
   delegation_plan: unknown
   plan_id: string
   plan_hash: string
@@ -246,37 +252,56 @@ async function runAgent(options: TurnOptions) {
   const files = attachments.filter((file) => file.kind === 'document').map((file) => ({ name: file.name, text: file.text ?? '', size: file.size }))
   patch((message) => addStep({ ...message, runId }, { label: 'Planning and reviewing the task', status: 'running' }))
 
-  const prepared = await sendJson<Prepared>('/api/agents/plan', {
-    task: [prompt, files.length ? `Attached files: ${files.map((file) => file.name).join(', ')}` : ''].filter(Boolean).join('\n\n'),
-    source_task: prompt,
-    permission_mode: agentPermission,
-    preferred_model: chatModel && chatModel !== 'auto' ? chatModel : undefined,
-    workspace_path: workspacePath || undefined,
-  }, 'POST', signal)
+  // Answering one of the planner's questions plans the task again with the answer; each new plan
+  // is reviewed like the first. The request the run is approved for includes the answers.
+  const answers: Array<{ question: string; answer: string }> = []
+  let request = prompt
+  let prepared: Prepared
+  let card: PlanCard
+  let decision: PlanDecision
+  for (;;) {
+    request = answers.length ? `${prompt}\n\nAnswers to the planner's questions:\n${answers.map((item) => `- ${item.question} ${item.answer}`).join('\n')}` : prompt
+    prepared = await sendJson<Prepared>('/api/agents/plan', {
+      task: [request, files.length ? `Attached files: ${files.map((file) => file.name).join(', ')}` : ''].filter(Boolean).join('\n\n'),
+      source_task: request,
+      permission_mode: agentPermission,
+      preferred_model: chatModel && chatModel !== 'auto' ? chatModel : undefined,
+      workspace_path: workspacePath || undefined,
+    }, 'POST', signal)
 
-  const brief = prepared.task_brief ?? {}
-  const card: PlanCard = {
-    planId: prepared.plan_id,
-    planHash: prepared.plan_hash,
-    goal: text(brief.desired_outcome),
-    steps: prepared.plan,
-    checks: list(brief.success_checks),
-    deliverables: list(brief.deliverables),
-    questions: brief.requires_clarification === true ? list(brief.clarifying_questions) : [],
-    critic: text(prepared.critic_review?.summary),
-    criticFindings: list(prepared.critic_review?.findings),
-    model: prepared.selected_model,
-    workspace: workspacePath || 'A new temporary folder for this task',
-    status: 'pending',
+    const brief = prepared.task_brief ?? {}
+    const questions = brief.requires_clarification === true ? list(brief.clarifying_questions) : []
+    card = {
+      planId: prepared.plan_id,
+      planHash: prepared.plan_hash,
+      goal: text(brief.desired_outcome),
+      steps: prepared.plan,
+      checks: list(brief.success_checks),
+      deliverables: list(brief.deliverables),
+      questions,
+      questionOptions: Array.isArray(brief.question_options) ? (brief.question_options as unknown[]).map((options) => list(options)) : [],
+      critic: text(prepared.critic_review?.summary),
+      criticFindings: list(prepared.critic_review?.findings),
+      model: prepared.selected_model,
+      workspace: workspacePath || 'A new temporary folder for this task',
+      taskFolder: options.outputDirectory ? `${options.outputDirectory}${options.outputDirectory.includes('\\') ? '\\' : '/'}${runId}` : undefined,
+      precheck: Array.isArray(prepared.precheck) ? prepared.precheck : [],
+      status: 'pending',
+    }
+    const planReadyAt = Date.now()
+    const shown = card
+    patch((message) => addStep({ ...message, plan: shown, model: prepared.selected_model, timing: message.timing && { ...message.timing, planReadyAt: message.timing.planReadyAt ?? planReadyAt } }, { label: `Planned ${shown.steps.length} steps with ${prepared.selected_model}`, status: 'done' }))
+
+    decision = await new Promise<PlanDecision>((resolve) => {
+      const onAbort = () => resolve({ approved: false, plan: shown.steps, checks: shown.checks })
+      signal.addEventListener('abort', onAbort, { once: true })
+      planWaiters.set(messageId, (result) => { signal.removeEventListener('abort', onAbort); resolve(result) })
+    })
+    if (!decision.answer || signal.aborted) break
+    answers.push(decision.answer)
+    const answered = decision.answer
+    patch((message) => addStep({ ...message, plan: undefined, earlierPlans: [...(message.earlierPlans ?? []), { ...shown, status: 'replaced' }] }, { label: `Planning again with your answer: ${answered.answer}`.slice(0, 160), status: 'running' }))
   }
-  const planReadyAt = Date.now()
-  patch((message) => addStep({ ...message, plan: card, model: prepared.selected_model, timing: message.timing && { ...message.timing, planReadyAt } }, { label: `Planned ${card.steps.length} steps with ${prepared.selected_model}`, status: 'done' }))
-
-  const decision = await new Promise<PlanDecision>((resolve) => {
-    const onAbort = () => resolve({ approved: false, plan: card.steps, checks: card.checks })
-    signal.addEventListener('abort', onAbort, { once: true })
-    planWaiters.set(messageId, (result) => { signal.removeEventListener('abort', onAbort); resolve(result) })
-  })
   const planDecidedAt = Date.now()
   patch((message) => ({ ...message, timing: message.timing && { ...message.timing, planDecidedAt } }))
   if (signal.aborted) throw new DOMException('Stopped', 'AbortError')
@@ -286,7 +311,7 @@ async function runAgent(options: TurnOptions) {
   }
 
   const planHistory = [
-    { version: 1, status: 'proposed', plan: prepared.plan, success_checks: card.checks, rationale: card.critic.slice(0, 240), plan_hash: prepared.plan_version_hash },
+    { version: 1, status: 'proposed', plan: prepared.plan, success_checks: list(prepared.task_brief?.success_checks), rationale: card.critic.slice(0, 240), plan_hash: prepared.plan_version_hash },
     { version: 2, status: 'approved', plan: decision.plan, success_checks: decision.checks, rationale: 'User approved the plan in PockPock Agent.', plan_hash: decision.versionHash },
   ]
   const executionPrompt = `${prepared.execution_prompt}\n\nApproved plan:\n${decision.plan.map((step, index) => `${index + 1}. ${step}`).join('\n')}\n\nApproved success checks:\n${decision.checks.map((check) => `- ${check}`).join('\n')}`
@@ -296,7 +321,7 @@ async function runAgent(options: TurnOptions) {
   try {
     await stream('/api/agents/run', {
       task: executionPrompt,
-      source_task: prompt,
+      source_task: request,
       preferred_model: prepared.selected_model,
       files,
       conversation_id: sessionId,
@@ -338,6 +363,13 @@ function handleAgentEvent(event: StreamEvent, patch: TurnOptions['patch'], pushT
       patch((message) => ({ ...message, usage: { promptTokens, completionTokens: Number.isFinite(completion) ? completion : undefined, contextWindow: Number.isFinite(window) && window > 0 ? window : message.usage?.contextWindow } }))
       break
     }
+    case 'note': patch((message) => {
+      const notes = [...(message.notes ?? [])]
+      const index = notes.findIndex((note) => note.status === 'queued' && note.text === text(event.text))
+      if (index >= 0) notes[index] = { ...notes[index], status: 'given' }
+      return addStep({ ...message, notes }, { label: `Your note was given to the agent: ${text(event.text)}`.slice(0, 160), status: 'done' }, false)
+    }); break
+    case 'approval_auto': patch((message) => addStep(message, { label: text(event.message) || 'Allowed for this task', status: 'done' }, false)); break
     case 'verifying': patch((message) => ({ ...addStep(message, { label: text(event.message) || 'Checking the success checks', status: 'running' }), verifying: true })); break
     case 'status': patch((message) => addStep(message, { label: text(event.message) || 'Working', status: 'running' })); break
     case 'decision': patch((message) => ({ ...addStep(message, { label: `Using ${text(event.model) || 'a local model'}`, status: 'done' }), model: text(event.model) || message.model })); break
@@ -378,6 +410,7 @@ function handleAgentEvent(event: StreamEvent, patch: TurnOptions['patch'], pushT
           ? `${text(action.action) || 'action'} → ${text(action.target) || 'current page'}${text(action.summary) ? ` · ${text(action.summary)}` : ''}`
           : `${text(action.path) || 'Workspace change'}${text(action.summary) ? ` · ${text(action.summary)}` : ''}`,
         diff: text(action.diff) || undefined,
+        grantable: event.grantable === true,
         status: 'pending',
       }))
       break
@@ -425,16 +458,30 @@ function handleAgentEvent(event: StreamEvent, patch: TurnOptions['patch'], pushT
 }
 
 /** Sends an approval decision for an OpenClaw tool call or a PockPock agent action. */
-export async function decideApproval(approval: Approval, allow: boolean) {
+export async function decideApproval(approval: Approval, allow: boolean, scope: 'once' | 'task' = 'once') {
   if (approval.source === 'openclaw') {
-    await sendJson('/api/openclaw/approvals', { approval_id: approval.id, decision: allow ? 'allow-once' : 'deny' })
+    await sendJson('/api/openclaw/approvals', { approval_id: approval.id, decision: !allow ? 'deny' : scope === 'task' ? 'allow-task' : 'allow-once' })
     return
   }
   const result = await sendJson<{ accepted?: boolean; detail?: string }>(
     `/api/runs/${encodeURIComponent(approval.runId ?? '')}/approvals/${encodeURIComponent(approval.id)}`,
-    { action_hash: approval.actionHash, decision: allow ? 'approved' : 'rejected' },
+    { action_hash: approval.actionHash, decision: allow ? 'approved' : 'rejected', scope },
   )
   if (!result.accepted) throw new Error(result.detail || 'This approval is no longer available.')
+}
+
+/** Answers one of the planner's questions: declines this plan in the backend, then the turn plans again with the answer. */
+export async function answerPlan(messageId: string, plan: PlanCard, question: string, answer: string) {
+  try {
+    await sendJson(`/api/agents/plans/${encodeURIComponent(plan.planId)}/decision`, { action_hash: plan.planHash, decision: 'rejected', plan: plan.steps, success_checks: plan.checks })
+  } catch { /* An expired plan needs no decline; the new plan replaces it either way. */ }
+  resolvePlan(messageId, { approved: false, plan: plan.steps, checks: plan.checks, answer: { question, answer } })
+}
+
+/** Sends a note to the running PockPock Agent task; it reaches the model before its next step. */
+export async function sendRunNote(text: string) {
+  if (!activeRunId) throw new Error('The task is not running any more. Send it as a new message.')
+  await sendJson(`/api/runs/${encodeURIComponent(activeRunId)}/notes`, { text })
 }
 
 /** Approves or declines a PockPock plan in the backend, then releases the waiting turn. */

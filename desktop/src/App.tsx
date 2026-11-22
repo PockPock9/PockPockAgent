@@ -164,6 +164,7 @@ export default function App() {
         agentPermission: settings.agentPermission ?? 'auto-review',
         clawPermission: settings.clawPermission ?? 'ask',
         workspacePath: settings.workspace && settings.useWorkspaceForAgent !== false ? settings.workspace : undefined,
+        outputDirectory: status.state?.output_directory,
       })
       patchReply((message) => ({ ...message, status: message.status === 'streaming' ? 'done' : message.status }))
     } catch (error) {
@@ -202,6 +203,21 @@ export default function App() {
     const next = { request: { prompt: request.content, attachments: request.attachments ?? [] }, overrides: { engine: message.engine, model } }
     if (runningRef.current) { retryRef.current = next; stop(); return }
     void send(next.request, next.overrides)
+  }
+
+  /** A failed agent run: a new PockPock Agent task for the remaining steps, from step `step` of its
+   * approved plan. It is planned and approved like any task; the earlier steps are named as done. */
+  const retryFrom = (message: Message, step: number) => {
+    if (!active || runningRef.current) return
+    const index = active.messages.findIndex((item) => item.id === message.id)
+    const request = [...active.messages.slice(0, index)].reverse().find((item) => item.role === 'user')
+    const steps = message.plan?.steps ?? []
+    if (!request) return
+    if (step <= 1 || !steps.length) { retry(message); return }
+    const done = steps.slice(0, step - 1).map((item, position) => `${position + 1}. ${item}`).join('\n')
+    const rest = steps.slice(step - 1).map((item, position) => `${step + position}. ${item}`).join('\n')
+    const prompt = `${request.content}\n\nThis continues an earlier attempt that stopped with an error. These steps were already done; do not repeat them:\n${done}\n\nDo the remaining steps:\n${rest}`
+    void send({ prompt, attachments: request.attachments ?? [] }, { engine: 'agent' })
   }
 
   /** The smallest enabled chat model smaller than the one `message` used; a loaded one first. */
@@ -280,7 +296,8 @@ export default function App() {
           <ChatPane session={active} running={running} status={status} settings={settings} patchSettings={patch} onSend={(request) => send(request)} onStop={stop}
             onChangeMessage={changeMessage} onChooseFolder={() => void chooseFolder()} onOpenPage={openPage}
             pendingAttachments={attachments} setPendingAttachments={setAttachments} focusSignal={focusSignal}
-            onRetry={retry} smallerModel={smallerModel} onOpenServices={() => openPage('services')}
+            onRetry={retry} onRetryFrom={retryFrom} smallerModel={smallerModel}
+            onPatchMessage={(messageId, change) => { if (active) sessions.updateMessage(active.id, messageId, change) }} onOpenServices={() => openPage('services')}
             inspectorOpen={showInspector} onToggleInspector={() => toggle('inspector')} />
         )}
         {page === 'skills' && <SkillsPage status={status} />}

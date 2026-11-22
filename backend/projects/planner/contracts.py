@@ -90,7 +90,7 @@ def _as_list(value: object) -> object:
 def _normalized_text_items(value: object) -> object:
     if not isinstance(value, list):
         return value
-    fields = ("check", "criterion", "description", "title", "text", "completion_check", "expected_result")
+    fields = ("check", "criterion", "question", "description", "title", "text", "completion_check", "expected_result")
     normalized = []
     for item in value:
         if isinstance(item, dict):
@@ -235,11 +235,14 @@ class TaskBrief(BaseModel):
     success_checks: list[str] = Field(min_length=1, max_length=12)
     requires_clarification: bool = False
     clarifying_questions: list[str] = Field(default_factory=list, max_length=5)
+    question_options: list[list[str]] = Field(default_factory=list, max_length=5)
 
     @model_validator(mode="after")
     def clarification_has_questions(self):
         if self.requires_clarification and not self.clarifying_questions:
             raise ValueError("A task marked for clarification must include at least one question")
+        if len(self.question_options) > len(self.clarifying_questions) or any(len(options) > 3 or any(not option or len(option) > 80 for option in options) for options in self.question_options):
+            raise ValueError("Each clarifying question has at most 3 answer choices of up to 80 characters")
         if not self.requires_clarification and self.clarifying_questions:
             raise ValueError("Clarifying questions require requires_clarification=true")
         return self
@@ -340,5 +343,26 @@ def normalized_task_brief(
         "success_checks": checks,
         "requires_clarification": source.get("requires_clarification", False),
         "clarifying_questions": _normalized_text_items(_as_list(source.get("clarifying_questions", []))),
+        "question_options": _question_options(_as_list(source.get("clarifying_questions", []))),
     }
     return TaskBrief.model_validate(brief).model_dump(mode="json")
+
+
+def _question_options(value: object) -> list[list[str]]:
+    """Answer choices per clarifying question, in the same order; [] for a question without any.
+
+    The planner may give a question as {"question": ..., "options": [...]}. Choices become buttons on
+    the plan card; picking one plans the task again with that answer.
+    """
+    if not isinstance(value, list):
+        return []
+    result: list[list[str]] = []
+    for item in value[:5]:
+        options = item.get("options") if isinstance(item, dict) else None
+        cleaned: list[str] = []
+        for option in options if isinstance(options, list) else []:
+            text = str(option).strip()[:80] if isinstance(option, (str, int, float)) else ""
+            if text and text.lower() not in {existing.lower() for existing in cleaned}:
+                cleaned.append(text)
+        result.append(cleaned[:3])
+    return result if any(result) else []
