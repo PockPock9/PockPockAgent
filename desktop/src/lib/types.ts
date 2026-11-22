@@ -96,6 +96,8 @@ export type FileChange = { path: string; summary: string }
 export type TouchedFile = { path: string; kind: 'read' | 'edited' | 'new' }
 /** Token counts from the newest model call of a run (the gateway's `usage` event). */
 export type Usage = { promptTokens: number; completionTokens?: number; contextWindow?: number }
+/** The approved plan step the agent said it is on (the gateway's `plan_step` event). Only set when reported. */
+export type PlanStep = { step: number; total: number; label: string }
 
 export type Message = {
   id: string
@@ -120,6 +122,7 @@ export type Message = {
   notice?: string
   timing?: Timing
   usage?: Usage
+  planStep?: PlanStep
   /** The agent stopped calling tools and is checking its answer against the success checks. */
   verifying?: boolean
   touched?: TouchedFile[]

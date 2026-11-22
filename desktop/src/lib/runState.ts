@@ -22,6 +22,14 @@ export type RunView = {
   /** When the turn started waiting for the user (plan card or approval). */
   waitingSince?: number
   doneSteps: number
+  /** "Step 3 of 5" and that step's text, only when the agent reported it and is acting. */
+  planStep?: { text: string; label: string }
+}
+
+/** "Step 3 of 5", only for an agent turn whose agent reported a step. */
+export function planStepText(message: Message): string | undefined {
+  const reported = message.engine === 'agent' ? message.planStep : undefined
+  return reported ? `Step ${reported.step} of ${reported.total}` : undefined
 }
 
 /** After this long without any event a live turn is shown as slow, with a way out. */
@@ -67,18 +75,22 @@ export function runView(message: Message, live: boolean, now: number): RunView {
     label,
     status: finished && !declined ? 'done' : position < index ? 'done' : position === index ? (finished ? 'done' : 'now') : 'todo',
   }))
-  const base = { phases, elapsedMs, quietMs, doneSteps }
+  const stepText = planStepText(message)
+  const base = { phases, elapsedMs, quietMs, doneSteps, planStep: stepText && now_ === 'act' ? { text: stepText, label: message.planStep?.label ?? '' } : undefined }
+  // "It was on step 3 of 5." for a run that ended early, when the agent said which step it was on.
+  const reached = stepText ? `It was on ${stepText.toLowerCase()}. ` : ''
 
   if (!live) {
     if (message.status === 'error') {
       const kept = [message.plan ? 'the plan' : '', doneSteps ? `${doneSteps} finished ${doneSteps === 1 ? 'step' : 'steps'}` : '', message.artifacts?.length ? `${message.artifacts.length} saved ${message.artifacts.length === 1 ? 'file' : 'files'}` : ''].filter(Boolean)
-      return { ...base, state: 'failed', label: `Stopped: ${errorText(message)}`, detail: kept.length ? `Kept: ${kept.join(', ')}.` : 'Nothing was changed.' }
+      return { ...base, planStep: undefined, state: 'failed', label: `Stopped: ${errorText(message)}`, detail: reached + (kept.length ? `Kept: ${kept.join(', ')}.` : 'Nothing was changed.') }
     }
     if (message.status === 'stopped' || message.status === 'streaming') {
-      return { ...base, state: 'stopped', label: message.status === 'streaming' ? 'Interrupted: the app closed while this ran' : 'Stopped by you', detail: doneSteps ? `${doneSteps} ${doneSteps === 1 ? 'step' : 'steps'} finished before it stopped.` : undefined }
+      const finishedSteps = doneSteps ? `${doneSteps} ${doneSteps === 1 ? 'step' : 'steps'} finished before it stopped.` : ''
+      return { ...base, planStep: undefined, state: 'stopped', label: message.status === 'streaming' ? 'Interrupted: the app closed while this ran' : 'Stopped by you', detail: (reached + finishedSteps).trim() || undefined }
     }
-    if (declined) return { ...base, state: 'done', label: 'Plan declined. Nothing ran.' }
-    return { ...base, state: 'done', label: `Finished in ${formatDuration(elapsedMs)}` }
+    if (declined) return { ...base, planStep: undefined, state: 'done', label: 'Plan declined. Nothing ran.' }
+    return { ...base, planStep: undefined, state: 'done', label: `Finished in ${formatDuration(elapsedMs)}` }
   }
 
   const pendingApproval = message.approvals?.find((approval) => approval.status === 'pending' || approval.status === 'busy')
@@ -110,13 +122,16 @@ export function signalAge(ms: number): string {
   return seconds < 60 ? `${seconds} s ago` : `${Math.floor(seconds / 60)} min ago`
 }
 
-/** "Waiting for approval · 4 min", "Agent · 3 steps · 0:42", "Chat · Done · 11:20" for the task list. */
+/** "Waiting for approval · 4 min", "Agent · Step 3 of 5 · 0:42" (or "Agent · 3 steps · 0:42"), "Chat · Done · 11:20" for the task list. */
 export function taskSubtitle(message: Message | undefined, live: boolean, now: number, engineLabel: string): { text: string; tone: 'busy' | 'warn' | 'err' | 'ok' | 'off' } {
   if (!message || message.role !== 'assistant') return { text: engineLabel, tone: 'off' }
   const view = runView(message, live, now)
   const clock = new Date(message.timing?.endedAt ?? message.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
   if (view.state === 'waiting') return { text: `Waiting for you · ${formatDuration(now - (view.waitingSince ?? now))}`, tone: 'warn' }
-  if (view.state === 'working' || view.state === 'slow') return { text: `${engineLabel} · ${view.doneSteps ? `${view.doneSteps} ${view.doneSteps === 1 ? 'step' : 'steps'} · ` : ''}${formatDuration(view.elapsedMs)}`, tone: 'busy' }
+  if (view.state === 'working' || view.state === 'slow') {
+    const progress = view.planStep ? `${view.planStep.text} · ` : view.doneSteps ? `${view.doneSteps} ${view.doneSteps === 1 ? 'step' : 'steps'} · ` : ''
+    return { text: `${engineLabel} · ${progress}${formatDuration(view.elapsedMs)}`, tone: 'busy' }
+  }
   if (view.state === 'failed') return { text: `${engineLabel} · Failed · ${clock}`, tone: 'err' }
   if (view.state === 'stopped') return { text: `${engineLabel} · Stopped · ${clock}`, tone: 'off' }
   return { text: `${engineLabel} · Done · ${clock}`, tone: 'ok' }

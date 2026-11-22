@@ -67,7 +67,7 @@ The mark is a chicken foot whose centre toe is a lightning bolt. Files and gener
 - **Rail:** 40 px icon buttons with a tooltip and an accessible name; the active section is `--bg-active` with an `--accent-strong` icon. A dot on the Tasks icon (`--accent-strong`) means a task needs the user; on Services (`--warn`) that not every installed service runs.
 - **Task list:** a filled **New task** button (`--accent-fill`), search, and grouped rows: a status dot (busy, warning, error, done, off; never colour alone, the second line says it in words), the title, and one line of status.
 - **Workshop navigation:** groups **Capabilities** (Skills, MCP servers, Connectors, Browser recipes, Research), **Models** (Local models, Cloud models), **Knowledge** (Memory) and **System** (Services, Maintenance, Activity), each row with a count where one exists.
-- **Run bar:** numbered phase markers joined by a line (`--ok` once done), the bolt and one line of status, **Signal**, elapsed time with tabular figures, then **Review** and **Stop**; on a narrow bar the time and buttons wrap together to a second line, right-aligned. Notes (slow, failed) sit under it on `--warn-bg` or `--err-bg`.
+- **Run bar:** numbered phase markers joined by a line (`--ok` once done), the bolt and one line of status, **Signal**, elapsed time with tabular figures, then **Review** and **Stop**; on a narrow bar the time and buttons wrap together to a second line, right-aligned. A reported plan step is a pill before the status (**Step 3 of 5**, `--accent-strong` on `--accent-bg`, 11.5 px semibold, tabular figures); the plan card marks that step with an accent number ring and a **Now** pill of the same colours. Notes (slow, failed) sit under it on `--warn-bg` or `--err-bg`.
 - **Inspector:** a `role="tablist"` of text tabs with an accent underline (arrow keys move), then sections with an uppercase label and label–value rows; **Context used** is a 6 px `role="meter"` bar.
 - **Command palette:** a 620 px dialog near the top with a search box (`role="combobox"`) and grouped results (`role="listbox"`); the active result is `--accent-bg`.
 - **Engine switch:** a segmented control (`role="radiogroup"`) in the task header; engines that are not installed are disabled with the reason as a tooltip.
@@ -113,7 +113,7 @@ Five themes, chosen in **Settings → Theme**. The choice is saved in `settings.
 
 The full per-theme token values are the `:root[data-theme="…"]` blocks at the top of `desktop/src/styles.css`.
 
-**Contrast (WCAG 2.2 AA).** Measured with `npm run check:contrast` (`desktop/scripts/check_contrast.mjs`), which reads the theme blocks, blends translucent tokens over the surface they sit on, and checks 96 pairs per theme (68 before Agent Studio; the shell added 12, the thread 11, settings and toasts 5). All four themes pass all 96. Lowest ratio per group:
+**Contrast (WCAG 2.2 AA).** Measured with `npm run check:contrast` (`desktop/scripts/check_contrast.mjs`), which reads the theme blocks, blends translucent tokens over the surface they sit on, and checks 98 pairs per theme (68 before Agent Studio; the shell added 12, the thread 11, settings and toasts 5, plan-step progress 2). All four themes pass all 98. Lowest ratio per group:
 
 | Check (minimum) | PockPock Dark | Volt | Storm | Feather |
 |---|---|---|---|---|
