@@ -623,6 +623,21 @@ button.context-chip:hover { color: var(--text); background: var(--bg-raise); }
 .page__head h1 { margin: 4px 0 6px; font-size: 22px; font-weight: 600; }
 .page__head p { max-width: 620px; margin: 0; color: var(--text-2); }
 .eyebrow { color: var(--accent-strong); font-size: 11.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+/* Find on mcpservers.org (MCP servers and Skills pages). */
+.directory { margin-bottom: 18px; }
+.directory__search { display: flex; align-items: center; gap: 8px; }
+.directory__search .search { flex: 1; }
+.directory__full { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.directory__full small, .directory__foot { color: var(--text-3); font-size: 11.5px; }
+.directory__results { display: grid; gap: 6px; max-height: 460px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+.directory__result { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px 14px; padding: 9px 11px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-raise); }
+.directory__result > div { display: grid; flex: 1 1 260px; gap: 2px; min-width: 0; }
+.directory__result strong { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.directory__result strong .badge { display: inline-flex; align-items: center; gap: 3px; margin: 0; }
+.directory__result span { color: var(--text-2); font-size: 12.5px; }
+.directory__result small { color: var(--text-3); font-size: 11.5px; overflow-wrap: anywhere; }
+.directory__actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.directory__failed { flex-basis: 100%; margin: 0; color: var(--err-text); font-size: 12px; }
 .add-link { display: grid; gap: 7px; margin-bottom: 18px; padding: 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-panel); }
 .add-link label { font-weight: 500; }
 .add-link > div { display: flex; gap: 8px; }
