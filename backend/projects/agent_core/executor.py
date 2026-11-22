@@ -38,6 +38,9 @@ from projects.agent_tools import (
 )
 from projects.agent_tools.tool_retriever import tool_retrieval_enabled
 from projects.agent_tools.context_compaction import compact_messages, truncate_tool_output
+from projects.agent_tools.plan_progress import (
+    PLAN_STEP_TOOL, plan_step_event, plan_step_prompt, plan_step_reply, plan_step_reports_enabled, plan_step_tool_spec,
+)
 from projects.model_router import (
     ChatCompletionProvider,
     ChatCompletionRequest,
@@ -1422,6 +1425,16 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                                 })
                     except Exception:
                         logger.exception("Skill retrieval failed; continuing without skill context")
+                # Plan-step progress (UI-01F): the agent may say which approved step it is starting. Added
+                # after tool retrieval so it is never ranked out; handled by the gateway, not dispatched.
+                plan_steps = [str(step) for step in plan_ticket.get("plan", []) if str(step).strip()]
+                step_reports = plan_step_reports_enabled(plan_steps, delegated=bool(payload.delegation_contract), has_tools=bool(tools))
+                if step_reports:
+                    tools = [*tools, plan_step_tool_spec(len(plan_steps))]
+                    # Next to the numbered plan in the task message: small local models ignored it at the
+                    # end of the system prompt in live runs.
+                    messages[1]["content"] += "\n" + plan_step_prompt(len(plan_steps))
+                last_reported_step = 0
                 profile = router._tune_execution_parameters("agentic", decision.get("complexity", 5))
 
                 tool_call_limit = payload.delegation_contract.max_tool_calls if payload.delegation_contract else 20
@@ -1430,7 +1443,8 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                 # "Allow for this task" grants: "workspace_change", or "browser:<action>" (never a
                 # high-impact click). They last for this run only.
                 task_grants: set[str] = set()
-                for _ in range(tool_call_limit):
+                # A reply that only reports a step uses a turn, so each plan step gets one extra turn.
+                for _ in range(tool_call_limit + (len(plan_steps) if step_reports else 0)):
                     if cancel_event.is_set():
                         raise AgentRunTermination(get_cancel_reason())
                     if await request.is_disconnected():
@@ -2031,6 +2045,14 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                         call_id = call.get("id")
                         if not isinstance(call_id, str) or not call_id:
                             call_id = uuid.uuid4().hex
+                        if step_reports and name == PLAN_STEP_TOOL:
+                            # Progress only: no tool card, not counted as a tool call or towards the limit.
+                            step_event = plan_step_event(arguments, plan_steps)
+                            messages.append({"role": "tool", "tool_call_id": call_id, "content": plan_step_reply(step_event, len(plan_steps))})
+                            if step_event and step_event["step"] != last_reported_step:
+                                last_reported_step = step_event["step"]
+                                yield sse(step_event)
+                            continue
                         if payload.delegation_contract and call_count >= tool_call_limit:
                             tool_limit_message = "The delegate reached its approved tool-call limit before completing the subtask."
                             yield sse({"type": "error", "message": tool_limit_message, "status": "partial"})

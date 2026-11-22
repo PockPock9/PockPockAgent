@@ -120,6 +120,9 @@ export const PAIRS = [
   ['err', 'bg-popover', UI, 'toast: error icon'],
   ['accent-strong', 'bg-popover', UI, 'toast: update icon'],
   ['accent-border@bg', 'bg-panel', UI, 'theme picker: selected card border'],
+  // Plan-step progress: the run bar's "Step 3 of 5" and the plan card's current step.
+  ['accent-strong', 'accent-bg@bg-panel', TEXT, 'run bar: plan step chip'],
+  ['accent-strong', 'accent-bg@bg-panel', UI, 'plan: current step marker'],
 ]
 
 const all = themes()

@@ -15,9 +15,19 @@ export function choicesFor(question: string, options?: string[]): string[] {
   return /^(is|are|do|does|did|should|shall|can|could|would|will|may|include|keep|use|add|want|must)\b/i.test(question.trim()) ? ['Yes', 'No'] : []
 }
 
-function EditableList({ label, items, onChange, editing }: { label: string; items: string[]; onChange: (items: string[]) => void; editing: boolean }) {
+function EditableList({ label, items, onChange, editing, current }: { label: string; items: string[]; onChange: (items: string[]) => void; editing: boolean; current?: number }) {
   if (!editing) {
-    return <ol className="plan__list">{items.map((item, index) => <li key={index}><span className="plan__number" aria-hidden="true">{index + 1}</span><span>{item}</span></li>)}</ol>
+    // `current`: the step the running agent said it is on (1-based); marked, never inferred.
+    return (
+      <ol className="plan__list">
+        {items.map((item, index) => (
+          <li key={index} className={current === index + 1 ? 'is-current' : undefined} aria-current={current === index + 1 ? 'step' : undefined}>
+            <span className="plan__number" aria-hidden="true">{index + 1}</span><span>{item}</span>
+            {current === index + 1 && <span className="plan__now">Now</span>}
+          </li>
+        ))}
+      </ol>
+    )
   }
   const move = (index: number, by: number) => {
     const next = [...items]
@@ -135,7 +145,8 @@ export function PlanCard({ message, plan: given, onChange, earlier }: { message:
       )}
       <div className="plan__section">
         <h4>{editing ? 'Steps, editable' : 'Steps'}</h4>
-        <EditableList label="Step" items={steps} onChange={setSteps} editing={editing} />
+        <EditableList label="Step" items={steps} onChange={setSteps} editing={editing}
+          current={!earlier && plan.status === 'approved' && message.status === 'streaming' && message.planStep?.total === plan.steps.length ? message.planStep.step : undefined} />
       </div>
       <div className="plan__section">
         <h4>Success checks</h4>

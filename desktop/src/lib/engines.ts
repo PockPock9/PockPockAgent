@@ -369,6 +369,13 @@ function handleAgentEvent(event: StreamEvent, patch: TurnOptions['patch'], pushT
       if (index >= 0) notes[index] = { ...notes[index], status: 'given' }
       return addStep({ ...message, notes }, { label: `Your note was given to the agent: ${text(event.text)}`.slice(0, 160), status: 'done' }, false)
     }); break
+    case 'plan_step': {
+      const step = Number(event.step)
+      const total = Number(event.total)
+      if (!Number.isInteger(step) || !Number.isInteger(total) || step < 1 || step > total || total > 50) break
+      patch((message) => ({ ...message, planStep: { step, total, label: text(event.label).slice(0, 160) } }))
+      break
+    }
     case 'approval_auto': patch((message) => addStep(message, { label: text(event.message) || 'Allowed for this task', status: 'done' }, false)); break
     case 'verifying': patch((message) => ({ ...addStep(message, { label: text(event.message) || 'Checking the success checks', status: 'running' }), verifying: true })); break
     case 'status': patch((message) => addStep(message, { label: text(event.message) || 'Working', status: 'running' })); break

@@ -48,9 +48,10 @@ export function RunBar({ message, live, onStop, onRetry, onSmaller, smallerModel
         </ol>
         <div className="runbar__now">
           <Mark size={16} working={state === 'working'} />
+          {view.planStep && <span className="runbar__step" title={view.planStep.label || undefined} aria-hidden="true">{view.planStep.text}</span>}
           <span className="runbar__label" title={view.label} aria-hidden="true">{view.label}</span>
           {/* Announced text stays stable while a slow run's seconds count up. */}
-          <span role="status" aria-live="polite" className="visually-hidden">{slow ? 'Still working, but no new output for a while' : view.label}</span>
+          <span role="status" aria-live="polite" className="visually-hidden">{slow ? 'Still working, but no new output for a while' : view.planStep ? `${view.planStep.text}: ${view.label}` : view.label}</span>
         </div>
         <div className="runbar__controls">
         {live && state !== 'waiting' && <span className="runbar__signal" title="Time since the run last sent anything"><span className={`runbar__pulse${view.quietMs < 2000 ? ' is-fresh' : ''}`} aria-hidden="true" />Signal {signalAge(view.quietMs)}</span>}
