@@ -14,6 +14,7 @@ const { Maintenance } = require('./maintenance.cjs')
 const { Cloud } = require('./cloud.cjs')
 const { Connectors } = require('./connectors.cjs')
 const { syncOpenClaw } = require('./cloud-openclaw.cjs')
+const { syncOllamaModels } = require('./openclaw-models.cjs')
 const { FixRunner } = require('./maintenance-fix.cjs')
 const { run } = require('./platform.cjs')
 const paths = require('./paths.cjs')
@@ -56,6 +57,7 @@ function cloudFollowServices(list) {
   if (cloud && gatewayUp && (!gatewayWasUp || !cloud.pushed)) void cloud.push()
   if (connectors && gatewayUp && (!gatewayWasUp || !connectors.pushed)) void connectors.push()
   if (cloud && openclawUp && !openclawWasUp) void syncCloudToOpenClaw()
+  if (openclawUp) void syncOllamaToOpenClaw(!openclawWasUp)
   gatewayWasUp = gatewayUp
   openclawWasUp = openclawUp
 }
@@ -68,6 +70,37 @@ function syncCloudToOpenClaw() {
     const models = cloud.chosenModels()
     const cli = (args) => run(entry.node, [entry.script, ...args], { timeout: 60000 })
     try { await syncOpenClaw(cli, models, models.length ? cloud.proxyToken() : '') } catch (error) { console.error('Cloud models could not be written to OpenClaw:', error.message) }
+  })
+  return openclawSync
+}
+/** Ollama's API for the OpenClaw model sync: parsed JSON, or null when Ollama does not answer. */
+function ollamaApi(apiPath, body) {
+  return fetch(`http://127.0.0.1:11434${apiPath}`, { method: body ? 'POST' : 'GET', body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(15000) })
+    .then((response) => (response.ok ? response.json() : null)).catch(() => null)
+}
+let ollamaSyncedAt = 0
+let ollamaSyncedNames = ''
+/**
+ * Keeps OpenClaw's list of Ollama models in step with what is installed (openclaw-models.cjs), so a
+ * model pulled after OpenClaw was set up appears in its model menu. Checked at most once a minute;
+ * OpenClaw is only called when the installed models changed.
+ */
+function syncOllamaToOpenClaw(force = false) {
+  if (!force && Date.now() - ollamaSyncedAt < 60_000) return openclawSync
+  ollamaSyncedAt = Date.now()
+  openclawSync = openclawSync.then(async () => {
+    const entry = paths.openclawEntry()
+    if (!entry) return
+    const tags = await ollamaApi('/api/tags')
+    if (!Array.isArray(tags?.models)) return
+    const names = tags.models.map((model) => model.name).sort().join('\n')
+    if (!force && names === ollamaSyncedNames) return
+    const cli = (args) => run(entry.node, [entry.script, ...args], { timeout: 60000 })
+    try {
+      const result = await syncOllamaModels(cli, (apiPath, body) => (apiPath === '/api/tags' ? Promise.resolve(tags) : ollamaApi(apiPath, body)))
+      ollamaSyncedNames = names
+      if (result.changed) console.log(`OpenClaw models updated: added ${result.added.join(', ') || 'none'}; removed ${result.removed.join(', ') || 'none'}`)
+    } catch (error) { console.error('Ollama models could not be written to OpenClaw:', error.message) }
   })
   return openclawSync
 }
