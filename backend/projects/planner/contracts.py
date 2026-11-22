@@ -144,7 +144,7 @@ def _normalized_required_capabilities(value: object, original_request: str, *, h
         for capability in ("public_research", "browser_read", "browser_action"):
             if capability in normalized:
                 normalized.remove(capability)
-    if _BUILD_INTENT.search(original_request):
+    if has_build_intent(original_request):
         # project_validation is a static syntax/reference check (commands run only under Full access); the
         # server asks for it after file edits, so a build task without it cannot finish.
         for capability in ("workspace_read", "workspace_write", "project_validation"):
@@ -190,6 +190,24 @@ _BUILD_INTENT = re.compile(
     r"|python|code|feature|bug|test|tests)\b",
     re.IGNORECASE,
 )
+# A document whose topic is code ("write a report about the project", "a summary of the test results"):
+# the build noun is what the document is about, not the deliverable. "report page" or "summary component"
+# stay build work, because there the document word only describes the thing being built.
+_DOCUMENT_NOUN = re.compile(
+    r"\b(report|reports|summary|summaries|memo|essay|article|overview|explanation|write-?up|outline|proposal"
+    r"|letter|email|briefing)\b(?!\s*(?:page|pages|app|component|components|script|scripts|generator|module|tool"
+    r"|api|feature|function|class|template|view|screen|endpoint|service)\b)",
+    re.IGNORECASE,
+)
+
+
+def has_build_intent(request: str) -> bool:
+    """Whether the request asks to build or change code, not only to write about it.
+
+    Every build-verb-to-code-noun span counts unless a document noun sits inside it, so "write a report
+    about the project and add tests" is still build work (the second clause).
+    """
+    return any(not _DOCUMENT_NOUN.search(match.group(0)) for match in _BUILD_INTENT.finditer(request))
 
 
 def normalized_plan_steps(raw: object) -> list[str]:
@@ -273,7 +291,7 @@ def _verifiable_build_checks(checks: list, original_request: str) -> list:
     "the game runs successfully" can never be evidenced and would always fail the completion check.
     Environment-setup checks ("workspace directory exists", "libraries are installed") are dropped.
     """
-    if not _BUILD_INTENT.search(original_request):
+    if not has_build_intent(original_request):
         return checks
     kept = [
         check for check in checks

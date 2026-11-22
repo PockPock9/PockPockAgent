@@ -4,7 +4,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "projects"))
 
-from planner.contracts import SubtaskPlan, TaskBrief, normalized_plan_steps, normalized_subtask_plan, normalized_task_brief
+from planner.contracts import SubtaskPlan, TaskBrief, has_build_intent, normalized_plan_steps, normalized_subtask_plan, normalized_task_brief
 
 
 class TaskBriefContractTests(unittest.TestCase):
@@ -152,6 +152,33 @@ class TaskBriefContractTests(unittest.TestCase):
             "required_capabilities": ["browser_read", "workspace_read"],
         }, original_request="build a flappy bird webapp game", plan=["Build"], permission_level="full-access")
         self.assertEqual(brief["required_capabilities"], ["workspace_read", "workspace_write", "project_validation"])
+
+    def test_a_document_about_code_is_not_build_work(self):
+        # Seen live: "write a report about the project" was planned as code work (write access, project
+        # validation, and checks replaced with "the source files implement the requested features").
+        for request in (
+            "Write a short report about the project",
+            "Create a summary of the test results in this folder",
+            "Draft a memo explaining how the API handles retries",
+            "Write an overview of the app's features",
+            "Make report.md describing the codebase",
+        ):
+            self.assertFalse(has_build_intent(request), request)
+        for request in (
+            "build a flappy bird webapp game",
+            "Write a python script that makes a report",
+            "Write a report about the project and add tests for the parser",
+            "Make the report page show totals",
+            "Fix the bug described in the report",
+            "Create a summary component for the dashboard",
+        ):
+            self.assertTrue(has_build_intent(request), request)
+        brief = normalized_task_brief({
+            "required_capabilities": ["workspace_read", "artifact_creation"],
+            "success_checks": ["report.md exists"],
+        }, original_request="Write a short report about the project", plan=["Read", "Write"], permission_level="auto-review", has_workspace=True)
+        self.assertEqual(brief["required_capabilities"], ["workspace_read", "artifact_creation"])
+        self.assertEqual(brief["success_checks"], ["report.md exists"])
 
     def test_build_checks_keep_verifiable_items_and_replace_runtime_ones(self):
         brief = normalized_task_brief({
