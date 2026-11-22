@@ -22,6 +22,8 @@ export type TurnOptions = {
   workspacePath?: string
   /** Where agent runs save files (/api/state output_directory), for the plan card's task folder. */
   outputDirectory?: string
+  /** Plan in steps: this model writes the plan; chatModel (or the default) does each step. */
+  plannerModel?: string
 }
 
 type PlanDecision = { approved: boolean; plan: string[]; checks: string[]; planHash?: string; versionHash?: string; answer?: { question: string; answer: string } }
@@ -245,8 +247,84 @@ function list(value: unknown) {
   return Array.isArray(value) ? value.map(String) : []
 }
 
+type PreparedSequence = {
+  plan_id: string
+  plan_hash: string
+  sequence_plan: { steps: Array<{ id: string; goal: string }> }
+  selected_model: string
+  executor_model: string
+  step_checks?: string[]
+  planner_cloud?: boolean
+  executor_cloud?: boolean
+}
+
+/**
+ * Plan in steps: the planner model writes a checked 2–15 step plan, the step model does one step at a
+ * time with only that step's tools, and each step is checked in code before the next starts. The plan
+ * is approved or declined as a whole (it cannot be edited: its hash binds the exact steps).
+ */
+async function runAgentSequence(options: TurnOptions) {
+  const { messageId, prompt, signal, patch, agentPermission, chatModel, workspacePath, plannerModel } = options
+  const runId = crypto.randomUUID().replaceAll('-', '')
+  patch((message) => addStep({ ...message, runId }, { label: `Planning in steps with ${plannerModel}`, status: 'running' }))
+  const prepared = await sendJson<PreparedSequence>('/api/agents/plan-sequence', {
+    task: prompt,
+    source_task: prompt,
+    permission_mode: agentPermission,
+    preferred_model: chatModel && chatModel !== 'auto' ? chatModel : undefined,
+    planner_model: plannerModel,
+    workspace_path: workspacePath || undefined,
+  }, 'POST', signal)
+  const steps = prepared.sequence_plan.steps.map((step) => step.goal)
+  const checks = (prepared.step_checks ?? []).map((check, index) => `Step ${index + 1}: ${check}`)
+  const card: PlanCard = {
+    planId: prepared.plan_id,
+    planHash: prepared.plan_hash,
+    goal: '',
+    steps,
+    checks,
+    deliverables: [],
+    questions: [],
+    critic: '',
+    criticFindings: [],
+    model: prepared.selected_model,
+    workspace: workspacePath || 'A new temporary folder for this task',
+    taskFolder: options.outputDirectory ? `${options.outputDirectory}${options.outputDirectory.includes('\\') ? '\\' : '/'}${runId}` : undefined,
+    sequence: { planner: prepared.selected_model, executor: prepared.executor_model, cloud: Boolean(prepared.planner_cloud || prepared.executor_cloud) },
+    status: 'pending',
+  }
+  const planReadyAt = Date.now()
+  patch((message) => addStep({ ...message, plan: card, model: prepared.executor_model, timing: message.timing && { ...message.timing, planReadyAt: message.timing.planReadyAt ?? planReadyAt } }, { label: `Planned ${steps.length} steps with ${prepared.selected_model}`, status: 'done' }))
+  const decision = await new Promise<PlanDecision>((resolve) => {
+    const onAbort = () => resolve({ approved: false, plan: steps, checks })
+    signal.addEventListener('abort', onAbort, { once: true })
+    planWaiters.set(messageId, (result) => { signal.removeEventListener('abort', onAbort); resolve(result) })
+  })
+  const planDecidedAt = Date.now()
+  patch((message) => ({ ...message, timing: message.timing && { ...message.timing, planDecidedAt } }))
+  if (signal.aborted) throw new DOMException('Stopped', 'AbortError')
+  if (!decision.approved) {
+    patch((message) => ({ ...message, content: 'Plan declined. No agent tools were run and nothing was changed.', status: 'done' }))
+    return
+  }
+  patch((message) => addStep(message, { label: `Starting step 1 with ${prepared.executor_model}`, status: 'running' }))
+  activeRunId = runId
+  const tokens = tokenBuffer(patch)
+  try {
+    await stream('/api/agents/run-sequence', { plan_id: prepared.plan_id, plan_hash: decision.planHash, run_id: runId }, signal, (raw) => {
+      if (raw.type !== 'token') tokens.flush()
+      handleAgentEvent(raw, patch, tokens.push)
+    })
+  } finally {
+    tokens.flush()
+    activeRunId = ''
+  }
+}
+
 async function runAgent(options: TurnOptions) {
   const { sessionId, messageId, prompt, attachments, signal, patch, agentPermission, chatModel, workspacePath } = options
+  // Plan in steps reads the open folder and the web, but not attached files yet: those turns keep the one-model plan.
+  if (options.plannerModel && !attachments.some((file) => file.kind === 'document')) return runAgentSequence(options)
   // The gateway requires a 32-character hex run id.
   const runId = crypto.randomUUID().replaceAll('-', '')
   const files = attachments.filter((file) => file.kind === 'document').map((file) => ({ name: file.name, text: file.text ?? '', size: file.size }))
@@ -376,6 +454,12 @@ function handleAgentEvent(event: StreamEvent, patch: TurnOptions['patch'], pushT
       patch((message) => ({ ...message, planStep: { step, total, label: text(event.label).slice(0, 160) } }))
       break
     }
+    case 'sequence_check':
+      patch((message) => addStep(message, { label: text(event.message) || `Step ${Number(event.step)} checked`, status: event.passed ? 'done' : 'failed' }, false))
+      break
+    case 'sequence_retry':
+      patch((message) => addStep(message, { label: text(event.message) || `Trying step ${Number(event.step)} again`, status: 'running' }))
+      break
     case 'approval_auto': patch((message) => addStep(message, { label: text(event.message) || 'Allowed for this task', status: 'done' }, false)); break
     case 'verifying': patch((message) => ({ ...addStep(message, { label: text(event.message) || 'Checking the success checks', status: 'running' }), verifying: true })); break
     case 'status': patch((message) => addStep(message, { label: text(event.message) || 'Working', status: 'running' })); break
@@ -498,6 +582,7 @@ export async function decidePlan(messageId: string, plan: PlanCard, approved: bo
     { action_hash: plan.planHash, decision: approved ? 'approved' : 'rejected', plan: steps, success_checks: checks },
   )
   if (!result.accepted) throw new Error(result.detail || 'This plan can no longer be approved.')
-  if (approved && (!result.approved_plan_hash || !result.approved_version_hash)) throw new Error('The approved plan did not return a valid execution ticket. Send the task again.')
+  // A plan in steps has no version history, so only its approved hash comes back.
+  if (approved && (!result.approved_plan_hash || (!plan.sequence && !result.approved_version_hash))) throw new Error('The approved plan did not return a valid execution ticket. Send the task again.')
   resolvePlan(messageId, { approved, plan: steps, checks, planHash: result.approved_plan_hash, versionHash: result.approved_version_hash })
 }

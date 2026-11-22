@@ -22,32 +22,38 @@ per step** on the P1 task sample (see Verification).
 Implemented and tested: the plan schema and validator (P0), the state
 capsule (P0), the code-first verifier with retry and re-plan (P2), the
 sequenced runner (P2), planner/executor model routing (P3), the planner
-service endpoint `POST /plan-sequence` (P3), and OpenClaw subtask mode in
-the Node turn helper (P4).
+service endpoint `POST /plan-sequence` (P3), the gateway routes
+`POST /api/agents/plan-sequence` and `POST /api/agents/run-sequence`, and
+**Plan in steps** in PockPock Agent (desktop, 2026-11-22). OpenClaw subtask
+mode exists in the Node turn helper (P4) but nothing sends it a subtask yet.
 
-**Planned, not implemented:** the user-facing flow below (gateway
-endpoints and desktop UI), any in-repo caller of the runner, the adapter
-from the runner to the real tools, persistence of runner events in the
-run store, and sending a subtask from `openclaw_bridge`. Until those
-exist, sequenced runs happen only in the P1 eval harness and in unit
-tests — not through the product surface.
+Not yet: OpenClaw as the step runner, persistence of sequence events in the
+run store (a reopened task shows what the app saved, not a replay), notes
+while a sequence runs, attached files in a sequence (a task with attached
+documents keeps the one-model plan), and re-planning the remaining steps
+automatically (the user retries from the failed step).
 
-## User flow (planned)
+## User flow
 
-1. The user asks for a task. The desktop app asks the gateway to plan it
-   as a sequence (`POST /api/agents/plan-sequence`, planned — no such
-   route exists yet).
-2. The gateway asks the planner service for a validated 2–15 step plan
-   (`POST /plan-sequence`, implemented — see API contracts).
-3. The user reviews the steps and approves the plan (planned — no UI
-   exists yet). Approval binds to the exact plan, as with the existing
-   plan-approval ticket.
-4. The gateway runs the sequence (`POST /api/agents/run-sequence`,
-   planned) — one step at a time, verifier-checked, with per-step
-   progress in the chat timeline.
-5. The run ends `completed` when the last step's done-condition passes,
-   or `needs_replan` when a step exhausts its retries, in which case the
-   remaining steps are re-planned (planned).
+1. In PockPock Agent, the model menu has a **Planning** section: **One model
+   plans and works** (the default, the editable plan as before), or **Plan in
+   steps with** a connected cloud model (for example an NVIDIA NIM model) or
+   a local model. The model above it in the menu does the steps. The model
+   pill then reads "… · steps planned by <planner>".
+2. The app asks the gateway for a step plan (`POST /api/agents/plan-sequence`
+   with `planner_model`, and `preferred_model` for the steps).
+3. The **Plan in steps** card shows each step, each step's check in plain
+   words, who plans and who works, and, when a cloud model is involved, that
+   the request, the plan and each step's results (file names and short
+   excerpts) are sent to that service. The plan is approved or declined as a
+   whole; it cannot be edited (its hash binds the exact steps).
+4. The run (`POST /api/agents/run-sequence`) shows **Step N of M** in the run
+   bar and plan card, each check as a step ("Step 2 checked: …"), retries
+   ("Trying step 2 again: …"), approval cards for changes in the open folder
+   (Auto-review), and the files changed or saved.
+5. It ends with a short reply (what was planned and done), or, when a step
+   still fails after two retries, as a failed run whose card says which step
+   and offers **Retry from step N**.
 
 ## Modules involved
 
@@ -127,15 +133,48 @@ planner timeout fails with 502 whose detail names it as a re-plan trigger,
 not a fatal error. The known planner-timeout bug itself is out of scope
 here (see Failure states).
 
-### Gateway: `POST /api/agents/plan-sequence`, `POST /api/agents/run-sequence` (planned)
+### Gateway: `POST /api/agents/plan-sequence`, `POST /api/agents/run-sequence`
 
-These routes do not exist. The gateway (`backend/scripts/pockpock_server.py`)
-has no plan-sequence or run-sequence endpoint, and the desktop app has no
-UI for approving or running a sequence plan. The intended contract, when
-built, is: plan-sequence returns a validated `SequencePlan` for user
-approval; run-sequence runs it via `SequenceRunner` and streams the
-runner's step events. Do not document request/response shapes for these
-until they are implemented.
+`POST /api/agents/plan-sequence` takes the agent plan body plus an optional
+`planner_model`. The planner is `planner_model` (or `preferred_model`); a
+connected cloud model is passed to the planner service with its profile, and
+the planner service calls it through the gateway's local `/cloud/v1` endpoint,
+so no cloud key leaves the gateway. `preferred_model` is sent as the step
+(executor) model and used when available. The reply has `plan_id`,
+`plan_hash`, `sequence_plan`, `selected_model` (planner), `executor_model`,
+`step_checks` (each step's done-condition in plain words), `planner_cloud` and
+`executor_cloud`. A cloud model that is not connected is refused with `409`.
+
+Before validation the planner service repairs three things it saw models get
+wrong in live runs: the artifact tool for a file kind (`repair_artifact_tools`);
+a step that writes after an earlier step read something gets that reading
+tool, within the 3-tool limit (`repair_read_tools`), because each step sees
+only a short summary of earlier steps; and, with a folder open, a request to
+write "in this folder" (or project, workspace) uses `propose_project_patch`
+instead of `save_text_artifact`, so the file lands in that folder
+(`repair_folder_writes`; not in Default mode).
+
+The plan decision endpoint approves or rejects a sequence plan as a whole and
+returns `approved_plan_hash` only. `POST /api/agents/run-sequence` with
+`{plan_id, plan_hash, run_id}` runs it:
+
+- Tools: files in the workspace go through the project tools with one context
+  for the run; other tools through the agent tools. A tool's text for the step
+  model comes from what it returns (`content`, `files`, `matches` or `output`;
+  `tool_output_text`).
+- Changes: `propose_project_patch` / `propose_project_edit` only propose. In
+  Auto-review the gateway shows the approval card (Allow once, Allow for this
+  task, Deny; 5 minutes), and the step's time budget is paused while it waits
+  (`SequenceRunner.waiting_for_user`); in Full access the change is applied;
+  Default refuses the change tools. An applied change sends `patch` and
+  `artifact`; a saved file sends `artifact`.
+- Events: the runner's own events (`plan_started`, `step_started`,
+  `step_verified`, `step_retry`, `step_failed`, `replan_needed`,
+  `plan_completed`, keyed `event`) and, for the app (`ui_events.py`):
+  `plan_step` (`step`, `total`, `label`), `status`, `sequence_check`
+  (`step`, `passed`, `message`), `sequence_retry`, and `error` (`status:
+  partial`) when a step cannot be finished; then a `token` with the reply and
+  `done` with the `SequenceRunResult`.
 
 ### OpenClaw subtask mode (implemented in the Node helper, not wired up)
 
@@ -238,6 +277,12 @@ without retry (see Failure states).
 | Tool outside the pinned subset | Rejected by the runner without executing; recorded as a step error and verified as a failure. |
 
 ## Verification
+
+Plan in steps, live (2026-11-22, RTX 4070 SUPER 12 GB; planner `qwen3.6:35b-a3b`, steps `qwen3.5:9b`; gateway and planner from source, temporary folder, Auto-review with each change allowed once):
+
+- "Read notes.md and write summary.md in this folder with three bullet points…": planned in 33–38 s as 2 steps. The first run found three faults, now fixed: the read file's text reached step 2 as nothing (tools return `content`, not `output`), step 2 could not re-read the file and wrote placeholders, and the file was saved to the task folder. The second run wrote the right facts but failed its check on case ("release date" against "Release date"); `file_contains` now ignores case. The third run asked for approval, wrote `summary.md` into the open folder with the three facts, and passed both checks; the steps took 12 s.
+- "List the files in this folder and write files.md…": completed (step 2 passed on its second try, after approval). `files.md` lists `notes.md` and `todo.txt` but not `budget.csv`, because `list_project_files` does not list `.csv` files; the step model wrote what the tool returned.
+- Not verified: a cloud planner (NVIDIA NIM) with a real key; a sequence through OpenClaw.
 
 P1 measurement (2026-11-17, `backend/scripts/evaluate_plan_sequence.py`;
 full results in `backend/scripts/plan_sequence_eval.md`):

@@ -110,6 +110,7 @@ from projects.agent_tools.context_compaction import compact_messages
 from projects.planner.contracts import SubtaskPlan, TaskBrief, TaskPlanVersion
 from projects.plan_sequence.contracts import SEQUENCE_CONTRACT_VERSION, validate_sequence_plan
 from projects.plan_sequence.runner import SequenceRunner
+from projects.plan_sequence.ui_events import done_condition_text, final_reply, tool_output_text as sequence_tool_output_text, ui_events as sequence_ui_events
 from projects.planner.routing import task_capability as planner_task_capability
 from projects.planner.replanning import ReplanningBudget, incomplete_success_checks
 from projects.agent_core.executor import AgentCoreServices, create_agent_runner
@@ -317,6 +318,9 @@ class AgentPlanPayload(BaseModel):
     permission_mode: Literal["default", "auto-review", "full-access"] = "auto-review"
     preferred_model: str | None = Field(default=None, max_length=120)
     workspace_path: str | None = Field(default=None, max_length=1024)
+    # Plan in steps: the model that writes the step plan (a connected cloud model or a local one).
+    # preferred_model is then the model that does each step.
+    planner_model: str | None = Field(default=None, max_length=120)
 
     @field_validator("task")
     @classmethod
@@ -1492,17 +1496,21 @@ async def plan_sequence_agent_task(payload: AgentPlanPayload, request: Request):
     if not task:
         raise HTTPException(status_code=422, detail="Describe the task before asking the agent to plan it.")
 
-    cloud_profile = CLOUD_REGISTRY.profile(payload.preferred_model) if is_cloud_model(payload.preferred_model) else None
-    if is_cloud_model(payload.preferred_model) and cloud_profile is None:
-        raise HTTPException(status_code=409, detail="That cloud model is not connected. Choose it again on the Cloud page.")
+    planner_choice = payload.planner_model or payload.preferred_model
+    cloud_profiles = []
+    for chosen in dict.fromkeys(name for name in (planner_choice, payload.preferred_model) if name):
+        if is_cloud_model(chosen):
+            profile = CLOUD_REGISTRY.profile(chosen)
+            if profile is None:
+                raise HTTPException(status_code=409, detail=f"{chosen} is not connected. Connect it again on the Cloud models page.")
+            cloud_profiles.append(profile)
     try:
         model_profiles, _ = await tool_capable_models()
     except HTTPException:
-        if cloud_profile is None:
+        if not cloud_profiles:
             raise
-        model_profiles = []  # Ollama is not running; the chosen cloud model does not need it.
-    if cloud_profile is not None:
-        model_profiles = [*model_profiles, cloud_profile]
+        model_profiles = []  # Ollama is not running; the chosen cloud models do not need it.
+    model_profiles = [*model_profiles, *cloud_profiles]
     if not model_profiles:
         raise HTTPException(status_code=503, detail="No enabled local model supports agent tool calls. Enable a tool-capable model in Model Room.")
     planner_url = os.environ.get("POCKPOCK_PLANNER_URL", "http://127.0.0.1:8771").rstrip("/")
@@ -1526,7 +1534,8 @@ async def plan_sequence_agent_task(payload: AgentPlanPayload, request: Request):
                 "capable_models": [item["name"] for item in model_profiles],
                 "model_profiles": model_profiles,
                 "preferred_model": payload.preferred_model,
-                "planner_model": payload.preferred_model,
+                "planner_model": planner_choice,
+                "executor_model": payload.preferred_model,
                 "default_model": default_model,
                 "workspace_path": payload.workspace_path,
                 "permission_mode": payload.permission_mode,
@@ -1581,6 +1590,10 @@ async def plan_sequence_agent_task(payload: AgentPlanPayload, request: Request):
             "executor_model": result["executor_model"],
             "reason": result.get("reason"),
             "executor_reason": result.get("executor_reason"),
+            # For the plan card: each step's check in plain words, and whether a cloud model is used.
+            "step_checks": [done_condition_text(step.get("done_condition")) for step in sequence_plan.get("steps", [])],
+            "planner_cloud": is_cloud_model(result["selected_model"]),
+            "executor_cloud": is_cloud_model(result["executor_model"]),
         }
     except HTTPException:
         raise
@@ -2106,6 +2119,45 @@ async def run_sequence_agent_task(payload: AgentSequenceRunPayload, request: Req
                 content = assistant.get("content", "")
                 return {"content": content if isinstance(content, str) else "", "tool_calls": calls}
 
+            # Files in the task workspace go through the project tools (one context for the whole run,
+            # so a file read in one step may be changed in a later one). A change is a proposal: in
+            # Auto-review it waits for the user (the step's time budget is paused meanwhile), in Full
+            # access it is applied, and in Default the change tools are refused by the permission check.
+            project_context = ProjectAgentContext(run_id, workspace)
+            task_grants: set[str] = set()
+            project_tools = {"list_project_files", "search_project", "read_project_file", "propose_project_edit", "propose_project_patch", "validate_project"}
+
+            async def review_change(name: str, tool_result: dict) -> str:
+                if ticket["permission_mode"] == "full-access":
+                    return "approved"
+                if "workspace_change" in task_grants:
+                    events.put_nowait({"type": "approval_auto", "contract_version": 1, "tool": name, "path": str(tool_result.get("path", "")), "message": f"Allowed for this task: change {tool_result.get('path', 'a file')}"})
+                    return "approved"
+                action = {"tool": name, "patch_id": str(tool_result["patch_id"]), "path": str(tool_result.get("path", "")), "summary": str(tool_result.get("summary", "Review workspace change")), "diff": str(tool_result.get("diff", ""))}
+                action_hash = hashlib.sha256(json.dumps(action, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+                approval_id = uuid.uuid4().hex
+                expires_at = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
+                approval = await asyncio.to_thread(create_agent_approval, run_id, approval_id, action_hash, action, expires_at)
+                future: asyncio.Future[str] = loop.create_future()
+                AGENT_RUN_APPROVAL_FUTURES[approval_id] = future
+                events.put_nowait({"type": "approval_requested", "contract_version": 1, "task_id": run_id, **approval, "grantable": True, "message": f"Review the proposed change to {action['path']} before it is applied."})
+                try:
+                    with runner.waiting_for_user():
+                        decision = await _await_agent_operation(future, cancel_event, get_cancel_reason, timeout_seconds=300)
+                except asyncio.TimeoutError:
+                    await asyncio.to_thread(expire_agent_approval, run_id, approval_id, action_hash)
+                    events.put_nowait({"type": "approval_expired", "contract_version": 1, "approval_id": approval_id, "action_hash": action_hash, "tool": name, "message": "Approval expired; the change was not applied."})
+                    return "expired"
+                finally:
+                    AGENT_RUN_APPROVAL_FUTURES.pop(approval_id, None)
+                if decision == "approved_for_task":
+                    task_grants.add("workspace_change")
+                if decision in ("approved", "approved_for_task"):
+                    events.put_nowait({"type": "approval_approved", "contract_version": 1, "approval_id": approval_id, "action_hash": action_hash, "tool": name, "message": "Approved for the rest of this task" if decision == "approved_for_task" else "Approved exact workspace change"})
+                    return "approved"
+                events.put_nowait({"type": "approval_rejected", "contract_version": 1, "approval_id": approval_id, "action_hash": action_hash, "tool": name, "message": "The workspace change was not approved and was not applied."})
+                return decision
+
             async def execute_tool(name: str, arguments: dict) -> dict:
                 try:
                     contract = registered_tool_contracts().get(name)
@@ -2113,16 +2165,36 @@ async def run_sequence_agent_task(payload: AgentSequenceRunPayload, request: Req
                         raise ToolContractError("unknown_tool", f"Tool '{name}' is not registered")
                     arguments = validate_tool_input(contract, arguments)
                     require_agent_tool_permission(contract.required_permission, ticket["permission_mode"])
-                    tool_result = await execute_agent_tool(name, arguments, context)
+                    if name in project_tools:
+                        tool_result = await execute_project_tool(name, arguments, project_context)
+                    else:
+                        tool_result = await execute_agent_tool(name, arguments, context)
+                    patch_id = tool_result.get("patch_id") if isinstance(tool_result, dict) else None
+                    if patch_id:
+                        if await review_change(name, tool_result) != "approved":
+                            return {"ok": False, "output": "", "exit_code": None, "error": "The change was not approved, so it was not applied."}
+                        applied = apply_project_patch(str(patch_id), project_context.project_root)
+                        written_path = str(applied["path"])
+                        try:
+                            written = (project_context.project_root / written_path).read_bytes()
+                            project_context.fully_read_hashes[written_path] = hashlib.sha256(written).hexdigest()
+                            project_context.inspected_paths.add(written_path)
+                        except OSError:
+                            pass
+                        events.put_nowait({"type": "patch", "status": "applied", "path": written_path, "summary": tool_result.get("summary", "Workspace file updated"), "diff": tool_result.get("diff", "")})
+                        events.put_nowait({"type": "artifact", "name": Path(written_path).name, "path": written_path, "kind": Path(written_path).suffix.lstrip(".") or "file", "url": f"/api/agents/artifacts/{run_id}/{quote(written_path, safe='/')}?workspace=1"})
+                        tool_result = {**tool_result, "status": "applied", "output": f"Changed {written_path}"}
+                    elif name in {"save_text_artifact", "create_office_document", "generate_local_image"} and isinstance(tool_result, dict) and tool_result.get("name"):
+                        events.put_nowait({"type": "artifact", "name": str(tool_result["name"]), "path": str(tool_result.get("path", "")), "kind": str(tool_result.get("kind", "")), "url": f"/api/agents/artifacts/{run_id}/{quote(str(tool_result['name']))}"})
                 except (AgentToolError, ToolError, ToolContractError, ValueError) as err:
                     return {"ok": False, "output": "", "exit_code": None, "error": str(err)[:500]}
                 if not isinstance(tool_result, dict):
                     return {"ok": False, "output": "", "exit_code": None, "error": "Tool returned a non-dict result"}
                 # execute_agent_tool raises on failure and most tools return
                 # no "ok" key on success, so absence of "ok" means success.
-                output = tool_result.get("output", "")
-                if not isinstance(output, str):
-                    output = json.dumps(output) if isinstance(output, (dict, list)) else str(output)
+                # Project file tools return content/files/matches, not "output" (a read file's text
+                # reached the next step as nothing before).
+                output = sequence_tool_output_text(tool_result)
                 exit_code = tool_result.get("exit_code")
                 if exit_code is not None and (not isinstance(exit_code, int) or isinstance(exit_code, bool)):
                     exit_code = None
@@ -2140,10 +2212,18 @@ async def run_sequence_agent_task(payload: AgentSequenceRunPayload, request: Req
             # 15-minute timeout, via expire_run above) sets cancel_event,
             # which the loop notices at most 0.5 s later.
             events: asyncio.Queue[dict] = asyncio.Queue()
+            plan_steps = list(ticket["sequence_plan"].get("steps") or [])
+
+            def on_runner_event(event: dict) -> None:
+                # The runner's own event (for API clients), then the app's view of it.
+                events.put_nowait(event)
+                for item in sequence_ui_events(event, plan_steps):
+                    events.put_nowait(item)
+
             runner = SequenceRunner(
                 chat=chat,
                 execute_tool=execute_tool,
-                on_event=lambda event: events.put_nowait(event),
+                on_event=on_runner_event,
             )
             run_task = asyncio.create_task(runner.run(
                 ticket["sequence_plan"],
@@ -2173,6 +2253,9 @@ async def run_sequence_agent_task(payload: AgentSequenceRunPayload, request: Req
                     run_task.cancel()
                     await asyncio.gather(run_task, return_exceptions=True)
             assert result is not None
+            # A short reply: what was planned and done. When a step could not be finished its error
+            # event came first, so the app shows the run as failed with what was kept.
+            yield sse({"type": "token", "content": final_reply(result, plan_steps, ticket["selected_model"], ticket["executor_model"])})
             record({
                 "event": "agent_task_completed",
                 "request_id": run_id,

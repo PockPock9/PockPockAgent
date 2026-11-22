@@ -20,6 +20,8 @@ Validation rules (see the Plan-and-Sequence design page):
 
 from __future__ import annotations
 
+import re
+
 from typing import Annotated, Literal, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -234,6 +236,61 @@ def repair_artifact_tools(raw: object) -> object:
             step["tools_allowed"] = ["save_text_artifact" if tool == "create_office_document" else tool for tool in tools]
         elif extension in _OFFICE_EXTENSIONS and "save_text_artifact" in tools and "create_office_document" not in tools:
             step["tools_allowed"] = ["create_office_document" if tool == "save_text_artifact" else tool for tool in tools]
+    return raw
+
+
+_READ_TOOLS = ("read_project_file", "read_selected_file", "scrape_public_page", "search_project")
+_WRITE_TOOLS = {"save_text_artifact", "create_office_document", "propose_project_patch", "propose_project_edit"}
+
+
+def repair_read_tools(raw: object) -> object:
+    """Let a step that writes after earlier steps read something read it again.
+
+    Live validation (2026-11-22): a planner pinned read_project_file to step 1 and save_text_artifact
+    alone to step 2, so step 2 (told to re-read files rather than trust the short state summary) could
+    not, and wrote "[extract from notes.md]" placeholders. The step gets the reading tool the nearest
+    earlier step used, within the 3-tool limit; it gains no tool the plan did not already use.
+    """
+    if not isinstance(raw, dict) or not isinstance(raw.get("steps"), list):
+        return raw
+    seen_reads: list[str] = []
+    for step in raw["steps"]:
+        if not isinstance(step, dict) or not isinstance(step.get("tools_allowed"), list):
+            continue
+        tools = step["tools_allowed"]
+        writes = any(tool in _WRITE_TOOLS for tool in tools)
+        reads = [tool for tool in tools if tool in _READ_TOOLS]
+        if writes and not reads and seen_reads and len(tools) < MAX_TOOLS_PER_STEP:
+            step["tools_allowed"] = [*tools, seen_reads[-1]]
+        for tool in reads:
+            if tool in seen_reads:
+                seen_reads.remove(tool)
+            seen_reads.append(tool)
+    return raw
+
+
+_IN_FOLDER = re.compile(
+    r"\b(in|into|to|inside)\s+(this|the|my|that|our)\s+(open\s+)?(folder|directory|project|repo|repository|workspace)\b",
+    re.IGNORECASE,
+)
+
+
+def repair_folder_writes(raw: object, *, task: str, folder_open: bool, permission_mode: str) -> object:
+    """Write into the open folder when the request says so.
+
+    save_text_artifact writes into the task's own output folder. Live validation (2026-11-22): asked to
+    "write summary.md in this folder", the planner chose it anyway, so the file landed elsewhere. With a
+    folder open and the request naming it, such a step uses propose_project_patch instead, which writes
+    into the folder and, in Auto-review, shows the change for approval. Default mode cannot change the
+    folder, so nothing is swapped there.
+    """
+    if not folder_open or permission_mode == "default" or not _IN_FOLDER.search(task or ""):
+        return raw
+    if not isinstance(raw, dict) or not isinstance(raw.get("steps"), list):
+        return raw
+    for step in raw["steps"]:
+        if isinstance(step, dict) and isinstance(step.get("tools_allowed"), list) and "save_text_artifact" in step["tools_allowed"]:
+            step["tools_allowed"] = ["propose_project_patch" if tool == "save_text_artifact" else tool for tool in step["tools_allowed"]]
     return raw
 
 

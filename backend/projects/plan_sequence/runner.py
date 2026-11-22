@@ -31,9 +31,11 @@ Invariants:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import inspect
 import json
 import logging
+import time
 from pathlib import Path
 from typing import Any, Callable
 
@@ -185,6 +187,39 @@ class SequenceRunner:
         self._retriever = retriever
         self._on_event = on_event
         self._record_event = record_event
+        # Time a step spends waiting for the user (an approval card) does not count against its budget.
+        self._user_waits = 0
+
+    @contextlib.contextmanager
+    def waiting_for_user(self):
+        """Used by execute_tool around a wait for the user; the step's clock stops meanwhile."""
+        self._user_waits += 1
+        try:
+            yield
+        finally:
+            self._user_waits -= 1
+
+    async def _within_budget(self, coroutine, seconds: float):
+        """Like asyncio.wait_for, except that time spent waiting for the user is not counted."""
+        task = asyncio.ensure_future(coroutine)
+        used = 0.0
+        last = time.monotonic()
+        try:
+            while True:
+                done, _ = await asyncio.wait({task}, timeout=0.25)
+                now = time.monotonic()
+                if not self._user_waits:
+                    used += now - last
+                last = now
+                if task in done:
+                    return task.result()
+                if used >= seconds:
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
+                    raise asyncio.TimeoutError
+        except asyncio.CancelledError:
+            task.cancel()
+            raise
 
     # -- events -----------------------------------------------------------
     async def _emit(self, event: dict) -> None:
@@ -502,7 +537,7 @@ class SequenceRunner:
                     {"role": "user", "content": attempt_prompt},
                 ]
                 try:
-                    step_result, call_arguments = await asyncio.wait_for(
+                    step_result, call_arguments = await self._within_budget(
                         self._execute_attempt(
                             step=step, messages=messages, tool_specs=tool_specs,
                             executor_model=executor_model,
@@ -510,7 +545,7 @@ class SequenceRunner:
                                 condition, workspace=workspace, step_result=result, artifact_dir=artifact_dir,
                             )["passed"],
                         ),
-                        timeout=step["budget_seconds"],
+                        step["budget_seconds"],
                     )
                 except asyncio.TimeoutError:
                     last_detail = f"step timed out after {step['budget_seconds']} seconds"

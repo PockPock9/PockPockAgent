@@ -170,6 +170,7 @@ export default function App() {
         clawPermission: settings.clawPermission ?? 'ask',
         workspacePath: settings.workspace && settings.useWorkspaceForAgent !== false ? settings.workspace : undefined,
         outputDirectory: status.state?.output_directory,
+        plannerModel: engine === 'agent' && settings.agentPlanner ? settings.agentPlanner : undefined,
       })
       patchReply((message) => ({ ...message, status: message.status === 'streaming' ? 'done' : message.status }))
     } catch (error) {

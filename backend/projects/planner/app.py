@@ -20,7 +20,7 @@ from planner.contracts import normalized_plan_steps, normalized_subtask_plan, no
 from planner.routing import choose_candidate
 from projects.agent_tools import registered_tool_contracts
 from projects.model_router import ChatCompletionRequest, ModelProviderError, OllamaChatCompletionAdapter
-from projects.plan_sequence.contracts import SEQUENCE_CONTRACT_VERSION, repair_artifact_tools, validate_sequence_plan
+from projects.plan_sequence.contracts import SEQUENCE_CONTRACT_VERSION, repair_artifact_tools, repair_folder_writes, repair_read_tools, validate_sequence_plan
 from projects.plan_sequence.routing import choose_executor_model, choose_planner_model
 from projects.model_router.cloud import OpenAICompatibleAdapter, RoutingChatCompletionProvider
 
@@ -123,6 +123,8 @@ class SequencePlanRequest(BaseModel):
     workspace_path: str | None = Field(default=None, max_length=1024)
     permission_mode: str = Field(default="auto-review", pattern=r"^(default|auto-review|full-access)$")
     planner_model: str | None = Field(default=None, max_length=120)
+    # The model the user chose for the steps (the composer's model); used when it is available.
+    executor_model: str | None = Field(default=None, max_length=120)
 
     @field_validator("task")
     @classmethod
@@ -174,7 +176,16 @@ def build_sequence_plan_prompt(task: str, tool_names: list[str], workspace_path:
         f"{tools}. "
         "Use no other tool names: the plan is validated and rejected if a step names a tool that does not exist. "
         "To create a .txt, .md, .csv, .json or .html file use save_text_artifact; create_office_document makes only "
-        ".docx, .xlsx and .pptx files. "
+        ".docx, .xlsx and .pptx files. Those two save into the task's own output folder. "
+        + (
+            "A folder is open: to create or change a file in that folder (for example when the request says 'in this folder'), "
+            "use propose_project_patch with the path relative to it; the change is shown to the user for approval. "
+            if workspace_path else ""
+        )
+        + "Each step's model sees only a short summary of earlier steps, not their full output, so a step that writes "
+        "something based on what an earlier step read must also list that reading tool (for example read_project_file) "
+        "to read the source again. "
+        "Prefer file_contains with a word the result must contain over file_exists, so an empty or placeholder file fails. "
         "Each budget_tokens is 500-16000 and each budget_seconds is 30-900. "
         "Each done_condition is one typed, code-checkable condition, never prose: "
         "file_exists needs path; file_contains needs path and pattern; command_exit_0 needs no fields; "
@@ -381,9 +392,12 @@ async def plan_sequence(payload: SequencePlanRequest):
     except ValueError as err:
         raise HTTPException(status_code=503, detail=str(err)) from err
     try:
-        executor_model, executor_reason = choose_executor_model(
-            installed, step_complexity="standard", profiles=profiles
-        )
+        if payload.executor_model and payload.executor_model in installed:
+            executor_model, executor_reason = payload.executor_model, "Used the model you chose for the steps."
+        else:
+            executor_model, executor_reason = choose_executor_model(
+                installed, step_complexity="standard", profiles=profiles
+            )
     except ValueError as err:
         raise HTTPException(status_code=503, detail=str(err)) from err
     tool_names = sorted(registered_tool_contracts())
@@ -401,7 +415,7 @@ async def plan_sequence(payload: SequencePlanRequest):
             detail=f"Planner returned unusable JSON for the sequence plan: {err}",
         ) from err
     try:
-        validated = validate_sequence_plan(repair_artifact_tools(raw), allowed_tools=set(tool_names))
+        validated = validate_sequence_plan(repair_read_tools(repair_folder_writes(repair_artifact_tools(raw), task=task, folder_open=bool(payload.workspace_path), permission_mode=payload.permission_mode)), allowed_tools=set(tool_names))
     except ValueError as err:
         fixup_prompt = build_sequence_plan_fixup_prompt(str(err), raw, tool_names)
         try:
@@ -414,7 +428,7 @@ async def plan_sequence(payload: SequencePlanRequest):
                 detail=f"Planner returned unusable JSON for the sequence plan: {retry_err}",
             ) from retry_err
         try:
-            validated = validate_sequence_plan(repair_artifact_tools(raw_retry), allowed_tools=set(tool_names))
+            validated = validate_sequence_plan(repair_read_tools(repair_folder_writes(repair_artifact_tools(raw_retry), task=task, folder_open=bool(payload.workspace_path), permission_mode=payload.permission_mode)), allowed_tools=set(tool_names))
         except ValueError as retry_err:
             raise HTTPException(
                 status_code=502,

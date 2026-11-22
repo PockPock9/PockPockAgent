@@ -162,6 +162,16 @@ export function ModelPicker({ menu, onToggle, engine, settings, status, patchSet
           {cloudModels.map((model) => (
             <MenuItem key={model.name} icon={<Cloud size={14} />} title={cloudTitle(model.name)} detail={model.provider_label} selected={settings.chatModel === model.name} onSelect={() => pick({ chatModel: model.name })} />
           ))}
+          {engine === 'agent' && <>
+            <div className="popover__label">Planning · the model above does the steps</div>
+            <MenuItem icon={<Sparkles size={14} />} title="One model plans and works" detail="The plan you can edit, then one model does the whole task" selected={!settings.agentPlanner} onSelect={() => pick({ agentPlanner: '' })} />
+            {cloudModels.map((model) => (
+              <MenuItem key={`plan:${model.name}`} icon={<Cloud size={14} />} title={`Plan in steps with ${cloudTitle(model.name)}`} detail={`${model.provider_label} writes the plan; sends your request to it`} selected={settings.agentPlanner === model.name} onSelect={() => pick({ agentPlanner: model.name })} />
+            ))}
+            {local.filter((model) => !/embed/i.test(model.name)).map((model) => (
+              <MenuItem key={`plan:${model.name}`} icon={<Bot size={14} />} title={`Plan in steps with ${model.name}`} detail="Writes a checked step plan on this PC" selected={settings.agentPlanner === model.name} onSelect={() => pick({ agentPlanner: model.name })} />
+            ))}
+          </>}
         </>}
       </Popover>
     </div>

@@ -144,7 +144,8 @@ class _FakeTools:
         self.calls.append((name, arguments))
         # The gateway passes the run's output dir in the context; the
         # verifier checks done-conditions against that same directory.
-        workspace = Path(context.output_dir)
+        # File tools get the run's project context (rooted at the workspace, here the output dir).
+        workspace = Path(getattr(context, "output_dir", None) or context.project_root)
         if name == "save_text_artifact":
             path = workspace / arguments["filename"]
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -484,6 +485,7 @@ class PlanSequenceGatewayTests(unittest.IsolatedAsyncioTestCase):
         with (
             mock.patch.object(pockpock_server, "MODEL_CLIENT", fake_model),
             mock.patch.object(pockpock_server, "execute_agent_tool", fake_tools),
+            mock.patch.object(pockpock_server, "execute_project_tool", fake_tools),
         ):
             response = await pockpock_server.run_sequence_agent_task(
                 pockpock_server.AgentSequenceRunPayload(
@@ -521,6 +523,82 @@ class PlanSequenceGatewayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(pockpock_server.AGENT_RUN_CANCEL_REASONS, {})
         self.assertFalse(pockpock_server.AGENT_TASK_SEMAPHORE.locked())
 
+    async def test_run_sequence_shows_each_step_in_the_app(self):
+        result = await self._approved_ticket()
+        with (
+            mock.patch.object(pockpock_server, "MODEL_CLIENT", _FakeModelClient()),
+            mock.patch.object(pockpock_server, "execute_agent_tool", _FakeTools(self.workspace)),
+            mock.patch.object(pockpock_server, "execute_project_tool", _FakeTools(self.workspace)),
+        ):
+            response = await pockpock_server.run_sequence_agent_task(
+                pockpock_server.AgentSequenceRunPayload(plan_id=result["plan_id"], plan_hash=result["plan_hash"], run_id="c" * 32),
+                _local_request(),
+            )
+            events = _parse_sse_frames([chunk async for chunk in response.body_iterator])
+        steps = [(event["step"], event["total"]) for event in events if event.get("type") == "plan_step"]
+        self.assertEqual(steps, [(1, 5), (2, 5), (3, 5), (4, 5), (5, 5)])
+        self.assertEqual(sum(1 for event in events if event.get("type") == "sequence_check" and event["passed"]), 5)
+        reply = next(event["content"] for event in events if event.get("type") == "token")
+        self.assertIn("Finished all 5 steps", reply)
+        self.assertIn("summary.md exists", reply)
+        artifacts = [event for event in events if event.get("type") == "artifact"]
+        self.assertEqual([item["name"] for item in artifacts], [])  # the fake save returns no name
+
+    async def test_a_change_in_auto_review_waits_for_approval_then_is_applied(self):
+        plan = {
+            "contract_version": 1, "task": TASK,
+            "steps": [
+                _step("step-1", ["propose_project_patch"], {"type": "file_exists", "path": "notes.md"}),
+                _step("step-2", ["read_project_file"], {"type": "file_contains", "path": "notes.md", "pattern": "hello"}, inputs=["step-1"]),
+            ],
+        }
+        planned, _ = await self._plan(planner_payload=self._planner_result(plan))
+        decision = await pockpock_server.decide_agent_plan(
+            planned["plan_id"], pockpock_server.AgentPlanDecisionPayload(action_hash=planned["plan_hash"], decision="approved"), _local_request())
+
+        class Model:
+            async def complete(self, request, timeout=None):
+                name = request.tools[0]["function"]["name"]
+                arguments = {"path": "notes.md", "content": "hello from step one\n", "summary": "Add notes"} if name == "propose_project_patch" else {"path": "notes.md"}
+                return {"choices": [{"message": {"content": "", "tool_calls": [{"id": "c1", "type": "function", "function": {"name": name, "arguments": json.dumps(arguments)}}]}}]}
+
+        approvals = []
+
+        def create_approval(run_id, approval_id, action_hash, action, expires_at):
+            approvals.append(action)
+            return {"approval_id": approval_id, "action_hash": action_hash, "action": action, "expires_at": expires_at}
+
+        run_id = "d" * 32
+        with (
+            mock.patch.object(pockpock_server, "MODEL_CLIENT", Model()),
+            mock.patch.object(pockpock_server, "create_agent_approval", create_approval),
+        ):
+            response = await pockpock_server.run_sequence_agent_task(
+                pockpock_server.AgentSequenceRunPayload(plan_id=planned["plan_id"], plan_hash=decision["approved_plan_hash"], run_id=run_id),
+                _local_request(),
+            )
+            events = []
+            async for chunk in response.body_iterator:
+                for event in _parse_sse_frames([chunk]):
+                    events.append(event)
+                    if event.get("type") == "approval_requested":
+                        # The user presses Allow once on the card.
+                        pockpock_server.AGENT_RUN_APPROVAL_FUTURES[event["approval_id"]].set_result("approved")
+        types = [event.get("type") for event in events]
+        self.assertIn("approval_requested", types)
+        self.assertLess(types.index("approval_requested"), types.index("patch"), "nothing is written before approval")
+        self.assertEqual(approvals[0]["path"], "notes.md")
+        self.assertEqual((self.workspace / run_id / "notes.md").read_text(), "hello from step one\n")
+        self.assertEqual(events[-1]["status"], "completed")
+
+    async def test_plan_in_steps_uses_the_chosen_planner_and_step_models(self):
+        _, captured = await self._plan(
+            payload=pockpock_server.AgentPlanPayload(task=TASK, preferred_model="qwen3.5:9b", planner_model="qwen3.6:35b-a3b"),
+            planner_payload=self._planner_result(),
+        )
+        self.assertEqual(captured["json"]["planner_model"], "qwen3.6:35b-a3b")
+        self.assertEqual(captured["json"]["executor_model"], "qwen3.5:9b")
+
     async def test_run_sequence_text_tool_call_fallback(self):
         result = await self._approved_ticket()
         # The model prints the call as JSON text instead of using tool_calls.
@@ -551,6 +629,7 @@ class PlanSequenceGatewayTests(unittest.IsolatedAsyncioTestCase):
         with (
             mock.patch.object(pockpock_server, "MODEL_CLIENT", TextModelClient()),
             mock.patch.object(pockpock_server, "execute_agent_tool", fake_tools),
+            mock.patch.object(pockpock_server, "execute_project_tool", fake_tools),
         ):
             response = await pockpock_server.run_sequence_agent_task(
                 pockpock_server.AgentSequenceRunPayload(
