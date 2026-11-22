@@ -10,7 +10,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import readline from 'node:readline'
-import { buildSubtaskMessage, cleanToolError, DEFAULT_STALL_SECONDS, explainTurnError, isStalled, subtaskTimeoutSeconds, validateSubtask } from './turn_helpers.mjs'
+import { buildSubtaskMessage, cleanToolError, DEFAULT_STALL_SECONDS, explainTurnError, grantKey, isStalled, subtaskTimeoutSeconds, validateSubtask } from './turn_helpers.mjs'
 
 const DEBUG = process.env.POCKPOCK_OPENCLAW_DEBUG === '1'
 const STATE_DIR = process.env.OPENCLAW_STATE_DIR || path.join(os.homedir(), '.openclaw')
@@ -198,7 +198,10 @@ async function run(start) {
   let model = ''
   let text = ''
   const startedAt = Date.now()
-  const pendingApprovals = new Map()
+  const pendingApprovals = new Map() // id -> { kind, key }
+  // "Allow for this task": approvals granted for the rest of this turn. An exec grant covers the exact
+  // command; a plugin grant covers that tool. They end with the turn.
+  const grants = new Set()
   let aborting = false
   let lastActivity = Date.now()
   const stallSeconds = Number(start.stallSeconds) > 0 ? Number(start.stallSeconds) : DEFAULT_STALL_SECONDS
@@ -206,7 +209,7 @@ async function run(start) {
   const abort = async (reason) => {
     if (aborting || finished) return
     aborting = true
-    for (const [id, kind] of pendingApprovals) {
+    for (const [id, { kind }] of pendingApprovals) {
       gateway.call(kind === 'exec' ? 'exec.approval.resolve' : 'plugin.approval.resolve', { id, decision: 'deny' }).catch(() => {})
     }
     try { await gateway.call('chat.abort', runId ? { sessionKey, runId } : { sessionKey }, 5_000) } catch { /* The run may already be over. */ }
@@ -224,8 +227,15 @@ async function run(start) {
       if (owner && owner !== sessionKey) return
       const approval = approvalEvent(kind, payload)
       if (!approval.id) return
-      pendingApprovals.set(approval.id, kind)
+      const key = grantKey(approval)
       lastActivity = Date.now()
+      if (grants.has(key)) {
+        gateway.call(kind === 'exec' ? 'exec.approval.resolve' : 'plugin.approval.resolve', { id: approval.id, decision: 'allow-once' })
+          .then(() => emit({ type: 'approval_auto', id: approval.id, title: approval.title, description: approval.description }))
+          .catch((error) => emit({ type: 'approval_error', id: approval.id, message: String(error.message).slice(0, 300) }))
+        return
+      }
+      pendingApprovals.set(approval.id, { kind, key })
       emit(approval)
       return
     }
@@ -289,9 +299,11 @@ async function run(start) {
     if (command?.type === 'abort') {
       void abort('user')
     } else if (command?.type === 'approval' && typeof command.id === 'string') {
-      const kind = pendingApprovals.get(command.id)
-      if (!kind) return
-      const decision = command.decision === 'allow-once' ? 'allow-once' : 'deny'
+      const pending = pendingApprovals.get(command.id)
+      if (!pending) return
+      const { kind, key } = pending
+      const decision = command.decision === 'allow-once' || command.decision === 'allow-task' ? 'allow-once' : 'deny'
+      if (command.decision === 'allow-task') grants.add(key)
       gateway.call(kind === 'exec' ? 'exec.approval.resolve' : 'plugin.approval.resolve', { id: command.id, decision })
         .catch((error) => emit({ type: 'approval_error', id: command.id, message: String(error.message).slice(0, 300) }))
     }

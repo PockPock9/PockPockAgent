@@ -62,6 +62,7 @@ logger = logging.getLogger("pockpock")
 class AgentCoreServices:
     AGENT_PLAN_TICKETS: dict[str, dict[str, Any]]
     AGENT_RUN_APPROVAL_FUTURES: dict[str, asyncio.Future[str]]
+    AGENT_RUN_NOTES: dict[str, list[str]]
     AGENT_RUN_CANCEL_EVENTS: dict[str, asyncio.Event]
     AGENT_RUN_CANCEL_REASONS: dict[str, str]
     AGENT_RUN_TIMEOUT_SECONDS: int
@@ -136,6 +137,14 @@ def effective_task_capabilities(
     return capabilities
 
 
+def note_message(note: str) -> str:
+    """How a note the user added during a run is given to the model."""
+    return (
+        "Note from the user, added while you work. Take it into account from the next step on, "
+        "within the approved plan and permissions:\n" + note.strip()[:2000]
+    )
+
+
 def context_window_from_ps(ps: object, model: str) -> int | None:
     """The context length Ollama loaded ``model`` with, from an ``/api/ps`` reply, or None."""
     items = ps.get("models") if isinstance(ps, dict) else None
@@ -195,6 +204,7 @@ def saved_artifact_read_name(
 def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any]:
     AGENT_PLAN_TICKETS = services.AGENT_PLAN_TICKETS
     AGENT_RUN_APPROVAL_FUTURES = services.AGENT_RUN_APPROVAL_FUTURES
+    AGENT_RUN_NOTES = services.AGENT_RUN_NOTES
     AGENT_RUN_CANCEL_EVENTS = services.AGENT_RUN_CANCEL_EVENTS
     AGENT_RUN_CANCEL_REASONS = services.AGENT_RUN_CANCEL_REASONS
     AGENT_RUN_TIMEOUT_SECONDS = services.AGENT_RUN_TIMEOUT_SECONDS
@@ -1038,7 +1048,7 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                                 })
                             finally:
                                 AGENT_RUN_APPROVAL_FUTURES.pop(approval_id, None)
-                            if approval_decision != "approved":
+                            if approval_decision not in ("approved", "approved_for_task"):  # no task grants here: once
                                 delegate_dispatch_failed = True
                                 delegate_patch_outcomes.setdefault(subtask_id, []).append({
                                     "child_run_id": child_run_id,
@@ -1417,11 +1427,19 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                 tool_call_limit = payload.delegation_contract.max_tool_calls if payload.delegation_contract else 20
                 context_window: int | None = None
                 verifying_announced = False
+                # "Allow for this task" grants: "workspace_change", or "browser:<action>" (never a
+                # high-impact click). They last for this run only.
+                task_grants: set[str] = set()
                 for _ in range(tool_call_limit):
                     if cancel_event.is_set():
                         raise AgentRunTermination(get_cancel_reason())
                     if await request.is_disconnected():
                         raise asyncio.CancelledError
+                    # Notes the user added while the run worked join the conversation before the next
+                    # model call. They are the user's words, like the task, and cannot widen permissions.
+                    for note in AGENT_RUN_NOTES.pop(task_id, []):
+                        messages.append({"role": "user", "content": note_message(note)})
+                        yield sse({"type": "note", "text": note[:2000], "message": "Your note was given to the agent"})
                     # Context compaction (tool-RAG Phase 2): when the history
                     # passes 70-80% of the context window, prune old tool
                     # results first, then summarise the old portion keeping
@@ -2075,6 +2093,10 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                                 requires_browser_approval = high_impact or (
                                     payload.permission_mode != "full-access" and browser_action_name != "scroll"
                                 )
+                                browser_grant = f"browser:{browser_action_name}"
+                                if requires_browser_approval and not high_impact and browser_grant in task_grants:
+                                    requires_browser_approval = False
+                                    yield sse({"type": "approval_auto", "contract_version": 1, "tool": name, "message": f"Allowed for this task: browser {browser_action_name} {browser_target}".strip()})
                                 if requires_browser_approval:
                                     # Bind the decision to the complete, validated action payload while
                                     # keeping potentially sensitive typed values out of persisted history.
@@ -2098,6 +2120,7 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                                     yield sse({
                                         "type": "approval_requested", "contract_version": 1,
                                         "task_id": task_id, "run_id": task_id, **approval,
+                                        "grantable": not high_impact,
                                         "message": "Approve this exact browser action before it runs.",
                                     })
                                     try:
@@ -2110,7 +2133,9 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                                         yield sse({"type": "approval_expired", "contract_version": 1, "approval_id": approval_id, "action_hash": action_hash, "tool": name, "message": "Approval expired; the browser action was not run."})
                                     finally:
                                         AGENT_RUN_APPROVAL_FUTURES.pop(approval_id, None)
-                                    if decision_result != "approved":
+                                    if decision_result == "approved_for_task" and not high_impact:
+                                        task_grants.add(browser_grant)
+                                    if decision_result not in ("approved", "approved_for_task"):
                                         tool_result = {"error": {"code": "approval_" + decision_result, "message": "The browser action was not approved and was not run."}}
                                         tool_status = "error"
                                         tool_error = tool_result["error"]["message"]
@@ -2119,7 +2144,7 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                                         if decision_result != "expired":
                                             yield sse({"type": "approval_rejected", "contract_version": 1, "approval_id": approval_id, "action_hash": action_hash, "tool": name, "message": tool_error})
                                     else:
-                                        yield sse({"type": "approval_approved", "contract_version": 1, "approval_id": approval_id, "action_hash": action_hash, "tool": name, "message": "Approved exact browser action"})
+                                        yield sse({"type": "approval_approved", "contract_version": 1, "approval_id": approval_id, "action_hash": action_hash, "tool": name, "message": "Approved for the rest of this task" if decision_result == "approved_for_task" else "Approved exact browser action"})
                             if name in {"list_project_files", "search_project", "read_project_file", "propose_project_edit", "propose_project_patch", "validate_project"}:
                                 if project_context is None:
                                     raise ToolContractError("permission_required", "Workspace tools require Full Access permission")
@@ -2147,7 +2172,9 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                                     ][:6]
                                 patch_id = tool_result.get("patch_id") if isinstance(tool_result, dict) else None
                                 if patch_id:
-                                    if payload.permission_mode == "auto-review":
+                                    if payload.permission_mode == "auto-review" and "workspace_change" in task_grants:
+                                        yield sse({"type": "approval_auto", "contract_version": 1, "tool": name, "path": str(tool_result.get("path", "")), "message": f"Allowed for this task: change {tool_result.get('path', 'a file')}"})
+                                    elif payload.permission_mode == "auto-review":
                                         action = {
                                             "tool": name,
                                             "patch_id": str(patch_id),
@@ -2167,6 +2194,7 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                                         yield sse({
                                             "type": "approval_requested", "contract_version": 1,
                                             "task_id": task_id, **approval,
+                                            "grantable": True,
                                             "message": f"Review the proposed change to {action['path']} before it is applied.",
                                         })
                                         try:
@@ -2182,7 +2210,9 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                                             yield sse({"type": "approval_expired", "contract_version": 1, "approval_id": approval_id, "action_hash": action_hash, "tool": name, "message": "Approval expired; the change was not applied."})
                                         finally:
                                             AGENT_RUN_APPROVAL_FUTURES.pop(approval_id, None)
-                                        if decision_result != "approved":
+                                        if decision_result == "approved_for_task":
+                                            task_grants.add("workspace_change")
+                                        if decision_result not in ("approved", "approved_for_task"):
                                             tool_result = {"error": {"code": "approval_" + decision_result, "message": "The workspace change was not approved and was not applied."}}
                                             tool_status = "error"
                                             tool_error = tool_result["error"]["message"]
@@ -2191,7 +2221,7 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                                             if decision_result != "expired":
                                                 yield sse({"type": "approval_rejected", "contract_version": 1, "approval_id": approval_id, "action_hash": action_hash, "tool": name, "message": tool_error})
                                         else:
-                                            yield sse({"type": "approval_approved", "contract_version": 1, "approval_id": approval_id, "action_hash": action_hash, "tool": name, "message": "Approved exact workspace change"})
+                                            yield sse({"type": "approval_approved", "contract_version": 1, "approval_id": approval_id, "action_hash": action_hash, "tool": name, "message": "Approved for the rest of this task" if decision_result == "approved_for_task" else "Approved exact workspace change"})
                                     if not approval_denied:
                                         applied = apply_project_patch(str(patch_id), project_context.project_root)
                                         workspace_edits_applied += 1
@@ -2545,6 +2575,7 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                         except OSError:
                             logger.exception("Could not save task memory for agent run %s", task_id)
                     AGENT_RUN_CANCEL_EVENTS.pop(task_id, None)
+                    AGENT_RUN_NOTES.pop(task_id, None)
                     AGENT_RUN_CANCEL_REASONS.pop(task_id, None)
 
         return StreamingResponse(track_agent_stream(task_id, stream(), sse), media_type="text/event-stream", headers={

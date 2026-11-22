@@ -32,7 +32,7 @@ Details that matter:
 - **Read-only commands** are decided by a conservative allowlist in the plugin (`Get-ChildItem`, `Get-Content`, `Select-String`, `git status`/`log`/`diff`, `hostname`, `ollama list`, and similar). Every segment of a pipeline must be on the list. Any redirection (`>`), script block (`{}`), sub-expression (`()`, `$()`, backticks), `&`, a new line, `Invoke-Expression`, `Start-Process`, or an unknown program means the command asks instead. A command the list does not recognize is never auto-approved.
 - **Tools reached through OpenClaw's tool search are checked under their own name.** `tool_search`, `tool_describe`, and the `dispatch_action` wrapper never ask; the tool that `dispatch_action` runs (for example `browser`) passes through the same hook and is asked about there, so one action produces one card.
 - **Web access asks in Auto-approve safe.** An agent that can both read local files and reach the web without asking could be tricked by a web page into sending file contents out, so fetching is not treated as safe.
-- **Approvals are per action.** Each card offers **Allow once** or **Deny**. There is no "always allow"; choose Full access for unattended work. A request that is not answered within 10 minutes is denied.
+- **Approvals are per action or per turn.** Each card offers **Allow once**, **Allow for this task** or **Deny**. **Allow for this task** also allows, for the rest of this turn only, the exact same command (exec approvals) or the same tool (plugin approvals); those later requests are answered automatically and shown as a step "Allowed for this task: …". There is no permanent "always allow"; choose Full access for unattended work. A request that is not answered within 10 minutes is denied.
 - **A missing record is treated as Ask first.** If PockPock cannot record the selected mode, the turn is not started.
 - **The question tool is blocked.** OpenClaw's `ask_user` tool is refused in every mode because PockPock has no question prompt; the agent asks in its reply instead.
 - **Only PockPock sessions are governed.** The plugin applies to sessions whose key contains `:pockpock-`. Sessions started from OpenClaw's own dashboard, CLI, or chat channels keep OpenClaw's configured policy, which is full access by default.
@@ -237,7 +237,7 @@ Only one OpenClaw turn runs at a time across the gateway.
 
 ### `POST /api/openclaw/approvals`
 
-Rate limit: 120 per minute. Body: `{"approval_id": "<id from the approval event>", "decision": "allow-once | deny"}`. Returns `{"ok": true}`, `400` for an invalid id or decision, or `404` when that approval is not waiting in the active turn.
+Rate limit: 120 per minute. Body: `{"approval_id": "<id from the approval event>", "decision": "allow-once | allow-task | deny"}`. `allow-task` allows this request and, for the rest of the turn, later requests with the same key (`turn_helpers.mjs` `grantKey`: `exec:<command>` or `plugin:<tool>`); the turn resolves them with `allow-once` and emits `approval_auto`. Returns `{"ok": true}`, `400` for an invalid id or decision, or `404` when that approval is not waiting in the active turn.
 
 ## Configuration
 

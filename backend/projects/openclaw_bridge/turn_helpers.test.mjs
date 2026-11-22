@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildSubtaskMessage, cleanToolError, explainTurnError, isStalled, subtaskTimeoutSeconds, validateSubtask, DEFAULT_STALL_SECONDS, OLLAMA_TIMEOUT_KEY } from './turn_helpers.mjs'
+import { buildSubtaskMessage, cleanToolError, explainTurnError, grantKey, isStalled, subtaskTimeoutSeconds, validateSubtask, DEFAULT_STALL_SECONDS, OLLAMA_TIMEOUT_KEY } from './turn_helpers.mjs'
 
 test('a turn is stalled only after the limit with no approval waiting', () => {
   const stallMs = DEFAULT_STALL_SECONDS * 1000
@@ -99,4 +99,11 @@ test('a slow local model gets advice with the exact setting (issues #83, #84)', 
   assert.doesNotMatch(explained, /<id>/)
   assert.equal(explainTurnError('Some other failure.'), 'Some other failure.')
   assert.equal(explainTurnError(undefined), '')
+})
+
+test('an Allow for this task grant covers the exact command, or the plugin tool', () => {
+  assert.equal(grantKey({ kind: 'exec', description: 'python -m pytest -q', title: 'Run command' }), 'exec:python -m pytest -q')
+  assert.notEqual(grantKey({ kind: 'exec', description: 'python -m pytest -q' }), grantKey({ kind: 'exec', description: 'rm -rf build' }))
+  assert.equal(grantKey({ kind: 'plugin', toolName: 'write', title: 'Write notes.md' }), 'plugin:write')
+  assert.equal(grantKey({ kind: 'plugin', toolName: '', title: 'Approval required' }), 'plugin:Approval required')
 })
