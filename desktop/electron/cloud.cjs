@@ -24,7 +24,8 @@ const PROVIDERS = {
     regions: { default: { name: 'Global', baseUrl: 'https://integrate.api.nvidia.com/v1' } },
     modelsNeedKey: false,
     // Checked against the live list on 2026-11-16. Ids that are no longer offered are skipped on connect.
-    suggested: ['deepseek-ai/deepseek-v4.1-flash', 'openai/gpt-oss-20b', 'mistralai/mistral-large-4-1t-a52b', 'nvidia/nemotron-3-ultra-550b-a55b', 'z-ai/glm-5.3-flash'],
+    // Models that answered a test call on 2026-11-22 (several listed models did not, or are not served).
+    suggested: ['nvidia/nemotron-3-ultra-550b-a55b', 'nvidia/nemotron-3.5-lightning-30b-a3b', 'moonshotai/kimi-k3.1-pro', 'mistralai/mistral-large-4-1t-a52b'],
   },
   openrouter: {
     name: 'OpenRouter',
@@ -157,6 +158,10 @@ class Cloud {
     })
   }
 
+  /** How long each NVIDIA key-check request may take (the requests run together). */
+  get nimCheckTimeoutMs() { return this._nimCheckTimeoutMs ?? 12000 }
+  set nimCheckTimeoutMs(value) { this._nimCheckTimeoutMs = value }
+
   async request(url, { key, method = 'GET', body, timeoutMs = 20000 } = {}) {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), timeoutMs)
@@ -189,21 +194,41 @@ class Cloud {
   }
 
   /**
-   * NVIDIA lists models without a key, so the key is checked with a one-token reply from a model in
-   * its current list. A model that is listed but not served answers 404 or 410 whatever the key is,
-   * so a few small models are tried until one gives a real answer (403 for a bad key).
+   * NVIDIA lists models without a key, so the key is checked with one-token requests to a few models
+   * in its current list, sent together; the first answer that says something about the key decides.
+   * Measured 2026-11-22: a wrong or missing key is refused at once (401/403) by any listed model; an
+   * accepted key gets a real answer, an error from the model (for example 500), or 404 "Not found for
+   * account" for a model this account cannot use, which still means NVIDIA read the key. A 410, a
+   * plain 404 and a timeout say nothing about the key: one listed model never answered within 30 s,
+   * and waiting on it one model at a time made a good key fail with "did not answer in time".
    */
   async verifyNim(key, baseUrl) {
     const listing = await this.request(`${baseUrl}/models`)
     if (listing.status === 0) return listing
     const offered = normalizeModels(listing.json).map((model) => model.id)
     const small = offered.filter((modelId) => /flash|nano|bolt|mini|lite|-[1-9]b|20b/i.test(modelId))
-    const candidates = [...new Set([...small, ...offered])].slice(0, 4)
-    let reply = { status: 404, json: null }
-    for (const model of candidates) {
-      reply = await this.request(`${baseUrl}/chat/completions`, { key, method: 'POST', timeoutMs: 30000, body: { model, messages: [{ role: 'user', content: 'Hi' }], max_tokens: 1 } })
-      if (reply.status !== 404 && reply.status !== 410) return reply
+    const candidates = [...new Set([...small, ...offered])].slice(0, 6)
+    const decisive = (reply) => {
+      if ([401, 402, 403].includes(reply.status)) return reply
+      if (reply.status === 404 && /for account/i.test(JSON.stringify(reply.json ?? ''))) return { status: 200, json: null }
+      if (reply.status === 0 || reply.status === 404 || reply.status === 410) return null
+      return reply
     }
+    const replies = []
+    const decided = await new Promise((resolve) => {
+      let waiting = candidates.length
+      if (!waiting) resolve(null)
+      for (const model of candidates) {
+        void this.request(`${baseUrl}/chat/completions`, { key, method: 'POST', timeoutMs: this.nimCheckTimeoutMs, body: { model, messages: [{ role: 'user', content: 'Hi' }], max_tokens: 1 } }).then((reply) => {
+          replies.push(reply)
+          const answer = decisive(reply)
+          if (answer) resolve(answer)
+          else if (--waiting === 0) resolve(null)
+        })
+      }
+    })
+    if (decided) return decided
+    if (replies.length && replies.every((reply) => reply.status === 0)) return { status: 0, json: null, error: replies.some((reply) => reply.error === 'timeout') ? 'timeout' : 'network' }
     throw new Error('NVIDIA NIM could not check the key right now (none of its test models answered). Try again in a few minutes.')
   }
 
