@@ -96,11 +96,17 @@ export function PlanCard({ message, plan: given, onChange, earlier }: { message:
     <section className={`card card--plan${pending ? ' is-pending' : ''}${plan.status === 'replaced' ? ' is-muted' : ''}`} aria-label="Plan">
       <header>
         <Mark size={16} />
-        <strong>Plan</strong>
-        <span className="card__sub">{plan.steps.length} {plan.steps.length === 1 ? 'step' : 'steps'} · {plan.model}{planningMs !== null && !earlier ? ` · planned in ${formatDuration(planningMs)}` : ''}</span>
+        <strong>{plan.sequence ? 'Plan in steps' : 'Plan'}</strong>
+        <span className="card__sub">{plan.steps.length} {plan.steps.length === 1 ? 'step' : 'steps'} · {plan.sequence ? `planned by ${plan.sequence.planner}, done by ${plan.sequence.executor}` : plan.model}{planningMs !== null && !earlier ? ` · planned in ${formatDuration(planningMs)}` : ''}</span>
         <span className={`badge${pending ? ' badge--accent' : plan.status === 'approved' ? ' badge--ok' : ''}`}>{status}</span>
       </header>
       {plan.goal && <p className="card__title">{plan.goal}</p>}
+      {plan.sequence && pending && (
+        <p className="plan__sequence-note">
+          Each step is done by {plan.sequence.executor} with only the tools that step needs, and checked before the next one starts; a step that fails is tried again, then the run stops with the earlier steps kept.
+          {plan.sequence.cloud && <> <strong>A cloud model is used:</strong> your request, this plan and each step’s results (file names and short excerpts) are sent to that service.</>}
+        </p>
+      )}
       {plan.precheck?.length ? (
         <div className="plan__checks" aria-label="Plan checked before it was shown">
           <span className="plan__checks-label">Plan checked:</span>
@@ -149,7 +155,7 @@ export function PlanCard({ message, plan: given, onChange, earlier }: { message:
           current={!earlier && plan.status === 'approved' && message.status === 'streaming' && message.planStep?.total === plan.steps.length ? message.planStep.step : undefined} />
       </div>
       <div className="plan__section">
-        <h4>Success checks</h4>
+        <h4>{plan.sequence ? 'Each step’s check' : 'Success checks'}</h4>
         {editing ? <EditableList label="Success check" items={checks} onChange={setChecks} editing />
           : <ul className="plan__checklist">{checks.map((check, index) => <li key={index}><Check size={13} aria-hidden="true" />{check}</li>)}</ul>}
       </div>
@@ -157,7 +163,7 @@ export function PlanCard({ message, plan: given, onChange, earlier }: { message:
       {pending && (
         <div className="card__actions">
           <button type="button" className="button button--primary" disabled={busy !== null} onClick={() => void decide(true)}>{busy === 'approve' ? <LoaderCircle size={13} className="spin" /> : <Check size={13} />} Approve and run</button>
-          <button type="button" className="button" disabled={busy !== null} aria-pressed={editing} onClick={() => setEditing((value) => !value)}><Pencil size={13} /> {editing ? 'Done editing' : 'Edit plan'}</button>
+          {!plan.sequence && <button type="button" className="button" disabled={busy !== null} aria-pressed={editing} onClick={() => setEditing((value) => !value)}><Pencil size={13} /> {editing ? 'Done editing' : 'Edit plan'}</button>}
           <button type="button" className="button" disabled={busy !== null} onClick={() => void decide(false)}>{busy === 'decline' ? <LoaderCircle size={13} className="spin" /> : <X size={13} />} Decline</button>
           <span className="card__hint">Nothing runs until you approve.</span>
         </div>

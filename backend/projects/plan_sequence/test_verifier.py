@@ -128,7 +128,8 @@ class FileContainsTests(unittest.TestCase):
             self.assertFalse(result["passed"])
             self.assertIn("does not contain", result["detail"])
 
-    def test_case_sensitive(self):
+    def test_case_is_ignored(self):
+        # The planner writes the pattern before the text exists (live validation 2026-11-22).
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "a.md").write_text("Total: 42\n")
@@ -136,7 +137,13 @@ class FileContainsTests(unittest.TestCase):
                 {"type": "file_contains", "path": "a.md", "pattern": "total"},
                 workspace=root, step_result=_result(),
             )
-            self.assertFalse(result["passed"])
+            self.assertTrue(result["passed"])
+            missing = verify_done_condition(
+                {"type": "file_contains", "path": "a.md", "pattern": "budget"},
+                workspace=root, step_result=_result(),
+            )
+            self.assertFalse(missing["passed"])
+            self.assertIn("“budget”", missing["detail"])
 
     def test_fails_when_file_missing(self):
         with tempfile.TemporaryDirectory() as tmp:

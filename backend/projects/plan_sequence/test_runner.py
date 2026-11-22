@@ -303,12 +303,29 @@ class RunnerFailureTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(chat.calls, [])
             self.assertIn("exceeds budget_tokens", result["failure"]["detail"])
 
+    async def test_waiting_for_the_user_does_not_use_up_the_step_budget(self):
+        runner = SequenceRunner(chat=FakeChat([]), execute_tool=FakeTools("."))
+
+        async def approval_then_work():
+            with runner.waiting_for_user():
+                await asyncio.sleep(0.6)  # longer than the budget, but the user is deciding
+            await asyncio.sleep(0.1)
+            return "done"
+
+        self.assertEqual(await runner._within_budget(approval_then_work(), 0.4), "done")
+
+        async def slow_work():
+            await asyncio.sleep(5)
+
+        with self.assertRaises(asyncio.TimeoutError):
+            await runner._within_budget(slow_work(), 0.3)
+
     async def test_step_timeout_retries_then_needs_replan(self):
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
             plan = _happy_plan()
 
-            async def _never_wait_for(coro, timeout=None):
+            async def _never_within_budget(coro, seconds=None):
                 coro.close()
                 raise asyncio.TimeoutError()
 
@@ -316,9 +333,9 @@ class RunnerFailureTests(unittest.IsolatedAsyncioTestCase):
             tools = FakeTools(workspace)
             events = []
             runner = SequenceRunner(chat=chat, execute_tool=tools, on_event=events.append)
-            # Simulate the wait_for timeout without waiting out the 300s
-            # budget three times over: the patched wait_for raises at once.
-            with mock.patch("asyncio.wait_for", new=_never_wait_for):
+            # Simulate the budget running out without waiting out the 300s
+            # budget three times over: the patched budget raises at once.
+            with mock.patch.object(runner, "_within_budget", new=_never_within_budget):
                 result = await runner.run(plan, workspace=workspace, run_id="run-6", executor_model="qwen3.5:9b")
             self.assertEqual(result["status"], "needs_replan")
             self.assertEqual(result["failure"]["step_id"], "step-1")

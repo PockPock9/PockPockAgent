@@ -78,6 +78,8 @@ export type PlanCard = {
   precheck?: PlanCheck[]
   /** Answer choices per question, in the same order; empty when the planner gave none. */
   questionOptions?: string[][]
+  /** Plan in steps: one model wrote the plan, another does each step (checked before the next). */
+  sequence?: { planner: string; executor: string; cloud: boolean }
   /** replaced: the user answered a question and the task was planned again. */
   status: 'pending' | 'approved' | 'rejected' | 'replaced'
   error?: string
@@ -220,6 +222,8 @@ export type Settings = {
   clawPermission?: ClawPermission
   chatModel?: string
   clawModel?: string
+  /** Plan in steps (PockPock Agent): the model that writes the step plan; empty for one-model plans. */
+  agentPlanner?: string
   sidebar?: boolean
   files?: boolean
   terminal?: boolean

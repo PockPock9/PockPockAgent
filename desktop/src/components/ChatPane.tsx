@@ -108,7 +108,7 @@ export function ChatPane(props: Props) {
   const last = messages.at(-1)
   const lastReply = [...messages].reverse().find((message) => message.role === 'assistant')
   // While an approved PockPock Agent run works in this task, the composer sends notes to it.
-  const noteMode = Boolean(runningHere && lastReply && running?.messageId === lastReply.id && lastReply.engine === 'agent' && lastReply.plan?.status === 'approved' && lastReply.status === 'streaming')
+  const noteMode = Boolean(runningHere && lastReply && running?.messageId === lastReply.id && lastReply.engine === 'agent' && lastReply.plan?.status === 'approved' && !lastReply.plan.sequence && lastReply.status === 'streaming')
 
   useEffect(() => { inputRef.current?.focus() }, [focusSignal, session?.id])
 
@@ -223,7 +223,7 @@ export function ChatPane(props: Props) {
   const modelLabel = engine === 'openclaw'
     ? (settings.clawModel && clawAll.includes(settings.clawModel) ? shortName(settings.clawModel) : `${status.claw?.model?.replace('ollama/', '') || 'Default'}`)
     : engine === 'nemoclaw' ? (nemoRoute?.cloud ? shortName(nemoRoute.model) : nemoRoute?.model || status.nemo?.model || 'Sandbox model')
-      : chatModelKnown ? shortName(settings.chatModel as string) : 'Smart route'
+      : `${chatModelKnown ? shortName(settings.chatModel as string) : 'Smart route'}${engine === 'agent' && settings.agentPlanner ? ` · steps planned by ${shortName(settings.agentPlanner)}` : ''}`
   const folderName = settings.workspace?.split(/[\\/]/).filter(Boolean).at(-1)
   const engineTone = engine === 'openclaw' ? (status.claw?.ready ? 'ok' : 'off') : engine === 'nemoclaw' ? (status.nemoChecking ? 'busy' : status.nemo?.ready ? 'ok' : 'off') : (status.state?.connected ? 'ok' : 'off')
 

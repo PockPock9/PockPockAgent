@@ -142,14 +142,17 @@ def _verify(condition: Any, *, workspace: Path | None, step_result: dict | None)
             text = target.read_text(encoding="utf-8", errors="replace")
         except OSError as exc:
             return _fail(f"could not read file: {path}: {exc}")
+        # Case is ignored: the planner writes the pattern before the text exists, and a step that wrote
+        # "Release date: Friday" for the pattern "release date" did the work (live validation 2026-11-22).
+        wanted = pattern.casefold()
         for line in text.splitlines():
-            if pattern in line:
+            if wanted in line.casefold():
                 return {
                     "passed": True,
                     "evidence": line[:200],
                     "detail": f"file contains pattern: {path}",
                 }
-        return _fail(f"file does not contain pattern: {path}")
+        return _fail(f"{path} does not contain “{pattern[:80]}”")
 
     if cond_type == "command_exit_0":
         calls = _tool_calls(step_result)

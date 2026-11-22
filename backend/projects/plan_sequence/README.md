@@ -121,11 +121,13 @@ against the gateway, OpenClaw-as-tool-provider, or a fake in tests.
   `remaining_steps` (the failed step onwards), and `failure`. Re-plan scope
   is the remaining steps only — passed steps and their capsule entries are kept.
 - `execute_tool` must return `{"ok": bool, "output": str, "exit_code": int | None,
-  "error": str | None}`. **There is no in-repo adapter from this shape to the
-  repo's `execute_agent_tool` / `execute_project_tool` yet** — those return
-  bare result dicts with no `ok`/`output` keys, so a bare success would read
-  as `ok=False`. The P1 eval harness (`backend/scripts/evaluate_plan_sequence.py`,
-  `RealToolAdapter`) supplies the translation for measurement only.
+  "error": str | None}`. The gateway's `POST /api/agents/run-sequence` adapts the
+  repo's `execute_agent_tool` / `execute_project_tool` to this shape (the text
+  comes from `content`, `files`, `matches` or `output`: `ui_events.tool_output_text`),
+  shows file changes for approval in Auto-review and applies them. While it waits
+  for the user it holds `runner.waiting_for_user()`, which pauses the step's time
+  budget. The P1 eval harness (`backend/scripts/evaluate_plan_sequence.py`,
+  `RealToolAdapter`) has its own translation for measurement.
 - The runner emits `plan_started`, `step_started`, `step_verified`,
   `step_retry`, `step_failed`, `replan_needed`, and `plan_completed` events
   to `on_event` / `record_event` handlers. **Nothing persists these events
@@ -161,11 +163,11 @@ Implemented and tested in this package: plan schema + validation, capsule,
 verifier + retry, runner, model routing, and the planner service endpoint
 `POST /plan-sequence` (`backend/projects/planner/app.py`, P3).
 
-Not wired up (planned, not implemented): there is no gateway
-`/api/agents/plan-sequence` or `/api/agents/run-sequence` route, the
-`SequenceRunner` has no in-repo caller and no adapter to the real tools,
-runner events are not persisted to the run store, and
-`openclaw_bridge` does not send a subtask yet — OpenClaw subtask mode
+Wired up (2026-11-22): the gateway routes `/api/agents/plan-sequence` and
+`/api/agents/run-sequence` (the runner's caller, with the tool adapter) and
+**Plan in steps** in the desktop app; `ui_events.py` turns runner events into
+the app's events. Not wired up yet: runner events are not persisted to the run
+store, and `openclaw_bridge` does not send a subtask — OpenClaw subtask mode
 lives only in the Node helper (`gateway_turn.mjs` / `turn_helpers.mjs`,
 P4), where pinning is prompt-level only. See
 `docs/features/plan-and-sequence.md` for the full status.
