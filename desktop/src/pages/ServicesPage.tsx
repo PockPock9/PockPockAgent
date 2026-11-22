@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { FileText, FolderOpen, LoaderCircle, Play, RotateCcw, Square, X } from 'lucide-react'
 import { Dot } from '../components/ui'
+import { PageFrame, Toggle } from '../components/page'
 import type { Status } from '../lib/status'
 import { bridge } from '../lib/types'
 import type { ServiceState, Settings } from '../lib/types'
@@ -14,9 +15,6 @@ const LABEL: Record<ServiceState['status'], string> = {
   running: 'Running', starting: 'Starting', stopping: 'Stopping', checking: 'Checking', stopped: 'Stopped', unavailable: 'Not installed', error: 'Problem',
 }
 
-function Toggle({ checked, label, onChange }: { checked: boolean; label: string; onChange: (next: boolean) => void }) {
-  return <button type="button" role="switch" aria-checked={checked} aria-label={label} className="switch" onClick={() => onChange(!checked)}><span /></button>
-}
 
 export function ServicesPage({ status, settings, patchSettings, loginItem, setLoginItem }: {
   status: Status
@@ -47,17 +45,12 @@ export function ServicesPage({ status, settings, patchSettings, loginItem, setLo
     setLog({ id: service.id, name: service.name, ...result })
   }
 
-  if (!desktop) return <div className="page"><div className="page__inner"><p className="note">Services are managed by the desktop app.</p></div></div>
+  if (!desktop) return <PageFrame eyebrow="Workshop · System" title="Services" intro="Everything PockPock runs on this PC."><p className="note">Services are managed by the desktop app.</p></PageFrame>
   return (
-    <div className="page">
-      <div className="page__inner">
-        <header className="page__head">
-          <div><span className="eyebrow">System</span><h1>Services</h1><p>Everything PockPock runs on this PC. They start with the app; start, stop or restart any of them here.</p></div>
-          <div className="page__actions">
+    <PageFrame eyebrow="Workshop · System" title="Services" intro="Everything PockPock runs on this PC. They start with the app; start, stop or restart any of them here." actions={<>
             <button type="button" className="button button--primary" disabled={Boolean(busy)} onClick={() => void act('all', 'start')}>{busy === 'start:all' ? <LoaderCircle size={13} className="spin" /> : <Play size={13} />} Start all</button>
             <button type="button" className="button" disabled={Boolean(busy)} onClick={() => { if (window.confirm('Stop every running PockPock service, including ones started outside this app?')) void act('all', 'stop') }}>{busy === 'stop:all' ? <LoaderCircle size={13} className="spin" /> : <Square size={12} />} Stop all</button>
-          </div>
-        </header>
+          </>}>
         <p className="note"><Dot tone={running === installed && installed ? 'ok' : running ? 'warn' : 'off'} /> {running} of {installed} installed services running</p>
         {error && <div className="banner banner--error" role="alert"><span>{error}</span><button type="button" className="icon-button icon-button--small" onClick={() => setError('')} aria-label="Dismiss"><X size={13} /></button></div>}
         {!services.length && <p className="note"><LoaderCircle size={13} className="spin" /> Checking services…</p>}
@@ -119,7 +112,6 @@ export function ServicesPage({ status, settings, patchSettings, loginItem, setLo
           </li>
         </ul>
         <p className="note"><button type="button" className="link-button" onClick={() => void desktop.services.openLogs()}><FolderOpen size={13} /> Open the logs folder</button></p>
-      </div>
-    </div>
+    </PageFrame>
   )
 }

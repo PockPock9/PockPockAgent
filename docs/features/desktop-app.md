@@ -26,12 +26,14 @@ PockPock Agent is the PockPock interface: a desktop app (Electron) for Windows a
 | Reports | **Report** under a reply saves that exchange and your description, redacted, on this PC; **Maintenance** lists them. See [Problem reports and Maintenance](maintenance.md). |
 | Themes | **Settings → Theme**: PockPock Dark (default), Volt, Storm, Feather (light) or System. Applied before the first paint. The title bar shows the PockPock mark; in the run bar its bolt pulses while a turn works. See [Themes and the brand mark](themes.md). |
 | Terminal | PowerShell (or PowerShell 7 when installed) on Windows; the user's login shell (zsh by default) on a Mac. Opens in the open folder. **Ctrl+J** / **⌘J**. |
-| Browser recipes | Saved, versioned browser workflows: editor with allowed sites, inputs, steps and stop conditions; version history; switch on/off; run with per-step approval and screenshots. |
-| Activity | Request totals, per-model call counts, success rate and average time, and recent routing events. No prompt text. |
-| Skills / MCP servers | Add from a link with a preview and approval, switch on or off, remove. See [agent extensions](agent-extensions.md). |
-| Connectors | Connect GitHub, email, Telegram, Slack, Discord or Notion with a key the app checks; the connected apps give the OpenClaw agent tools. See [Connectors](connectors.md). |
+| Browser recipes | Saved, versioned browser workflows: the list beside the editor (allowed sites, inputs, steps and stop conditions); version history; switch on/off; run with per-step approval and screenshots. |
+| Activity | Request totals, model calls, average time and chat models loaded now; per-model call counts, success rate and average time; recent routing events. No prompt text. |
+| Skills | OpenClaw skills as cards, with tabs **All**, **On** and **Needs setup** (counts), search, a switch on each card, and a details drawer (source, what it needs, **Remove** for skills added from a link). **Learned from your tasks** lists skills PockPock Agent wrote after a task and left in the skill inbox (`/api/skills/inbox`): **Check it** runs the skill's own test, **Review and add** promotes it once the check passed, **Reject** drops it; the section is hidden when the inbox is empty. Adding from a link: see [agent extensions](agent-extensions.md). |
+| MCP servers | Add from a GitHub link, a server address or a command on this PC (inspected and approved first); each server shows on or off, where it runs and how it was added; switch, disconnect. |
+| Connectors | Connect GitHub, email, Telegram, Slack, Discord or Notion with a key the app checks; the connected apps give the OpenClaw agent tools. **Available** and **Connected** tabs; a connector's details (what the agent can do, connecting, replacing the key, disconnecting) open in a drawer beside the list. See [Connectors](connectors.md). |
 | Cloud models | Connect NVIDIA NIM, OpenRouter or Alibaba Cloud Model Studio; the chosen models join the model menus of every engine and are used only when picked. See [Cloud models](cloud-models.md). |
-| Models / Memory / Research | Switch local models on or off; review and delete learned preferences; allow or block agent access to named public websites. |
+| Local models | A **Smart route** card (on or paused; local models only), then every model Ollama has: size, calls, success rate and average time (from routing telemetry), **Loaded**, **Idle** or **Switched off**, tags from Ollama's details (parameter size, quantization, Images, Embeddings) and a switch. **Refresh**; with no model installed, the install command and **Open terminal**. Models are never unloaded from this page. |
+| Memory / Research | Memory: **Remember preferences** switch, saved preferences with **Remove**, **Forget all**. Research: one switch, **Allow reading public websites** (named public sites only; off makes no network requests). Saved sources stay with each task's sources card. |
 | Services | Every service with its state, **Start all** / **Stop all**, start/stop/restart each one, its log, and startup options. |
 | Setup | Installs every prerequisite and the backend, Ollama and models, OpenClaw (with a skills choice) and NemoClaw, then starts and checks every service. Opens automatically on first launch. |
 | Status bar | Gateway, Ollama (with how many chat models are loaded), Smart router, OpenClaw and NemoClaw state, and the names of the loaded models. Click it to open Services. |
@@ -148,7 +150,9 @@ Renderer (desktop/src/, React + Vite)
   lib/runState.ts              a turn's phase and state (working, slow, waiting, failed, done) for the run bar and task list
   components/                  Shell (title bar, rail, Workshop navigation, status bar), TaskPanel, RunBar, Inspector,
                                CommandPalette, chat and composer, messages and cards, files, terminal
-  pages/                       Skills, MCP servers, Models, Memory (Pages.tsx); Research; Browser recipes; Activity; Services; Setup; Settings
+  components/page.tsx          page frame, switches, tabs with counts, stat tiles, side drawer, loading and error rows
+  pages/                       one file per Workshop page (Skills, MCP servers, Connectors, Browser recipes, Research,
+                               Local models, Cloud models, Memory, Services, Maintenance, Activity), Setup, Settings (Pages.tsx)
 ```
 
 The window loads the interface from the app's own loopback server, which also forwards `/api` to the gateway. The page therefore has a single `http://127.0.0.1` origin: the gateway's same-PC check accepts it and no cross-origin rules are needed. Streaming responses are piped through unbuffered, and closing a request (Stop, or closing the window) aborts the gateway request too. The forwarder drops `X-Forwarded-*` and `Forwarded` headers.
@@ -192,6 +196,8 @@ One turn runs at a time across all chats; the send button is disabled while anot
 | Context used | The gateway's `usage` event after every agent model call: `prompt_tokens`, `completion_tokens`, and `context_window`, the context Ollama loaded the model with (from `/api/ps`; absent for cloud models) |
 | Files touched | `read_project_file` results (read), applied patches (edited) and saved artifacts (new) |
 | Task folder before the run | `/api/state` → `output_directory`; a run's folder is `<output_directory>/<run id>`, and the app chooses the run id before planning |
+
+Test gateway: the main process, the service health check, connectors and cloud models all use `POCKPOCK_BACKEND_URL` when it is set (default `http://127.0.0.1:8766`), so the app can be pointed at a gateway on another port for testing without touching the installed one.
 
 Saved tasks: `sessions.json` entries that are not a task (no string `id` or no message list) are skipped when the app loads, so one damaged entry no longer hides every other task, and the next save no longer drops them.
 
@@ -254,6 +260,8 @@ npm run typecheck
 npm run build
 npm run dist:win  # optional: Windows installer (dist:mac on a Mac)
 ```
+
+Agent Studio Workshop pages, checked on 2026-11-21 (`feat/studio-workshop`): typecheck, build, 49 Electron tests, `check:contrast` 91/91 in every theme; the real app with a test gateway and the extension, skill-inbox, recipe and research calls answered by the test: **119 of 119 checks**. Covered: the skills tabs and their counts, arrow keys between tabs, search, the details drawer (Escape closes it and returns focus), **Check it** and **Review and add** in the inbox, a skill switch; the Smart route card and model rows; the research switch; the recipe editor beside its list; the connector drawer; every Workshop page in all four themes at 1440 px and six of them at 820 px with no horizontal overflow; axe-core on every page in PockPock Dark and Feather with no violations; no console errors.
 
 Agent Studio thread (plan card, thread cards, pickers), checked on 2026-11-21 (`feat/studio-thread`): typecheck, build, 49 Electron tests, 12 OpenClaw helper tests; `check:contrast` 91/91 pairs in every theme; the real app with the agent calls answered by the test (no model): pre-check chips, the task folder before the run, an answer that plans again with the answer in the new request, reorder/remove/add steps, the note box and a note marked as given, **Allow for this task** sending `scope: "task"`, **Retry from step 2** sending only the remaining steps, keyboard on all four pickers, screenshots in every theme at 1440 and 820 px, axe-core with no violations, no console errors, and tasks still loading with a damaged `sessions.json` entry. A real run with `qwen3.5:9b`: the pre-check found the named file and passed; a note sent during the run reached the model before its next step; after **Allow for this task** on `a.md`, the change to `b.md` was allowed without asking, and both files were right. Not verified with a real model: answer choices (the model asked no question in three tries) and Retry from step N.
 

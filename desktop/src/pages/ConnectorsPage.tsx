@@ -3,9 +3,9 @@
 // the backend, and stored encrypted by the main process; this page never gets it back.
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { ArrowLeft, Cable, Check, ExternalLink, GitBranch, Hash, LoaderCircle, Mail, MessagesSquare, NotebookText, RotateCcw, Search, Send, ShieldAlert, Unplug } from 'lucide-react'
+import { Cable, Check, ExternalLink, GitBranch, Hash, LoaderCircle, Mail, MessagesSquare, NotebookText, RotateCcw, Search, Send, ShieldAlert, Unplug } from 'lucide-react'
 import { Empty } from '../components/ui'
-import { PageFrame } from './Pages'
+import { Drawer, PageFrame } from '../components/page'
 import { bridge } from '../lib/types'
 import type { Connector } from '../lib/types'
 import { relativeTime } from '../lib/api'
@@ -35,7 +35,6 @@ export function ConnectorsPage() {
   useEffect(() => desktop?.connectors.onChange(load), [desktop, load])
 
   const selected = connectors?.find((connector) => connector.id === open) ?? null
-  if (selected) return <ConnectorDetail connector={selected} onBack={() => setOpen(null)} onChanged={setConnectors} />
 
   const connectedCount = connectors?.filter((connector) => connector.connected).length ?? 0
   const words = query.toLowerCase().split(/\s+/).filter(Boolean)
@@ -46,7 +45,7 @@ export function ConnectorsPage() {
   const groups = [...new Set(rows.map((connector) => connector.group))]
 
   return (
-    <PageFrame eyebrow="Customize" title="Connectors" intro="Connect the apps you use, so the agent can read from them and act in them for you. Each connection uses a key you create in that app and can be removed at any time.">
+    <PageFrame eyebrow="Workshop · Capabilities" title="Connectors" intro="Connect the apps you use, so the agent can read from them and act in them for you. Each connection uses a key you create in that app and can be removed at any time.">
       {error && <div className="banner banner--error" role="alert"><span>{error}</span><button type="button" className="button" onClick={load}><RotateCcw size={13} /> Try again</button></div>}
       {!desktop && <p className="note">Connectors are set up in the desktop app.</p>}
       {desktop && !connectors && !error && <p className="note"><LoaderCircle size={13} className="spin" /> Loading…</p>}
@@ -100,11 +99,16 @@ export function ConnectorsPage() {
           <p className="note connectors-foot">Connected apps give their tools to the <strong>OpenClaw</strong> engine. Reading runs as your permission setting allows; anything that sends, posts or creates asks you first unless you chose Full access.</p>
         </>
       )}
+      {selected && (
+        <Drawer title={selected.name} onClose={() => setOpen(null)}>
+          <ConnectorDetail connector={selected} onChanged={setConnectors} />
+        </Drawer>
+      )}
     </PageFrame>
   )
 }
 
-function ConnectorDetail({ connector, onBack, onChanged }: { connector: Connector; onBack: () => void; onChanged: (list: Connector[]) => void }) {
+function ConnectorDetail({ connector, onChanged }: { connector: Connector; onChanged: (list: Connector[]) => void }) {
   const desktop = bridge()
   const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(connector.fields.filter((field) => field.options.length).map((field) => [field.key, field.options[0].value])))
   const [busy, setBusy] = useState<'' | 'connect' | 'disconnect'>('')
@@ -136,9 +140,8 @@ function ConnectorDetail({ connector, onBack, onChanged }: { connector: Connecto
   }
 
   return (
-    <PageFrame eyebrow="Connectors" title={connector.name} intro={connector.about}
-      actions={<button type="button" className="button" onClick={onBack}><ArrowLeft size={13} /> All connectors</button>}>
-      <div className="connector-detail">
+    <div className="connector-detail">
+        <p className="card__sub">{connector.about}</p>
         <header className="connector-detail__head">
           <Tile id={connector.id} />
           <div className="row__text"><strong>{connector.name}</strong><span>{connector.connected ? `Connected as ${connector.account}${connector.connectedAt ? ` · ${relativeTime(Date.parse(connector.connectedAt))}` : ''}` : connector.needsReconnect ? 'The saved key can no longer be read on this computer. Connect again.' : 'Not connected'}</span></div>
@@ -189,7 +192,6 @@ function ConnectorDetail({ connector, onBack, onChanged }: { connector: Connecto
             <button type="button" className="button" disabled={busy !== ''} onClick={() => void disconnect()}>{busy === 'disconnect' ? <LoaderCircle size={13} className="spin" /> : <Unplug size={13} />} Disconnect</button>
           </div>
         )}
-      </div>
-    </PageFrame>
+    </div>
   )
 }

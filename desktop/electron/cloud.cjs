@@ -10,7 +10,8 @@ const fs = require('node:fs')
 const path = require('node:path')
 const crypto = require('node:crypto')
 
-const GATEWAY = 'http://127.0.0.1:8766'
+// The gateway the app talks to (POCKPOCK_BACKEND_URL, as in main.cjs); :8766 by default.
+const GATEWAY = (process.env.POCKPOCK_BACKEND_URL || 'http://127.0.0.1:8766').replace(/\/$/, '')
 const MAX_CHOSEN = 40
 
 /** Every address is fixed here; nothing a user or a page types becomes a URL. */
