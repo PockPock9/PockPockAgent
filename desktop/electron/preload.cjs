@@ -80,6 +80,7 @@ contextBridge.exposeInMainWorld('pockpock', {
     setAgent: (choice) => ipcRenderer.invoke('maintenance:setAgent', choice),
     connectAgent: (id) => ipcRenderer.invoke('maintenance:connectAgent', id),
     cancelConnect: () => ipcRenderer.invoke('maintenance:cancelConnect'),
+    disconnectAgent: (id) => ipcRenderer.invoke('maintenance:disconnectAgent', id),
     github: () => ipcRenderer.invoke('maintenance:github'),
     githubLogin: () => ipcRenderer.invoke('maintenance:githubLogin'),
     cancelLogin: () => ipcRenderer.invoke('maintenance:cancelLogin'),
