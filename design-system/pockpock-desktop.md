@@ -1,6 +1,6 @@
 # PockPock Agent desktop design system
 
-**Updated:** 2026-11-15 (themes and brand mark)
+**Updated:** 2026-11-21 (Agent Studio shell: rail, task list, run bar, inspector, command palette)
 **Scope:** The Electron desktop app in `desktop/`, the only PockPock interface.
 
 The desktop app is a work tool used for long sessions, so it uses flat, quiet surfaces in the style of code-editor agents instead of glass effects or animated backgrounds. PockPock's violet stays the single accent.
@@ -53,33 +53,53 @@ The mark is a chicken foot whose centre toe is a lightning bolt. Files and gener
 - **Title bar:** the mark at 20 px (`src/components/Mark.tsx`), no tile behind it, followed by the words "PockPock Agent"; the mark is `aria-hidden`.
 - **Theme colours:** toes `--mark-toe`, bolt `--mark-bolt`, and `--mark-gap`, the surface the mark sits on, painted as a 12-unit stroke around the bolt to separate it from the toes (like the ink gap on the app icon). Containers on another surface set `--mark-gap` locally (`.steps` and `.card` use `--bg-panel`). On the light Feather theme the toes are ink and the bolt is storm violet.
 - **App icon:** the mark on a rounded ink tile: `public/icon.ico` (Windows), `public/icon.icns` (macOS), `public/icon.png` (Linux and the window icon), `public/favicon.svg`.
-- **Working indicator:** while the agent is thinking, planning or running a tool, the mark's bolt pulses next to the status text (opacity 1 → .55 and scale 1 → .86, 1.1 s, ease-in-out), and a 2 px bar sweeps along the top inside the composer. Under `prefers-reduced-motion` the bolt stays still and the bar is shown solid; the status text and elapsed time are always shown.
+- **Working indicator:** the run bar above every task. While a turn works, the mark's bolt pulses next to the status text (opacity 1 → .55 and scale 1 → .86, 1.1 s, ease-in-out) and a 2 px bar sweeps along the bar's bottom edge (`--accent-strong` over `--border`). Waiting for the user: the bolt is still and the 2 px bar is solid `--accent-strong`. Slow (no event for 10 s): the sweep turns `--warn` and a note explains it. Failed: a solid `--err` bar. Under `prefers-reduced-motion` the bolt stays still and the bar is solid; the status text and elapsed time are always shown.
 
 ## Layout
 
-- Grid: title bar 38 px, status bar 24 px; sidebar 252 px, files 272 px, terminal 260 px high.
-- Title bar is the window drag area. Native caption buttons sit on the right (Windows title-bar overlay); 150 px is reserved for them.
-- The conversation and every Customize page use one centred column, `min(820px, 100% - 48px)`.
-- Below 1100 px the files panel, and below 860 px the sidebar, open as overlays with a backdrop.
+- Grid: title bar 38 px and status bar 24 px; columns: icon rail 56 px, task list or Workshop navigation 252 px, the task or page, inspector 320 px. The terminal (260 px high) sits at the bottom of the main column, under the composer.
+- Title bar is the window drag area: the mark and "**PockPock** Agent Studio" on the left, the command palette's search box in the middle, and 150 px reserved on the right for the native caption buttons (Windows title-bar overlay).
+- A task has a 56 px header (title, engine and folder, the engine switch, **Inspector**), then the run bar, then the thread and composer. The thread and every page use one centred column, `min(820px, 100% - 48px)`.
+- Below 1100 px the inspector, and below 860 px the rail with the task list (from the menu button in the title bar), open as overlays with a backdrop; Escape closes them.
 
 ## Components
 
+- **Rail:** 40 px icon buttons with a tooltip and an accessible name; the active section is `--bg-active` with an `--accent-strong` icon. A dot on the Tasks icon (`--accent-strong`) means a task needs the user; on Services (`--warn`) that not every installed service runs.
+- **Task list:** a filled **New task** button (`--accent-fill`), search, and grouped rows: a status dot (busy, warning, error, done, off; never colour alone, the second line says it in words), the title, and one line of status.
+- **Workshop navigation:** groups **Capabilities** (Skills, MCP servers, Connectors, Browser recipes, Research), **Models** (Local models, Cloud models), **Knowledge** (Memory) and **System** (Services, Maintenance, Activity), each row with a count where one exists.
+- **Run bar:** numbered phase markers joined by a line (`--ok` once done), the bolt and one line of status, **Signal**, elapsed time with tabular figures, then **Review** and **Stop**; on a narrow bar the time and buttons wrap together to a second line, right-aligned. A reported plan step is a pill before the status (**Step 3 of 5**, `--accent-strong` on `--accent-bg`, 11.5 px semibold, tabular figures); the plan card marks that step with an accent number ring and a **Now** pill of the same colours. Notes (slow, failed) sit under it on `--warn-bg` or `--err-bg`.
+- **Inspector:** a `role="tablist"` of text tabs with an accent underline (arrow keys move), then sections with an uppercase label and label–value rows; **Context used** is a 6 px `role="meter"` bar.
+- **Command palette:** a 620 px dialog near the top with a search box (`role="combobox"`) and grouped results (`role="listbox"`); the active result is `--accent-bg`.
+- **Engine switch:** a segmented control (`role="radiogroup"`) in the task header; engines that are not installed are disabled with the reason as a tooltip.
 - **Composer:** context chips above it (This PC, open folder, mode with a status dot), then the input, then a bar with + (attach and navigate), mode, permission and model pickers, and the send/stop button.
 - **Pickers** open as popovers above their button with a title and one-line explanation per option; the selected option is tinted and checked. Risky choices (Full access) use the warning colour in the picker and on the chip.
-- **Cards** in the thread (plan review, approval, skill/MCP install) share one style; a card waiting for the user has an accent border and ring. Primary action is filled violet, the others outlined.
+- **Cards** in the thread (plan review, approval, skill/MCP install, sources, failed step) share one style: a header with an icon, the title, a secondary line and a status badge on the right (accent "Waiting for you", ok "Approved" or "Allowed for this task"). A card waiting for the user has an accent border and ring; a plan replaced after an answer has a dashed border; a failed step sits on `--err-bg`. Primary action is filled, the others outlined; **Deny** sits at the end of the row.
+- **Plan card:** "Plan checked" badges (ok or warning, the detail as a tooltip; warnings also listed in words), label–value rows (Delivers, Workspace, Task folder, Reviewer; paths in the code font), questions on `--warn-bg` with answer buttons and a text box, numbered steps in 22 px circles, success checks with a check mark. Editing turns rows into inputs with move up, move down and remove (32 px icon buttons) and **Add a step** links.
+- **Notes** while a run works: dashed rows under the reply with their status (waiting, given to the agent, not sent).
 - **Steps** collapse to one summary line ("Worked through 7 steps" or the running step) and expand to the full list with status icons.
 - **Tabs** (Connectors): a row of text buttons with a count badge; the active one has an accent underline; they use `role="tablist"`, `role="tab"` and `aria-selected`.
 - **Connector cards and rows** (Connectors): a neutral icon tile (a pictogram, never an app's logo), name, one-line description, and a pill action (**Connect**, or the account name when connected). Featured connectors are cards in an auto-fit grid; the rest are rows grouped by a section title.
 - **Searchable choice list** (Cloud models): a search field above a bordered, scrolling list of checkbox rows, each with a title and a secondary line; the count and any limit are announced below it.
-- **Rows** on Customize pages: icon, title, secondary line, optional description, then a switch and/or a remove button.
+- **Rows** on Workshop pages: icon, title with a status badge, secondary line, optional description or tags, then a switch and/or actions.
+- **Workshop page frame** (`components/page.tsx`): eyebrow "Workshop · <group>", title, one-line intro and actions on the right; 820 px column, 1080 px for pages with a grid or an editor beside a list (Skills, Browser recipes).
+- **Card grid** (Skills): auto-fill columns of at least 260 px; a card has the name as a button that opens details, a switch, a three-line description and its source or a **Needs setup** badge; a card that needs setup has a dashed border.
+- **Setting card**: an accent icon, a title and one line, an optional badge, and a switch (Smart route, Remember preferences, Allow reading public websites).
+- **Drawer**: details beside a list, 420 px from the right edge between the title and status bars, over a backdrop; a header with the title and Close, a scrolling body, an optional footer for destructive actions. Escape closes it and focus returns to what opened it.
+- **Toolbar**: tabs with counts on the left, a search field on the right, sharing one bottom border.
+- **Theme picker** (Settings): a radio group of cards, each a 44 px strip of four swatches (canvas, panel, accent, text), the name and one line; the selected card has the accent border and ring. Arrow keys move and choose.
+- **Dialog** (`components/Modal.tsx`): a centred card on `--bg-popover` over `--backdrop`, header with an icon, the title and Close; 640 px, 760 px wide variant. Focus stays inside, Escape closes, focus returns to the opener.
+- **Toasts** (`components/Toasts.tsx`): bottom right above the status bar, 380 px, on `--bg-popover` with a shadow; an icon (`--accent-strong` for news, `--err` with an `--err-border` for blocking problems), a title, one line, a primary action and **Later** or a close button. Errors use `role="alert"`, news `role="status"`.
+- **Watch for changes** (sources card): the switch followed by its visible label, 32 px tall, after **Saved** and **Check for changes**; the actions wrap within 360 px.
+- **Watched pages** (Research): rows on `--bg-panel` with a `--border-strong` border, a changed row with `--accent-border` and a **Changed** badge (`--accent-strong` on `--accent-bg`), a failed check in `--err-text`, actions on the right that wrap below on a narrow window. A paused note is `.banner--warn` (`--warn-text` on `--warn-bg`, `--warn` border).
+- **Stepper** (Setup): numbered 22 px markers joined by a line, done in `--ok`, current in `--accent-strong`, the same pattern as the run bar's phases.
 
 ## States and accessibility
 
 - Every list and page covers loading (spinner and text), empty (what to do next), error (banner with the reason) and success.
 - Status never relies on colour alone: dots are paired with text, steps with icons and words.
 - Visible focus ring (2 px `--accent-strong`), keyboard shortcuts for all panels, menus close with Escape, switches use `role="switch"`.
-- Controls are at least 30 px high (32–36 px for primary actions); the desktop app targets mouse and keyboard.
-- `prefers-reduced-motion` turns off animation, including the pulsing bolt and the composer's progress bar.
+- Controls are at least 32 px high and wide (icon buttons 32 px, rail buttons 40 px, primary actions 32–36 px); the desktop app targets mouse and keyboard.
+- `prefers-reduced-motion` turns off animation, including the pulsing bolt and the run bar's sweep, which is shown solid.
 
 ## Themes
 
@@ -95,7 +115,7 @@ Five themes, chosen in **Settings → Theme**. The choice is saved in `settings.
 
 The full per-theme token values are the `:root[data-theme="…"]` blocks at the top of `desktop/src/styles.css`.
 
-**Contrast (WCAG 2.2 AA).** Measured with `npm run check:contrast` (`desktop/scripts/check_contrast.mjs`), which reads the theme blocks, blends translucent tokens over the surface they sit on, and checks 68 pairs per theme. All four themes pass all 68. Lowest ratio per group:
+**Contrast (WCAG 2.2 AA).** Measured with `npm run check:contrast` (`desktop/scripts/check_contrast.mjs`), which reads the theme blocks, blends translucent tokens over the surface they sit on, and checks 100 pairs per theme (68 before Agent Studio; the shell added 12, the thread 11, settings and toasts 5, plan-step progress 2, watched pages 2). All four themes pass all 100. Lowest ratio per group:
 
 | Check (minimum) | PockPock Dark | Volt | Storm | Feather |
 |---|---|---|---|---|
@@ -113,6 +133,8 @@ The full per-theme token values are the `:root[data-theme="…"]` blocks at the 
 | Switch knob and track (3) | 3.69 | 6.37 | 3.20 | 4.99 |
 | Status dots ok, warn, err, info, off (3) | 3.09 | 3.76 | 3.76 | 3.37 |
 | Border of a card waiting for you (3) | 5.16 | 13.20 | 3.29 | 5.44 |
+
+The design canvas named three tokens the app already had under other names: its `--pop` is `--bg-popover`, and `--warn-text`, `--warn-bg` and `--shadow` exist in every theme. The shell added no colour tokens.
 
 The terminal's ANSI colours (`src/lib/theme.ts`) are at least 5.9:1 on the dark terminal backgrounds and 5.5:1 on Feather's; xterm's defaults put red, blue and magenta at 3.6–4.2:1 on dark.
 

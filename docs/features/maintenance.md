@@ -11,7 +11,7 @@ Users report a reply that hung, failed or was wrong with the **Report** button u
 3. Describe what happened and what you expected. A description is required: it is what the Maintenance Manager works from.
 4. **What will be saved** shows the exact captured exchange after redaction, and what was hidden (for example "2 folder paths").
 5. **Save report**. The dialog confirms and offers **Open Maintenance**.
-6. **Maintenance** (sidebar) lists reports, newest first, with their category, status, chat, mode and age. Open one to change its category, status (**Open**, **Being fixed**, **Fixed**, **Won't fix**) or description, read the full capture, or delete it.
+6. **Maintenance** (**Workshop → System**) lists reports, newest first, with their category, status, chat, mode and age. Open one to change its category, status (**Open**, **Being fixed**, **Fixed**, **Won't fix**) or description, read the full capture, or delete it.
 
 ## Maintenance Manager
 

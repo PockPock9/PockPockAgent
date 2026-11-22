@@ -3,7 +3,7 @@
 // and is never read back; this page only ever sees its last four characters.
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Check, Cloud, ExternalLink, KeyRound, ListChecks, LoaderCircle, Search, Unplug, X } from 'lucide-react'
-import { PageFrame } from './Pages'
+import { PageFrame } from '../components/page'
 import { bridge } from '../lib/types'
 import type { CloudModel, CloudProvider } from '../lib/types'
 import type { Status } from '../lib/status'
@@ -26,7 +26,7 @@ export function CloudPage({ status }: { status: Status }) {
 
   const chosen = providers?.reduce((sum, provider) => sum + provider.models.length, 0) ?? 0
   return (
-    <PageFrame eyebrow="Customize · Cloud" title="Cloud models" intro="Connect a cloud service to use its models in PockPock Agent, OpenClaw and NemoClaw, next to the models on this PC. You use your own account and pay the service directly.">
+    <PageFrame eyebrow="Workshop · Models" title="Cloud models" intro="Connect a cloud service to use its models in PockPock Agent, OpenClaw and NemoClaw, next to the models on this PC. You use your own account and pay the service directly.">
       {error && <div className="banner banner--error" role="alert"><span>{error}</span></div>}
       <div className="banner" role="note"><Cloud size={14} /><span>A cloud model receives the messages, files and tool results of the chats that use it. Cloud models are used only when you pick one in a chat&rsquo;s model menu; <strong>Smart route</strong> keeps choosing local models. Keys are stored encrypted on this PC.</span></div>
       {!desktop && <p className="note">Cloud providers are set up in the desktop app.</p>}

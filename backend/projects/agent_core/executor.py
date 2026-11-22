@@ -38,6 +38,9 @@ from projects.agent_tools import (
 )
 from projects.agent_tools.tool_retriever import tool_retrieval_enabled
 from projects.agent_tools.context_compaction import compact_messages, truncate_tool_output
+from projects.agent_tools.plan_progress import (
+    PLAN_STEP_TOOL, plan_step_event, plan_step_prompt, plan_step_reply, plan_step_reports_enabled, plan_step_tool_spec,
+)
 from projects.model_router import (
     ChatCompletionProvider,
     ChatCompletionRequest,
@@ -62,6 +65,7 @@ logger = logging.getLogger("pockpock")
 class AgentCoreServices:
     AGENT_PLAN_TICKETS: dict[str, dict[str, Any]]
     AGENT_RUN_APPROVAL_FUTURES: dict[str, asyncio.Future[str]]
+    AGENT_RUN_NOTES: dict[str, list[str]]
     AGENT_RUN_CANCEL_EVENTS: dict[str, asyncio.Event]
     AGENT_RUN_CANCEL_REASONS: dict[str, str]
     AGENT_RUN_TIMEOUT_SECONDS: int
@@ -136,6 +140,45 @@ def effective_task_capabilities(
     return capabilities
 
 
+def note_message(note: str) -> str:
+    """How a note the user added during a run is given to the model."""
+    return (
+        "Note from the user, added while you work. Take it into account from the next step on, "
+        "within the approved plan and permissions:\n" + note.strip()[:2000]
+    )
+
+
+def context_window_from_ps(ps: object, model: str) -> int | None:
+    """The context length Ollama loaded ``model`` with, from an ``/api/ps`` reply, or None."""
+    items = ps.get("models") if isinstance(ps, dict) else None
+    for item in items if isinstance(items, list) else []:
+        if isinstance(item, dict) and item.get("name") in (model, f"{model}:latest"):
+            length = item.get("context_length")
+            return length if isinstance(length, int) and not isinstance(length, bool) and length > 0 else None
+    return None
+
+
+def usage_event(result: object, context_window: int | None) -> dict[str, Any] | None:
+    """A ``usage`` run event from a model reply's token counts, or None when it has none.
+
+    The desktop app shows "context used" from it: ``prompt_tokens`` is the whole prompt sent on
+    this call, so it is how full the model's context is at this step.
+    """
+    usage = result.get("usage") if isinstance(result, dict) else None
+    if not isinstance(usage, dict):
+        return None
+    prompt = usage.get("prompt_tokens")
+    completion = usage.get("completion_tokens")
+    if not isinstance(prompt, int) or isinstance(prompt, bool) or prompt < 0:
+        return None
+    event: dict[str, Any] = {"type": "usage", "prompt_tokens": prompt}
+    if isinstance(completion, int) and not isinstance(completion, bool) and completion >= 0:
+        event["completion_tokens"] = completion
+    if context_window:
+        event["context_window"] = context_window
+    return event
+
+
 def saved_artifact_read_name(
     requested: object, *, workspace_root: Path | None, output_dir: Path | None, artifacts: list[dict[str, str]]
 ) -> str | None:
@@ -164,6 +207,7 @@ def saved_artifact_read_name(
 def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any]:
     AGENT_PLAN_TICKETS = services.AGENT_PLAN_TICKETS
     AGENT_RUN_APPROVAL_FUTURES = services.AGENT_RUN_APPROVAL_FUTURES
+    AGENT_RUN_NOTES = services.AGENT_RUN_NOTES
     AGENT_RUN_CANCEL_EVENTS = services.AGENT_RUN_CANCEL_EVENTS
     AGENT_RUN_CANCEL_REASONS = services.AGENT_RUN_CANCEL_REASONS
     AGENT_RUN_TIMEOUT_SECONDS = services.AGENT_RUN_TIMEOUT_SECONDS
@@ -1007,7 +1051,7 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                                 })
                             finally:
                                 AGENT_RUN_APPROVAL_FUTURES.pop(approval_id, None)
-                            if approval_decision != "approved":
+                            if approval_decision not in ("approved", "approved_for_task"):  # no task grants here: once
                                 delegate_dispatch_failed = True
                                 delegate_patch_outcomes.setdefault(subtask_id, []).append({
                                     "child_run_id": child_run_id,
@@ -1381,14 +1425,35 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                                 })
                     except Exception:
                         logger.exception("Skill retrieval failed; continuing without skill context")
+                # Plan-step progress (UI-01F): the agent may say which approved step it is starting. Added
+                # after tool retrieval so it is never ranked out; handled by the gateway, not dispatched.
+                plan_steps = [str(step) for step in plan_ticket.get("plan", []) if str(step).strip()]
+                step_reports = plan_step_reports_enabled(plan_steps, delegated=bool(payload.delegation_contract), has_tools=bool(tools))
+                if step_reports:
+                    tools = [*tools, plan_step_tool_spec(len(plan_steps))]
+                    # Next to the numbered plan in the task message: small local models ignored it at the
+                    # end of the system prompt in live runs.
+                    messages[1]["content"] += "\n" + plan_step_prompt(len(plan_steps))
+                last_reported_step = 0
                 profile = router._tune_execution_parameters("agentic", decision.get("complexity", 5))
 
                 tool_call_limit = payload.delegation_contract.max_tool_calls if payload.delegation_contract else 20
-                for _ in range(tool_call_limit):
+                context_window: int | None = None
+                verifying_announced = False
+                # "Allow for this task" grants: "workspace_change", or "browser:<action>" (never a
+                # high-impact click). They last for this run only.
+                task_grants: set[str] = set()
+                # A reply that only reports a step uses a turn, so each plan step gets one extra turn.
+                for _ in range(tool_call_limit + (len(plan_steps) if step_reports else 0)):
                     if cancel_event.is_set():
                         raise AgentRunTermination(get_cancel_reason())
                     if await request.is_disconnected():
                         raise asyncio.CancelledError
+                    # Notes the user added while the run worked join the conversation before the next
+                    # model call. They are the user's words, like the task, and cannot widen permissions.
+                    for note in AGENT_RUN_NOTES.pop(task_id, []):
+                        messages.append({"role": "user", "content": note_message(note)})
+                        yield sse({"type": "note", "text": note[:2000], "message": "Your note was given to the agent"})
                     # Context compaction (tool-RAG Phase 2): when the history
                     # passes 70-80% of the context window, prune old tool
                     # results first, then summarise the old portion keeping
@@ -1470,7 +1535,16 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                         "status": "success",
                         "duration_ms": round((time.monotonic() - call_started) * 1000),
                     })
-
+                    # Token counts for the app's "context used" meter. The context size is read once
+                    # from Ollama's loaded models; a cloud model has none there and is shown without it.
+                    if context_window is None:
+                        try:
+                            context_window = context_window_from_ps(await ollama_json("/api/ps"), selected) or 0
+                        except HTTPException:
+                            context_window = 0
+                    usage = usage_event(result, context_window)
+                    if usage:
+                        yield sse(usage)
 
                     choices = result.get("choices", [])
                     assistant = choices[0].get("message", {}) if isinstance(choices, list) and choices and isinstance(choices[0], dict) else {}
@@ -1496,6 +1570,12 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                             assistant["content"] = ""
                     tool_calls = assistant.get("tool_calls", [])
                     if not isinstance(tool_calls, list) or not tool_calls:
+                        # The model has stopped calling tools: what follows checks its answer against
+                        # the approved success checks. The app shows this as the Verify phase.
+                        if not verifying_announced and payload.success_checks and not needs_no_tools:
+                            verifying_announced = True
+                            count = len(payload.success_checks)
+                            yield sse({"type": "verifying", "checks": count, "message": f"Checking {count} success check{'s' if count != 1 else ''}"})
                         answer = assistant.get("content", "")
                         raw_answer = answer if isinstance(answer, str) else ""
                         # A model that prints a call to a tool it was not given would otherwise end the run with that
@@ -1965,6 +2045,14 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                         call_id = call.get("id")
                         if not isinstance(call_id, str) or not call_id:
                             call_id = uuid.uuid4().hex
+                        if step_reports and name == PLAN_STEP_TOOL:
+                            # Progress only: no tool card, not counted as a tool call or towards the limit.
+                            step_event = plan_step_event(arguments, plan_steps)
+                            messages.append({"role": "tool", "tool_call_id": call_id, "content": plan_step_reply(step_event, len(plan_steps))})
+                            if step_event and step_event["step"] != last_reported_step:
+                                last_reported_step = step_event["step"]
+                                yield sse(step_event)
+                            continue
                         if payload.delegation_contract and call_count >= tool_call_limit:
                             tool_limit_message = "The delegate reached its approved tool-call limit before completing the subtask."
                             yield sse({"type": "error", "message": tool_limit_message, "status": "partial"})
@@ -2027,6 +2115,10 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                                 requires_browser_approval = high_impact or (
                                     payload.permission_mode != "full-access" and browser_action_name != "scroll"
                                 )
+                                browser_grant = f"browser:{browser_action_name}"
+                                if requires_browser_approval and not high_impact and browser_grant in task_grants:
+                                    requires_browser_approval = False
+                                    yield sse({"type": "approval_auto", "contract_version": 1, "tool": name, "message": f"Allowed for this task: browser {browser_action_name} {browser_target}".strip()})
                                 if requires_browser_approval:
                                     # Bind the decision to the complete, validated action payload while
                                     # keeping potentially sensitive typed values out of persisted history.
@@ -2050,6 +2142,7 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                                     yield sse({
                                         "type": "approval_requested", "contract_version": 1,
                                         "task_id": task_id, "run_id": task_id, **approval,
+                                        "grantable": not high_impact,
                                         "message": "Approve this exact browser action before it runs.",
                                     })
                                     try:
@@ -2062,7 +2155,9 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                                         yield sse({"type": "approval_expired", "contract_version": 1, "approval_id": approval_id, "action_hash": action_hash, "tool": name, "message": "Approval expired; the browser action was not run."})
                                     finally:
                                         AGENT_RUN_APPROVAL_FUTURES.pop(approval_id, None)
-                                    if decision_result != "approved":
+                                    if decision_result == "approved_for_task" and not high_impact:
+                                        task_grants.add(browser_grant)
+                                    if decision_result not in ("approved", "approved_for_task"):
                                         tool_result = {"error": {"code": "approval_" + decision_result, "message": "The browser action was not approved and was not run."}}
                                         tool_status = "error"
                                         tool_error = tool_result["error"]["message"]
@@ -2071,7 +2166,7 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                                         if decision_result != "expired":
                                             yield sse({"type": "approval_rejected", "contract_version": 1, "approval_id": approval_id, "action_hash": action_hash, "tool": name, "message": tool_error})
                                     else:
-                                        yield sse({"type": "approval_approved", "contract_version": 1, "approval_id": approval_id, "action_hash": action_hash, "tool": name, "message": "Approved exact browser action"})
+                                        yield sse({"type": "approval_approved", "contract_version": 1, "approval_id": approval_id, "action_hash": action_hash, "tool": name, "message": "Approved for the rest of this task" if decision_result == "approved_for_task" else "Approved exact browser action"})
                             if name in {"list_project_files", "search_project", "read_project_file", "propose_project_edit", "propose_project_patch", "validate_project"}:
                                 if project_context is None:
                                     raise ToolContractError("permission_required", "Workspace tools require Full Access permission")
@@ -2099,7 +2194,9 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                                     ][:6]
                                 patch_id = tool_result.get("patch_id") if isinstance(tool_result, dict) else None
                                 if patch_id:
-                                    if payload.permission_mode == "auto-review":
+                                    if payload.permission_mode == "auto-review" and "workspace_change" in task_grants:
+                                        yield sse({"type": "approval_auto", "contract_version": 1, "tool": name, "path": str(tool_result.get("path", "")), "message": f"Allowed for this task: change {tool_result.get('path', 'a file')}"})
+                                    elif payload.permission_mode == "auto-review":
                                         action = {
                                             "tool": name,
                                             "patch_id": str(patch_id),
@@ -2119,6 +2216,7 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                                         yield sse({
                                             "type": "approval_requested", "contract_version": 1,
                                             "task_id": task_id, **approval,
+                                            "grantable": True,
                                             "message": f"Review the proposed change to {action['path']} before it is applied.",
                                         })
                                         try:
@@ -2134,7 +2232,9 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                                             yield sse({"type": "approval_expired", "contract_version": 1, "approval_id": approval_id, "action_hash": action_hash, "tool": name, "message": "Approval expired; the change was not applied."})
                                         finally:
                                             AGENT_RUN_APPROVAL_FUTURES.pop(approval_id, None)
-                                        if decision_result != "approved":
+                                        if decision_result == "approved_for_task":
+                                            task_grants.add("workspace_change")
+                                        if decision_result not in ("approved", "approved_for_task"):
                                             tool_result = {"error": {"code": "approval_" + decision_result, "message": "The workspace change was not approved and was not applied."}}
                                             tool_status = "error"
                                             tool_error = tool_result["error"]["message"]
@@ -2143,7 +2243,7 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                                             if decision_result != "expired":
                                                 yield sse({"type": "approval_rejected", "contract_version": 1, "approval_id": approval_id, "action_hash": action_hash, "tool": name, "message": tool_error})
                                         else:
-                                            yield sse({"type": "approval_approved", "contract_version": 1, "approval_id": approval_id, "action_hash": action_hash, "tool": name, "message": "Approved exact workspace change"})
+                                            yield sse({"type": "approval_approved", "contract_version": 1, "approval_id": approval_id, "action_hash": action_hash, "tool": name, "message": "Approved for the rest of this task" if decision_result == "approved_for_task" else "Approved exact workspace change"})
                                     if not approval_denied:
                                         applied = apply_project_patch(str(patch_id), project_context.project_root)
                                         workspace_edits_applied += 1
@@ -2497,6 +2597,7 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                         except OSError:
                             logger.exception("Could not save task memory for agent run %s", task_id)
                     AGENT_RUN_CANCEL_EVENTS.pop(task_id, None)
+                    AGENT_RUN_NOTES.pop(task_id, None)
                     AGENT_RUN_CANCEL_REASONS.pop(task_id, None)
 
         return StreamingResponse(track_agent_stream(task_id, stream(), sse), media_type="text/event-stream", headers={

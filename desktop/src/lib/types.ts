@@ -39,6 +39,7 @@ export type Timing = {
   planReadyAt?: number // PockPock Agent: the plan card appeared
   planDecidedAt?: number // ...and was approved, declined or stopped
   endedAt?: number
+  lastEventAt?: number // the newest stream event; the run bar says how long ago, and calls a quiet run slow
 }
 
 export type Approval = {
@@ -50,6 +51,10 @@ export type Approval = {
   runId?: string
   actionHash?: string
   status: 'pending' | 'busy' | 'approved' | 'rejected' | 'expired'
+  /** "Allow for this task" is offered: the gateway can grant this kind of action for the rest of the run. */
+  grantable?: boolean
+  /** How it was allowed: this action only, or this kind of action for the rest of the task. */
+  scope?: 'once' | 'task'
   error?: string
   requestedAt?: number
   resolvedAt?: number
@@ -67,15 +72,32 @@ export type PlanCard = {
   criticFindings: string[]
   model: string
   workspace: string
-  status: 'pending' | 'approved' | 'rejected'
+  /** The run's task folder, known before it starts (<output_directory>/<run id>). */
+  taskFolder?: string
+  /** The gateway's fixed check of the plan (files, permission, research, open questions). */
+  precheck?: PlanCheck[]
+  /** Answer choices per question, in the same order; empty when the planner gave none. */
+  questionOptions?: string[][]
+  /** replaced: the user answered a question and the task was planned again. */
+  status: 'pending' | 'approved' | 'rejected' | 'replaced'
   error?: string
 }
+
+export type PlanCheck = { id: string; status: 'pass' | 'warn'; label: string; detail: string }
+/** A note the user added while a PockPock Agent run worked. */
+export type RunNote = { id: string; text: string; status: 'sending' | 'queued' | 'given' | 'failed'; error?: string }
 
 export type Artifact = { name: string; path: string; url: string; kind: string }
 
 export type ResearchSource = { source_id: string; title: string; url: string; excerpt: string }
 export type ResearchBlock = { taskId: string; query: string; sources: ResearchSource[]; errors: string[] }
 export type FileChange = { path: string; summary: string }
+/** A file the run used, for the inspector: read by a tool, changed by an approved patch, or saved as a new file. */
+export type TouchedFile = { path: string; kind: 'read' | 'edited' | 'new' }
+/** Token counts from the newest model call of a run (the gateway's `usage` event). */
+export type Usage = { promptTokens: number; completionTokens?: number; contextWindow?: number }
+/** The approved plan step the agent said it is on (the gateway's `plan_step` event). Only set when reported. */
+export type PlanStep = { step: number; total: number; label: string }
 
 export type Message = {
   id: string
@@ -99,6 +121,14 @@ export type Message = {
   taskFolder?: string
   notice?: string
   timing?: Timing
+  usage?: Usage
+  planStep?: PlanStep
+  /** The agent stopped calling tools and is checking its answer against the success checks. */
+  verifying?: boolean
+  touched?: TouchedFile[]
+  notes?: RunNote[]
+  /** Plans this turn replaced after the user answered a question, oldest first. */
+  earlierPlans?: PlanCard[]
 }
 
 export type Session = {
@@ -137,6 +167,8 @@ export type AppState = {
   active: Array<{ model: string; role: string }>
   events?: Trace[]
   totals?: { requests?: number; calls?: number; avg_ms?: number | null }
+  /** Where agent runs save files; a run's task folder is <output_directory>/<run id>. */
+  output_directory?: string
 }
 
 export type ClawStatus = { available: boolean; ready: boolean; detail: string; plugin?: boolean; model?: string; models?: string[] }
@@ -192,6 +224,7 @@ export type Settings = {
   files?: boolean
   terminal?: boolean
   useWorkspaceForAgent?: boolean
+  inspectorTab?: 'context' | 'files' | 'terminal'
   services?: { autoStart?: boolean; stopOnQuit?: boolean; nemoclaw?: boolean }
   updates?: { autoDownload?: boolean }
   theme?: string // a ThemeId from lib/theme.ts

@@ -23,7 +23,7 @@ The desktop app has five themes and shows the PockPock mark in its title bar and
 | `desktop/electron/themes.cjs` | Allowed theme ids, window background and caption-button colour per theme, resolving "system", setting `nativeTheme.themeSource`. |
 | `desktop/electron/main.cjs` | Applies the saved theme to the new window and its URL; the `theme:set` handler; follows OS changes for System. |
 | `desktop/src/components/Mark.tsx` | The mark as inline SVG with themed colours; `working` makes the bolt pulse. |
-| `desktop/src/pages/Pages.tsx` | The Theme row and picker on the Settings page. |
+| `desktop/src/pages/SettingsPage.tsx` | The theme grid on the Settings page (radio group, arrow keys). The command palette also switches themes. |
 | `desktop/src/components/TerminalPanel.tsx` | Re-colours xterm when the theme changes. |
 | `desktop/scripts/check_contrast.mjs` | `npm run check:contrast`: WCAG AA checks for every theme. |
 
@@ -56,6 +56,6 @@ Every theme meets WCAG 2.2 AA for body text (4.5:1), large text and interface pa
 
 1. `npm run check:contrast` in `desktop/`: every theme passes every pair.
 2. `npm run typecheck` and `npm run build`.
-3. In the app: switch each theme in **Settings → Theme**, restart (it opens in the saved theme without a flash), check chat, plan and approval cards, Customize pages, Settings and the terminal at 1440×900 and 820 px.
+3. In the app: switch each theme in **Settings → Theme**, restart (it opens in the saved theme without a flash), check the run bar, chat, plan and approval cards, Workshop pages, Settings and the terminal at 1440×900 and 820 px.
 4. With **System**, switch the operating system between light and dark: the app follows, including the Windows caption buttons.
 5. Start a task: the bolt pulses and the composer bar sweeps; with reduced motion on, both stop and the text stays.

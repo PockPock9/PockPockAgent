@@ -18,7 +18,7 @@ Supported services, all through their OpenAI-compatible chat-completions API:
 
 *The screenshots show sample models and a sample key ending, not a real account.*
 
-1. Open **Cloud models** in the sidebar. Each service shows **Not connected**, **Connected**, or **Key needed again**.
+1. Open **Workshop → Cloud models**. Each service shows **Not connected**, **Connected**, or **Key needed again**.
 2. Paste the API key (for Alibaba, choose the region the key belongs to) and press **Connect**. **Get a key** opens the service's key page in the browser.
 3. PockPock checks the key with the service. A refused key is not saved, and the reason is shown (wrong key, wrong region, no credit, rate limit, service unreachable).
 4. On the first connection the suggested models that the service currently offers are switched on. **Choose models** opens a searchable list of the service's chat models (embedding, image, speech and safety models are left out); ticked models appear in the model menus. At most 40 per service.

@@ -20,6 +20,12 @@ async function save(key: 'sessions' | 'settings', value: unknown) {
   return true
 }
 
+/** A stored task that can be shown: an id and a list of message objects. */
+function isSession(value: unknown): value is Session {
+  const item = value as Session | null
+  return Boolean(item && typeof item === 'object' && typeof item.id === 'string' && Array.isArray(item.messages) && item.messages.every((message) => message && typeof message === 'object'))
+}
+
 /** Image bytes and partial streaming state are not worth saving. */
 function forStorage(sessions: Session[]): Session[] {
   return sessions.slice(0, MAX_SESSIONS).map((session) => ({
@@ -48,7 +54,8 @@ export function useSessions() {
 
   useEffect(() => {
     void load<Session[]>('sessions').then((stored) => {
-      const list = Array.isArray(stored) ? forStorage(stored) : []
+      // One damaged entry must not hide (and on the next save, drop) every other task.
+      const list = Array.isArray(stored) ? forStorage(stored.filter(isSession)) : []
       setSessions(list)
       setActiveId([...list].sort((a, b) => b.updatedAt - a.updatedAt)[0]?.id ?? '')
       setLoaded(true)

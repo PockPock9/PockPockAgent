@@ -89,6 +89,43 @@ export const PAIRS = [
   ...['ok', 'warn', 'err', 'info', 'dot-off'].flatMap((dot) => [[dot, 'bg-side', UI, 'status dot'], [dot, 'bg', UI, 'status dot']]),
   ['tree-folder', 'bg-side', UI, 'folder icon'],
   ['accent-border@bg', 'bg', UI, 'waiting card border'],
+  // Agent Studio shell: run bar, rail, segmented engine switch, command palette, inspector.
+  ['ok-text', 'bg-panel', TEXT, 'run bar: finished phase'],
+  ['ok-text', 'ok-bg@bg-panel', TEXT, 'run bar: finished phase marker'],
+  ['warn-text', 'warn-bg@bg-panel', TEXT, 'run bar: slow note'],
+  ['err-text', 'err-bg@bg-panel', TEXT, 'run bar: failed note'],
+  ['control-border', 'bg-panel', UI, 'run bar: phase marker ring'],
+  ['accent-strong', 'bg-active', UI, 'rail: active icon'],
+  ['accent-strong', 'bg-side', UI, 'rail: needs-you badge'],
+  ['warn', 'bg-side', UI, 'rail: services badge'],
+  ['err', 'bg-panel', UI, 'run bar: failed track'],
+  ['accent-strong', 'border@bg-panel', UI, 'run bar: working track on its rail'],
+  ['text', 'accent-bg@bg-popover', TEXT, 'palette: selected result'],
+  ['accent-strong', 'bg-active', TEXT, 'Workshop: active page icon and inspector meter'],
+  // Agent Studio thread: plan card, approvals, failed card, menus.
+  ['accent-strong', 'accent-bg@bg-panel', TEXT, 'badge: waiting for you'],
+  ['ok-text', 'ok-bg@bg-panel', TEXT, 'badge: pre-check passed'],
+  ['warn-text', 'warn-bg-strong@bg-panel', TEXT, 'badge: pre-check warning'],
+  ['text', 'warn-bg@bg-panel', TEXT, 'plan: question text'],
+  ['warn-text', 'warn-bg@bg-panel', TEXT, 'plan: question heading and warnings'],
+  ['text-2', 'warn-bg@bg-panel', TEXT, 'plan: question hint'],
+  ['err-text', 'err-bg@bg-panel', TEXT, 'failed card heading'],
+  ['text-2', 'err-bg@bg-panel', TEXT, 'failed card hint'],
+  ['text-2', 'off-bg@bg-popover', TEXT, 'menu: status badge'],
+  ['warn-text', 'warn-bg-strong@bg-popover', TEXT, 'menu: risky badge'],
+  ['err', 'err-bg@bg-panel', UI, 'failed card icon'],
+  // Agent Studio settings, setup and toasts.
+  ['text', 'accent-bg@bg-panel', TEXT, 'settings: update ready row'],
+  ['text-2', 'accent-bg@bg-panel', TEXT, 'settings: update ready row detail'],
+  ['err', 'bg-popover', UI, 'toast: error icon'],
+  ['accent-strong', 'bg-popover', UI, 'toast: update icon'],
+  ['accent-border@bg', 'bg-panel', UI, 'theme picker: selected card border'],
+  // Plan-step progress: the run bar's "Step 3 of 5" and the plan card's current step.
+  ['accent-strong', 'accent-bg@bg-panel', TEXT, 'run bar: plan step chip'],
+  ['accent-strong', 'accent-bg@bg-panel', UI, 'plan: current step marker'],
+  // Watched pages (Research): paused banner.
+  ['warn-text', 'warn-bg@bg', TEXT, 'research: checks paused banner'],
+  ['warn', 'bg', UI, 'research: checks paused banner border'],
 ]
 
 const all = themes()

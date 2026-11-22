@@ -30,7 +30,7 @@ AGENT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 APPROVAL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9:._-]{0,127}$")
 MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}$")
 PERMISSION_MODES = ("ask", "auto", "full")
-APPROVAL_DECISIONS = ("allow-once", "deny")
+APPROVAL_DECISIONS = ("allow-once", "allow-task", "deny")
 MAX_MESSAGE_CHARS = 16_000
 DEFAULT_TIMEOUT_SECONDS = 1800  # long enough for a large, partly CPU-run model
 STATUS_TTL_SECONDS = 15.0
@@ -407,7 +407,7 @@ class OpenClawBridge:
 
     def resolve_approval(self, approval_id: str, decision: str) -> None:
         if decision not in APPROVAL_DECISIONS:
-            raise OpenClawError("invalid_decision", "The decision must be allow-once or deny.", 400)
+            raise OpenClawError("invalid_decision", "The decision must be allow-once, allow-task or deny.", 400)
         if not APPROVAL_ID.fullmatch(approval_id or ""):
             raise OpenClawError("invalid_approval", "The approval id is not valid.", 400)
         turn = self._active

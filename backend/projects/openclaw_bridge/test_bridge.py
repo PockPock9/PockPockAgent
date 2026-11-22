@@ -224,6 +224,11 @@ class TurnTests(unittest.TestCase):
             self.assertEqual(turn.next_event(5)["type"], "approval_resolved")
             with self.assertRaises(OpenClawError):
                 harness.bridge.resolve_approval("plugin:1", "deny")
+            # "Allow for this task" is relayed as allow-task; the turn keeps the grant (turn_helpers.grantKey).
+            process.emit({"type": "approval", "id": "plugin:2", "title": "Run command", "description": "hostname"})
+            self.assertEqual(turn.next_event(5)["type"], "approval")
+            harness.bridge.resolve_approval("plugin:2", "allow-task")
+            self.assertEqual(process.received[-1], {"type": "approval", "id": "plugin:2", "decision": "allow-task"})
             process.emit({"type": "final", "text": "ok"})
             drain(turn)
             with self.assertRaises(OpenClawError):

@@ -5,44 +5,62 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Check, Copy } from 'lucide-react'
 
-export function Popover({ open, onClose, children, align = 'left', className = '' }: {
+export function Popover({ open, onClose, children, align = 'left', className = '', label }: {
   open: boolean
   onClose: () => void
   children: ReactNode
   align?: 'left' | 'right'
   className?: string
+  label?: string
 }) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!open) return
+    const menu = ref.current
+    // The button that opened this menu: focus returns to it when the menu closes with Escape.
+    const toggle = menu?.parentElement?.querySelector<HTMLElement>('[data-popover-toggle]')
+    const items = () => Array.from(menu?.querySelectorAll<HTMLElement>('[role^="menuitem"]:not(:disabled)') ?? [])
+    items()[0]?.focus()
     const onPointer = (event: PointerEvent) => {
       const target = event.target as Node
       if (ref.current?.contains(target)) return
       if ((target as Element).closest?.('[data-popover-toggle="open"]')) return
       onClose()
     }
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { event.preventDefault(); onClose(); toggle?.focus(); return }
+      if (!menu?.contains(document.activeElement)) return
+      const list = items()
+      const index = list.indexOf(document.activeElement as HTMLElement)
+      const next = event.key === 'ArrowDown' ? index + 1 : event.key === 'ArrowUp' ? index - 1 : event.key === 'Home' ? 0 : event.key === 'End' ? list.length - 1 : null
+      if (next !== null && list.length) { event.preventDefault(); list[(next + list.length) % list.length].focus() }
+      else if (event.key === 'Tab') onClose()
+    }
     document.addEventListener('pointerdown', onPointer, true)
     document.addEventListener('keydown', onKey)
     return () => { document.removeEventListener('pointerdown', onPointer, true); document.removeEventListener('keydown', onKey) }
   }, [open, onClose])
   if (!open) return null
-  return <div ref={ref} className={`popover popover--${align} ${className}`} role="menu">{children}</div>
+  return <div ref={ref} className={`popover popover--${align} ${className}`} role="menu" aria-label={label}>{children}</div>
 }
 
-export function MenuItem({ icon, title, detail, selected, disabled, danger, onSelect }: {
+export function MenuItem({ icon, title, detail, badge, selected, disabled, danger, onSelect }: {
   icon?: ReactNode
   title: string
   detail?: string
+  /** A short status after the title, for example "Ready" or "Use with care". */
+  badge?: string
   selected?: boolean
   disabled?: boolean
   danger?: boolean
   onSelect: () => void
 }) {
+  // Choices (engine, permission, model) are radio items; actions (attach, go to) are plain items.
+  const choice = selected !== undefined
   return (
-    <button type="button" role="menuitemradio" aria-checked={Boolean(selected)} className={`menu-item${selected ? ' is-selected' : ''}${danger ? ' is-danger' : ''}`} disabled={disabled} onClick={onSelect}>
+    <button type="button" role={choice ? 'menuitemradio' : 'menuitem'} aria-checked={choice ? Boolean(selected) : undefined} className={`menu-item${selected ? ' is-selected' : ''}${danger ? ' is-danger' : ''}`} disabled={disabled} onClick={onSelect}>
       {icon && <span className="menu-item__icon">{icon}</span>}
-      <span className="menu-item__text"><span>{title}</span>{detail && <small>{detail}</small>}</span>
+      <span className="menu-item__text"><span className="menu-item__title">{title}{badge && <em className={`menu-item__badge${danger ? ' is-danger' : ''}`}>{badge}</em>}</span>{detail && <small>{detail}</small>}</span>
       {selected && <Check size={14} className="menu-item__check" />}
     </button>
   )
@@ -63,7 +81,7 @@ export function IconButton({ label, onClick, children, active, disabled, classNa
   )
 }
 
-export function Dot({ tone }: { tone: 'ok' | 'warn' | 'off' | 'busy' }) {
+export function Dot({ tone }: { tone: 'ok' | 'warn' | 'off' | 'busy' | 'err' }) {
   return <span className={`dot dot--${tone}`} aria-hidden="true" />
 }
 

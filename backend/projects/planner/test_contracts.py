@@ -101,6 +101,21 @@ class TaskBriefContractTests(unittest.TestCase):
             brief = normalized_task_brief({"required_capabilities": []}, original_request=request, plan=["Answer"], permission_level="default")
             self.assertEqual(brief["required_capabilities"], [], request)
 
+    def test_questions_keep_their_answer_choices(self):
+        # Agent Studio: choices become buttons on the plan card.
+        brief = normalized_task_brief({
+            "requires_clarification": True,
+            "clarifying_questions": [
+                {"question": "Include cloud models?", "options": ["Yes, include them", "No, local only", "yes, include them", "", 5]},
+                "Which folder?",
+            ],
+        }, original_request="Write a report", plan=["Write"], permission_level="default")
+        self.assertEqual(brief["clarifying_questions"], ["Include cloud models?", "Which folder?"])
+        self.assertEqual(brief["question_options"], [["Yes, include them", "No, local only", "5"], []])
+        plain = normalized_task_brief({"requires_clarification": True, "clarifying_questions": ["Which folder?"]},
+                                      original_request="Write a report", plan=["Write"], permission_level="default")
+        self.assertEqual(plain["question_options"], [])
+
     def test_reading_files_in_the_open_folder_gets_the_read_tools(self):
         # R&D validation 2026-11-21: "read the reports in this folder" planned artifact_creation only.
         request = ("Read all ten files report-01.txt to report-10.txt in this folder, then save a text "

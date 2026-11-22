@@ -24,7 +24,7 @@ Both are installed into **OpenClaw** and are used only by the OpenClaw engine. T
 
 ### User flow
 
-1. Open the **Skills** or **MCP servers** page from the sidebar (or **+** → **Skills…** / **MCP servers…** in the composer) and paste a link into the box at the top. In any agent mode you can also paste the link into the message box and send it. Accepted in the message box:
+1. Open the **Skills** or **MCP servers** page in **Workshop** (the rail's second icon) (or **+** → **Skills…** / **MCP servers…** in the composer) and paste a link into the box at the top. In any agent mode you can also paste the link into the message box and send it. Accepted in the message box:
    - a GitHub link on its own (`https://github.com/owner/repo`, or a folder inside it such as `…/tree/main/skills/pdf`);
    - any link with a short request that names what it is, such as `install skill <link>` or `connect mcp <link>`.
 2. PockPock downloads the repository from GitHub and reads it without running anything, then shows an **Approval required** card:
@@ -41,7 +41,7 @@ Tools from a connected server go through the OpenClaw permission mode like any o
 
 ### The Skills and MCP servers pages
 
-Skills and MCP servers each have their own page in the sidebar. Both act on the OpenClaw engine.
+Skills and MCP servers each have their own page in **Workshop → Capabilities**. Both act on the OpenClaw engine.
 
 **Skills** shows:
 
@@ -98,7 +98,7 @@ agent_extensions/service.py
 | `backend/projects/agent_extensions/gateway_config.mjs` | Reads and edits `mcp.servers` and `skills.entries.<name>.enabled`, and lists OpenClaw's skills, through the gateway |
 | `backend/projects/agent_extensions/api.py` | `/api/extensions` routes |
 | `desktop/src/components/ExtensionCard.tsx` | Link detection in the composer and the approval card |
-| `desktop/src/pages/Pages.tsx` (`SkillsPage`, `McpPage`) | The Skills and MCP servers pages: add from a link, switches, remove |
+| `desktop/src/pages/SkillsPage.tsx`, `McpPage.tsx`, `extensions.tsx` | The Skills and MCP servers pages and what they share: add from a link, switches, remove, the skills drawer and inbox |
 | `desktop/src/components/ChatPane.tsx` | Mode picker; routes a pasted link to the approval card |
 | `desktop/electron/setup.cjs`, `desktop/electron/openclaw-skills.json` | The setup skills choice: skills left out are installed but switched off |
 | `backend/projects/openclaw_bridge/plugin/pockpock-permissions.ts` | Names the server and tool on MCP approval cards |
