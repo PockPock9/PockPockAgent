@@ -326,7 +326,7 @@ export default function App() {
           terminalOpen={showTerminal} onToggleTerminal={() => toggle('terminal')} onChooseFolder={() => void chooseFolder()} onClose={() => toggle('inspector')}
           onAttach={(file) => setAttachments((previous) => [...previous, { name: file.name, kind: 'document', text: file.text, size: file.size }])} />
       )}
-      <Toasts status={status} updates={updates} onOpenServices={() => openPage('services')} />
+      <Toasts status={status} updates={updates} onOpenServices={() => openPage('services')} onOpenResearch={() => openPage('research')} />
       <StatusBar status={status} version={info?.version ?? '0.1.0'} onOpenServices={() => openPage('services')} updates={updates} onOpenSettings={() => openPage('settings')} />
       {palette && (
         <CommandPalette sessions={sessions.sessions} theme={validTheme(settings.theme)} onClose={() => setPalette(false)} onNew={newChat}

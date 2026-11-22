@@ -30,7 +30,7 @@ from urllib.parse import quote, unquote, urlsplit
 import aiohttp
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -66,8 +66,11 @@ from agent_run_store import (
     get_research_collection,
     get_research_collection_source,
     get_research_snapshot,
+    list_watched_research_sources,
     update_research_collection_note,
+    update_research_source_watch,
 )
+import research_watch
 from projects.agent_tools import (
     AgentToolContext,
     AgentToolError,
@@ -172,7 +175,13 @@ async def lifespan(_: FastAPI):
     if recovered:
         logger.info("Recovered %s incomplete agent runs from the previous gateway process", recovered)
     logger.info("PockPock AI API listening on http://127.0.0.1:8766")
-    yield
+    # Watched research sources (off per source by default) are re-checked in the background.
+    watcher = asyncio.create_task(research_watch.watch_loop(check_watched_research_sources)) if research_watch.watching_enabled() else None
+    try:
+        yield
+    finally:
+        if watcher:
+            watcher.cancel()
 
 
 api = FastAPI(title="PockPock AI Local API", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
@@ -264,6 +273,12 @@ class ResearchCollectionSavePayload(BaseModel):
 
 class ResearchCollectionNotePayload(BaseModel):
     notes: str = Field(max_length=2_000)
+
+
+class ResearchSourceWatchPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    watched: bool
 
 
 class AgentFilePayload(BaseModel):
@@ -2336,12 +2351,9 @@ async def update_agent_research_note(task_id: str, source_id: str, payload: Rese
     return {"source": source}
 
 
-@api.post("/api/agents/{task_id}/research-collection/sources/{source_id}/refresh")
-async def refresh_agent_research_source(task_id: str, source_id: str, request: Request):
-    require_local_agent_request(request)
-    workspace_key, source = _research_collection_scope(task_id, source_id)
-    if source is None:
-        raise HTTPException(status_code=404, detail="Research source not found in this task")
+async def _refresh_saved_research_source(task_id: str, source_id: str, workspace_key: str) -> dict[str, Any]:
+    """Re-read a saved source and record a snapshot when its text changed (the "Check for changes"
+    button and the background watcher). Raises HTTPException with a readable detail on failure."""
     try:
         saved = get_research_collection_source(task_id, source_id, workspace_key)
     except (RunNotFound, ResearchCollectionScopeError) as err:
@@ -2375,6 +2387,95 @@ async def refresh_agent_research_source(task_id: str, source_id: str, request: R
     if result is None:
         raise HTTPException(status_code=404, detail="Research source not found")
     return result
+
+
+@api.post("/api/agents/{task_id}/research-collection/sources/{source_id}/refresh")
+async def refresh_agent_research_source(task_id: str, source_id: str, request: Request):
+    require_local_agent_request(request)
+    workspace_key, source = _research_collection_scope(task_id, source_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Research source not found in this task")
+    result = await _refresh_saved_research_source(task_id, source_id, workspace_key)
+    try:
+        # A successful check clears a watched source's last error; the user sees this result directly.
+        update_research_source_watch(task_id, source_id, workspace_key, result="ok", seen=True)
+    except (RunNotFound, ResearchCollectionScopeError, ValueError, RuntimeError):
+        logger.warning("Could not update the watch state after a manual check")
+    return result
+
+
+async def check_watched_research_sources() -> dict[str, int]:
+    """One background pass over watched sources that are due (see research_watch)."""
+    return await research_watch.check_due_sources(
+        list_sources=lambda: asyncio.to_thread(list_watched_research_sources),
+        refresh=_refresh_saved_research_source,
+        record=lambda task_id, source_id, workspace_key, **changes: asyncio.to_thread(
+            update_research_source_watch, task_id, source_id, workspace_key, **changes
+        ),
+        research_enabled=research_provider() != "disabled",
+        interval_minutes=research_watch.watch_interval_minutes(),
+    )
+
+
+@api.put("/api/agents/{task_id}/research-collection/sources/{source_id}/watch")
+async def watch_agent_research_source(task_id: str, source_id: str, payload: ResearchSourceWatchPayload, request: Request):
+    require_local_agent_request(request)
+    workspace_key, source = _research_collection_scope(task_id, source_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Research source not found in this task")
+    try:
+        updated = update_research_source_watch(task_id, source_id, workspace_key, watched=payload.watched)
+    except (RunNotFound, ResearchCollectionScopeError) as err:
+        raise HTTPException(status_code=404, detail="Research source not found") from err
+    except ValueError as err:
+        raise HTTPException(status_code=422, detail=str(err)) from err
+    except RuntimeError as err:
+        raise HTTPException(status_code=503, detail="The local research collection store is unavailable.") from err
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Save the source before watching it")
+    return {"source": updated}
+
+
+@api.get("/api/research/watch")
+async def read_watched_research_sources(request: Request):
+    require_local_agent_request(request)
+    interval = research_watch.watch_interval_minutes()
+    try:
+        sources = await asyncio.to_thread(list_watched_research_sources)
+    except RuntimeError as err:
+        raise HTTPException(status_code=503, detail="The local research collection store is unavailable.") from err
+    items = []
+    for item in sources:
+        next_check = research_watch.next_check_at(item, interval)
+        items.append({
+            **{key: value for key, value in item.items() if key != "workspace_key"},
+            "next_check_at": next_check.isoformat() if next_check else None,
+        })
+    return {
+        "research_enabled": research_provider() != "disabled",
+        "background": research_watch.watching_enabled(),
+        "interval_minutes": interval,
+        "sources": items,
+    }
+
+
+@api.post("/api/research/watch/{task_id}/{source_id}/seen")
+async def mark_watched_research_source_seen(task_id: str, source_id: str, request: Request):
+    require_local_agent_request(request)
+    if not re.fullmatch(r"[a-f0-9]{64}", source_id):
+        raise HTTPException(status_code=404, detail="Research source not found")
+    workspace_key, _ = _research_collection_scope(task_id)
+    try:
+        updated = update_research_source_watch(task_id, source_id, workspace_key, seen=True)
+    except (RunNotFound, ResearchCollectionScopeError) as err:
+        raise HTTPException(status_code=404, detail="Research source not found") from err
+    except ValueError as err:
+        raise HTTPException(status_code=422, detail=str(err)) from err
+    except RuntimeError as err:
+        raise HTTPException(status_code=503, detail="The local research collection store is unavailable.") from err
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Research source not found")
+    return {"source": updated}
 
 
 @api.get("/api/agents/{task_id}/research-collection/sources/{source_id}/snapshots/{snapshot_id}")

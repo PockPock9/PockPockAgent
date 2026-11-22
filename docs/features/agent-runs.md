@@ -34,7 +34,27 @@ Run records may also express a parent/child delegation relationship. Child metad
 
 Research reports requested as Markdown, HTML, Word, Excel, or PowerPoint are rendered from the gateway-validated research answer and its source records. The generated artifact is sent through the ordinary `artifact` event and therefore appears in the replayable activity timeline and task-output download list.
 
-Research source events carry an opaque workspace key so saved collection access remains scoped to both the task and its workspace after run history is replayed. A user can explicitly save an individual source, add notes, and refresh it on demand; the run store retains up to 200 KB of extracted text per changed snapshot and all versions until collection deletion. Refresh results and version history are displayed in the research timeline. The gateway does not automatically fetch or refresh saved sources.
+Research source events carry an opaque workspace key so saved collection access remains scoped to both the task and its workspace after run history is replayed. A user can explicitly save an individual source, add notes, and refresh it on demand; the run store retains up to 200 KB of extracted text per changed snapshot and all versions until collection deletion. Refresh results and version history are displayed in the research timeline. The gateway fetches a saved source by itself only when the user chose to watch it (below).
+
+### Watching saved sources
+
+A saved source can be **watched** (UI-01E). While the gateway runs, it re-reads each watched page in the background and records a new snapshot when the text changed, exactly like a manual refresh. This is network access while PockPock runs, so:
+
+- It is off by default and turned on per source: **Watch for changes** on a saved source in the task's sources card. **Stop watching** on the Research page (or the switch) turns it off.
+- It only happens while research (**Allow reading public websites**) is on. When research is off, the gateway fetches nothing and the Research page says checks are paused.
+- At most 50 sources are watched; each is checked once per interval, `POCKPOCK_SOURCE_WATCH_MINUTES` (default 360, 15 to 10,080). The loop (`backend/scripts/research_watch.py`) wakes every minute, 30 s after the gateway starts, and checks at most 3 due sources, one at a time. `POCKPOCK_SOURCE_WATCH=0` turns the background checks off; **Check now** still works.
+- A failed check is recorded with its message and retried after a full interval, not sooner.
+- The fetch is the same as **Check for changes**: the saved URL's host only, with the research tool's public-address, time and size limits.
+
+State lives in `research_collection_sources` (columns added in place: `watched`, `watch_changed_at`, `watch_unseen`, `watch_error`, `watch_error_at`). A background change sets `watch_unseen` until the user marks it seen; turning watching off clears it and the last error. A first snapshot is never a change. A manual check clears the last error and marks the change seen, since the user sees its result.
+
+| Route | Purpose |
+|---|---|
+| `PUT /api/agents/{task}/research-collection/sources/{source}/watch` `{watched}` | Turn watching on or off for a saved source (404 when not saved; 422 at the 50-source limit) |
+| `GET /api/research/watch` | `research_enabled`, `background`, `interval_minutes`, and every watched source with `title`, `url`, `last_checked_at`, `next_check_at` and `watch` (`watched`, `changed_at`, `unseen`, `error`, `error_at`); no workspace key |
+| `POST /api/research/watch/{task}/{source}/seen` | Mark the latest change seen |
+
+Each saved source in `GET /api/agents/{task}/research-collection` also carries its `watch` state. The run-store service has the matching `PATCH /research-collections/{task}/sources/{source}/watch` and `GET /research-watch`; all routes accept local requests only.
 
 The browser event stream is not the persistence source. The server parses each SSE event, attaches the run ID and sequence, writes it to `agent_run_events`, and then forwards it. A reconnect reads events after a sequence number. The completed event may include `workspace_path`; for older task runs without that field, the open-folder endpoint falls back to the default task-output path if the task directory still exists.
 

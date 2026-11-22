@@ -520,6 +520,18 @@ textarea.input { font-family: var(--mono); font-size: 12.5px; }
 .banner { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; padding: 8px 10px 8px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--bg-raise); color: var(--text-2); font-size: 12.5px; }
 .banner span { flex: 1; }
 .banner--error { border-color: var(--err-border); background: var(--err-bg); color: var(--err-text); }
+.banner--warn { border-color: var(--warn); background: var(--warn-bg); color: var(--warn-text); }
+/* Workshop → Research: watched pages. */
+.watch-list { display: grid; gap: 8px; margin: 10px 0 0; padding: 0; list-style: none; }
+.watch-row { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px 14px; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--bg-panel); }
+.watch-row.is-changed { border-color: var(--accent-border); }
+.watch-row__text { display: grid; gap: 3px; flex: 1 1 280px; min-width: 0; }
+.watch-row__text a { color: var(--accent-strong); font-weight: 500; overflow-wrap: anywhere; }
+.watch-row__text small { color: var(--text-3); font-size: 11.5px; overflow-wrap: anywhere; }
+.watch-row__status { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; color: var(--text-2); font-size: 12px; }
+.watch-row__status .badge { margin: 0; }
+.watch-row__error { color: var(--err-text); }
+.watch-row__actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .main > .banner { margin: 10px 16px 0; }
 .context-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; padding: 0 4px; }
 .context-chip { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border: 1px solid var(--border); border-radius: 7px 7px 0 0; border-bottom: 0; background: var(--bg-panel); color: var(--text-2); font-size: 12px; }
@@ -1032,7 +1044,10 @@ html[data-platform='mac'] .titlebar { padding: 0 8px 0 78px; }
 .retry-from { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .retry-from label { color: var(--text-2); font-size: 12.5px; }
 .retry-from select { max-width: 280px; }
-.sources__actions { display: inline-flex; flex: none; align-items: center; gap: 6px; }
+.sources__actions { display: inline-flex; flex: none; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; max-width: 360px; }
+/* Watch for changes (UI-01E): the switch with its visible label beside the saved source. */
+.sources__watch { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; color: var(--text-2); font-size: 12px; white-space: nowrap; }
+.sources__watch .switch { margin-top: 0; }
 .sources a svg { vertical-align: -1px; }
 .notes { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
 .note-item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px dashed var(--border-strong); border-radius: 8px; color: var(--text); font-size: 12.5px; }

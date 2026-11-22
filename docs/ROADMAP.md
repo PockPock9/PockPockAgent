@@ -124,7 +124,7 @@ Allow a user to save selected sources to a task-scoped research collection and r
 **Acceptance criteria:**
 
 - Each explicitly saved source records its URL, extracted text/hash, capture time, and user-supplied notes; each version is capped at 200 KB.
-- Refresh runs only on user request, shows changes, and retains every version until the collection is deleted.
+- Refresh runs on user request, or in the background for a source the user chose to watch (UI-01E: off by default, per source, only while research is enabled), shows changes, and retains every version until the collection is deleted.
 - Delete removes collection records and associated extracted text under the documented retention policy.
 - Research collections are workspace-scoped and are never shared with another task or agent implicitly.
 

@@ -1,8 +1,10 @@
 // Cards inside an assistant turn: the collapsed step list, approval cards (Allow once, Allow for this
-// task, Deny), saved research sources, the failed-step card (Retry from step N) and message actions.
-import { useState } from 'react'
+// task, Deny), saved research sources (Save, Check for changes, Watch for changes), the failed-step card (Retry from step N) and message actions.
+import { useEffect, useState } from 'react'
 import { Bookmark, Check, ChevronRight, CircleSlash, Copy, ExternalLink, Flag, Globe, LoaderCircle, RefreshCw, RotateCcw, Shield, X } from 'lucide-react'
-import { sendJson } from '../lib/api'
+import { getJson, sendJson } from '../lib/api'
+import { announceWatchChange, setWatched, type SourceWatch } from '../lib/watch'
+import { Toggle } from './page'
 import { decideApproval } from '../lib/engines'
 import type { Approval, Message, ResearchBlock, ResearchSource, Step } from '../lib/types'
 import { errorText } from '../lib/runState'
@@ -96,37 +98,79 @@ export function ApprovalCard({ approval, permissionLabel, onChange }: { approval
   )
 }
 
+type SavedState = { status: 'saving' | 'saved' | 'error'; watch?: SourceWatch; watchBusy?: boolean }
+type CollectionReply = { collection: { sources: Array<{ source: { source_id: string }; watch?: SourceWatch }> } | null }
+
 export function ResearchCard({ block }: { block: ResearchBlock }) {
-  const [saved, setSaved] = useState<Record<string, 'saving' | 'saved' | 'error'>>({})
+  const [saved, setSaved] = useState<Record<string, SavedState>>({})
   const [note, setNote] = useState('')
+  // What this task already saved and watches, so a reopened task shows it (not Save again).
+  useEffect(() => {
+    if (!block.taskId) return
+    let live = true
+    getJson<CollectionReply>(`/api/agents/${encodeURIComponent(block.taskId)}/research-collection`).then((reply) => {
+      if (!live || !reply.collection) return
+      const known: Record<string, SavedState> = {}
+      for (const item of reply.collection.sources) known[item.source.source_id] = { status: 'saved', watch: item.watch }
+      setSaved((current) => ({ ...known, ...current }))
+    }, () => undefined)
+    return () => { live = false }
+  }, [block.taskId])
+  const patch = (id: string, change: Partial<SavedState>) => setSaved((current) => ({ ...current, [id]: { ...(current[id] ?? { status: 'saved' }), ...change } }))
   const save = async (source: ResearchSource) => {
-    setSaved((current) => ({ ...current, [source.source_id]: 'saving' }))
+    patch(source.source_id, { status: 'saving' })
     try {
       await sendJson(`/api/agents/${encodeURIComponent(block.taskId)}/research-collection/sources`, { source_id: source.source_id, notes: '' })
-      setSaved((current) => ({ ...current, [source.source_id]: 'saved' }))
+      patch(source.source_id, { status: 'saved' })
     } catch (error) {
-      setSaved((current) => ({ ...current, [source.source_id]: 'error' }))
+      patch(source.source_id, { status: 'error' })
       setNote(error instanceof Error ? error.message : 'Could not save the source.')
     }
   }
   const refresh = async (source: ResearchSource) => {
     try {
-      const result = await sendJson<{ changed?: boolean }>(`/api/agents/${encodeURIComponent(block.taskId)}/research-collection/sources/${encodeURIComponent(source.source_id)}/refresh`)
-      setNote(result.changed ? `${source.title} has changed since it was saved.` : `${source.title} has not changed.`)
+      const result = await sendJson<{ changed?: boolean; previous?: unknown }>(`/api/agents/${encodeURIComponent(block.taskId)}/research-collection/sources/${encodeURIComponent(source.source_id)}/refresh`)
+      announceWatchChange()
+      setNote(result.changed && result.previous ? `${source.title} has changed since it was last checked.` : `${source.title} has not changed.`)
     } catch (error) { setNote(error instanceof Error ? error.message : 'Could not check the source.') }
+  }
+  const watch = async (source: ResearchSource, next: boolean) => {
+    patch(source.source_id, { watchBusy: true })
+    try {
+      const state = await setWatched(block.taskId, source.source_id, next)
+      patch(source.source_id, { watch: state, watchBusy: false })
+      setNote(next
+        ? `Watching ${source.title}. PockPock re-reads it in the background while it runs and research is on, and tells you when it changes. Manage watched pages in Workshop → Research.`
+        : `Stopped watching ${source.title}.`)
+    } catch (error) {
+      patch(source.source_id, { watchBusy: false })
+      setNote(error instanceof Error ? error.message : 'Could not change watching.')
+    }
   }
   return (
     <section className="card card--sources" aria-label="Sources">
       <header><Globe size={14} aria-hidden="true" /><strong>Sources</strong><span className="card__sub">{block.sources.length} {block.sources.length === 1 ? 'page' : 'pages'} read{block.query ? ` · ${block.query}` : ''}</span></header>
       <ul className="sources">
-        {block.sources.map((source) => (
-          <li key={source.source_id}>
-            <div><a href={source.url} target="_blank" rel="noreferrer">{source.title} <ExternalLink size={11} aria-hidden="true" /></a><small>{source.url}</small>{source.excerpt && <p>{source.excerpt}</p>}</div>
-            {block.taskId && (saved[source.source_id] === 'saved'
-              ? <span className="sources__actions"><span className="badge badge--ok"><Check size={12} aria-hidden="true" />Saved</span><button type="button" className="button button--small" onClick={() => void refresh(source)}><RefreshCw size={12} /> Check for changes</button></span>
-              : <button type="button" className="button button--small" disabled={saved[source.source_id] === 'saving'} onClick={() => void save(source)}><Bookmark size={12} /> Save</button>)}
-          </li>
-        ))}
+        {block.sources.map((source) => {
+          const state = saved[source.source_id]
+          return (
+            <li key={source.source_id}>
+              <div><a href={source.url} target="_blank" rel="noreferrer">{source.title} <ExternalLink size={11} aria-hidden="true" /></a><small>{source.url}</small>{source.excerpt && <p>{source.excerpt}</p>}</div>
+              {block.taskId && (state?.status === 'saved'
+                ? (
+                  <span className="sources__actions">
+                    <span className="badge badge--ok"><Check size={12} aria-hidden="true" />Saved</span>
+                    <button type="button" className="button button--small" onClick={() => void refresh(source)}><RefreshCw size={12} /> Check for changes</button>
+                    <span className="sources__watch">
+                      <Toggle checked={Boolean(state.watch?.watched)} busy={state.watchBusy} label={`Watch for changes: ${source.title}`} onChange={(next) => void watch(source, next)} />
+                      <span aria-hidden="true">Watch for changes</span>
+                    </span>
+                  </span>
+                )
+                : <button type="button" className="button button--small" disabled={state?.status === 'saving'} onClick={() => void save(source)}><Bookmark size={12} /> Save</button>)}
+            </li>
+          )
+        })}
       </ul>
       {!block.sources.length && <p>No page could be read.</p>}
       {block.errors.map((error, index) => <p key={index} className="card__error">{error}</p>)}
