@@ -81,6 +81,13 @@ def _revision_messages(
 
 
 def _text_list(value: object, *, field_name: str, maximum: int) -> list[str]:
+    # Models often write steps as objects ({"step": ...}) instead of strings; take their text.
+    if isinstance(value, list):
+        value = [
+            next((item[key] for key in ("step", "action", "description", "title", "check", "text") if isinstance(item.get(key), str)), item)
+            if isinstance(item, dict) else item
+            for item in value
+        ]
     if not isinstance(value, list) or not 1 <= len(value) <= maximum:
         raise ValueError(f"Critic revision must contain 1-{maximum} {field_name}")
     result = []
@@ -89,6 +96,35 @@ def _text_list(value: object, *, field_name: str, maximum: int) -> list[str]:
             raise ValueError(f"Critic revision contains an invalid {field_name} item")
         result.append(item.strip())
     return result
+
+
+def _lenient_verdict(raw: object) -> CriticVerdict | None:
+    """Read a reviewer verdict the way small models write it, or None when it cannot be read.
+
+    The strict schema failed whole plan requests (HTTP 502) over extra keys, "true" as a string, or
+    one long finding (R&D validation 2026-11-21).
+    """
+    if not isinstance(raw, dict):
+        return None
+    approved = raw.get("approved")
+    if isinstance(approved, str) and approved.strip().lower() in {"true", "false", "yes", "no"}:
+        approved = approved.strip().lower() in {"true", "yes"}
+    if not isinstance(approved, bool):
+        return None
+    findings_raw = raw.get("findings")
+    if isinstance(findings_raw, str):
+        findings_raw = [findings_raw]
+    findings = []
+    for item in findings_raw if isinstance(findings_raw, list) else []:
+        if isinstance(item, dict):
+            item = next((item[key] for key in ("finding", "issue", "description", "text") if isinstance(item.get(key), str)), "")
+        if isinstance(item, str) and item.strip():
+            text = " ".join(item.split())
+            findings.append(text if len(text) <= 320 else text[:319] + "…")
+    findings = findings[:8]
+    if not approved and not findings:
+        findings = ["The reviewer did not approve the plan but gave no reason."]
+    return CriticVerdict(approved=approved, findings=findings)
 
 
 async def review_plan(
@@ -100,7 +136,24 @@ async def review_plan(
     generate_json: JsonGenerator,
 ) -> dict[str, Any]:
     """Review once and allow one bounded repair before the user sees the plan."""
-    verdict = CriticVerdict.model_validate(await generate_json(_review_messages(task, task_brief, plan, success_checks)))
+    try:
+        raw_verdict = await generate_json(_review_messages(task, task_brief, plan, success_checks))
+    except ValueError:
+        raw_verdict = None
+    verdict = _lenient_verdict(raw_verdict)
+    if verdict is None:
+        # An unreadable review must not throw away a valid plan; the user reviews it instead.
+        return {
+            "plan": plan,
+            "success_checks": success_checks,
+            "critic_review": {
+                "contract_version": 1,
+                "status": "unreviewed",
+                "revision_count": 0,
+                "findings": [],
+                "summary": "The automatic plan review could not be read. Check the plan yourself before approving.",
+            },
+        }
     if verdict.approved:
         return {
             "plan": plan,
@@ -115,14 +168,25 @@ async def review_plan(
         }
 
     revision = await generate_json(_revision_messages(task, task_brief, plan, success_checks, verdict.findings))
-    if not isinstance(revision, dict) or set(revision) != {"plan", "success_checks"}:
-        raise ValueError("Critic revision returned an unsupported response")
-    revised_plan = _text_list(revision.get("plan") if isinstance(revision, dict) else None, field_name="plan steps", maximum=10)
-    revised_checks = _text_list(
-        revision.get("success_checks") if isinstance(revision, dict) else None,
-        field_name="success checks",
-        maximum=12,
-    )
+    try:
+        if not isinstance(revision, dict) or not {"plan", "success_checks"} <= set(revision):
+            raise ValueError("Critic revision returned an unsupported response")
+        revised_plan = _text_list(revision.get("plan"), field_name="plan steps", maximum=10)
+        revised_checks = _text_list(revision.get("success_checks"), field_name="success checks", maximum=12)
+    except ValueError:
+        # A revision the planner cannot use used to fail the whole request with a 502, although the
+        # original plan was valid. Show that plan with the findings instead; the user decides.
+        return {
+            "plan": plan,
+            "success_checks": success_checks,
+            "critic_review": {
+                "contract_version": 1,
+                "status": "unrevised",
+                "revision_count": 0,
+                "findings": verdict.findings,
+                "summary": "The reviewer found possible issues but could not produce a usable revision. Check the findings before approving.",
+            },
+        }
     return {
         "plan": revised_plan,
         "success_checks": revised_checks,

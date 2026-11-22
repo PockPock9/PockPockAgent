@@ -2,7 +2,7 @@
 
 import asyncio
 import base64
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, closing
 from dataclasses import replace
 import hashlib
 import hmac
@@ -414,7 +414,7 @@ def connect_db():
 
 
 def read_setting(key: str, fallback: str = "") -> str:
-    with connect_db() as connection:
+    with closing(connect_db()) as connection, connection:
         row = connection.execute(
             "SELECT value FROM settings WHERE key = ?", (key,)
         ).fetchone()
@@ -422,7 +422,7 @@ def read_setting(key: str, fallback: str = "") -> str:
 
 
 def write_setting(key: str, value: str) -> None:
-    with telemetry.DB_LOCK, connect_db() as connection:
+    with telemetry.DB_LOCK, closing(connect_db()) as connection, connection:
         connection.execute(
             """INSERT INTO settings (key, value) VALUES (?, ?)
             ON CONFLICT(key) DO UPDATE SET value = excluded.value""",
@@ -881,6 +881,32 @@ def active_model_names(installed: list[dict[str, Any]]) -> list[str]:
     ]
 
 
+is_embedding_model = telemetry.is_embedding_model
+
+
+async def loaded_model_names() -> set[str]:
+    """Models Ollama has in memory now; empty when that cannot be read."""
+    try:
+        running = await ollama_json("/api/ps")
+    except Exception:  # noqa: BLE001 - only an ordering hint
+        return set()
+    return {item.get("name") for item in running.get("models", []) if isinstance(item, dict) and item.get("name")}
+
+
+def fallback_chat_models(
+    installed: list[dict[str, Any]], loaded: set[str], exclude: set[str]
+) -> list[str]:
+    """Enabled models a chat can fall back to: chat models only, already-loaded ones first.
+
+    The automatic fallback used to take the first enabled model in Ollama's list, which is the most
+    recently downloaded one; an embedding model there failed every chat, and an unloaded large
+    model was loaded into GPU memory next to the one already in use.
+    """
+    chat = {item.get("name") for item in installed if not is_embedding_model(item)}
+    names = [name for name in active_model_names(installed) if name in chat and name not in exclude]
+    return sorted(names, key=lambda name: name not in loaded)
+
+
 def extract_document(filename: str, data: bytes) -> str:
     suffix = Path(filename).suffix.lower()
     if suffix in {".txt", ".md", ".csv", ".json", ".xml", ".html", ".log"}:
@@ -1321,8 +1347,9 @@ async def plan_agent_task(payload: AgentPlanPayload, request: Request):
         ]
         default_model = next((name for name in coder_choices if name in capable_names), default_model)
     try:
-        # The planner makes a plan call and a critic call; each may take up to 300 s on a large model.
-        timeout = aiohttp.ClientTimeout(total=660)
+        # The planner makes a plan call and a critic call; each may take up to 600 s, or 900 s on a
+        # large model (planner/app.py planning_timeout), so allow both.
+        timeout = aiohttp.ClientTimeout(total=1860)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(f"{planner_url}/plan", json={
                 "task": task,
@@ -1428,8 +1455,9 @@ async def plan_sequence_agent_task(payload: AgentPlanPayload, request: Request):
         ]
         default_model = next((name for name in coder_choices if name in capable_names), default_model)
     try:
-        # The planner makes a plan call and a fix-up call; each may take up to 300 s on a large model.
-        timeout = aiohttp.ClientTimeout(total=660)
+        # The planner makes a plan call and a fix-up call; each may take up to 600 s, or 900 s on a
+        # large model (planner/app.py planning_timeout), so allow both.
+        timeout = aiohttp.ClientTimeout(total=1860)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(f"{planner_url}/plan-sequence", json={
                 "task": task,
@@ -2058,6 +2086,7 @@ async def run_sequence_agent_task(payload: AgentSequenceRunPayload, request: Req
             run_task = asyncio.create_task(runner.run(
                 ticket["sequence_plan"],
                 workspace=workspace,
+                artifact_dir=output_dir,
                 run_id=run_id,
                 permission_mode=ticket["permission_mode"],
                 executor_model=ticket["executor_model"],
@@ -3193,7 +3222,8 @@ async def chat(payload: ChatPayload):
             if source == "cloud":
                 available_names = {model}
             elif source != "manual" and model not in enabled:
-                candidates = [name for name in enabled if name != router.valves.router_model]
+                loaded_models = await loaded_model_names()
+                candidates = fallback_chat_models(installed.get("models", []), loaded_models, {router.valves.router_model})
                 if not candidates:
                     yield sse({"type": "error", "message": "Enable at least one response model in Model management."})
                     return
@@ -3308,7 +3338,9 @@ async def chat(payload: ChatPayload):
                 yield sse({"type": "error", "message": primary_error or "The cloud model did not answer."})
                 return
             if not succeeded:
-                fallback_candidates = [name for name in enabled if name != model and name != router.valves.router_model]
+                fallback_candidates = fallback_chat_models(
+                    installed.get("models", []), await loaded_model_names(), {model, router.valves.router_model}
+                )
                 if not fallback_candidates:
                     yield sse({"type": "error", "message": primary_error or "Model call failed and no fallback model is enabled"})
                     return

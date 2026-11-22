@@ -265,5 +265,20 @@ class UnknownAndGarbageTests(unittest.TestCase):
                     self.assertIn("evidence", result)
 
 
+class ArtifactFolderTests(unittest.TestCase):
+    def test_a_file_saved_to_the_task_folder_passes_with_a_folder_open(self):
+        # Live validation 2026-11-21: artifacts go to the task folder, the check only read the open folder.
+        with tempfile.TemporaryDirectory() as opened, tempfile.TemporaryDirectory() as task:
+            (Path(task) / "notes.md").write_text("apple\nkiwi\n", encoding="utf-8")
+            exists = {"type": "file_exists", "path": "notes.md"}
+            contains = {"type": "file_contains", "path": "notes.md", "pattern": "kiwi"}
+            self.assertFalse(verify_done_condition(exists, workspace=Path(opened), step_result=None)["passed"])
+            self.assertTrue(verify_done_condition(exists, workspace=Path(opened), step_result=None, artifact_dir=Path(task))["passed"])
+            self.assertTrue(verify_done_condition(contains, workspace=Path(opened), step_result=None, artifact_dir=Path(task))["passed"])
+            missing = verify_done_condition({"type": "file_exists", "path": "other.md"}, workspace=Path(opened), step_result=None, artifact_dir=Path(task))
+            self.assertFalse(missing["passed"])
+            self.assertIn("does not exist", missing["detail"])
+
+
 if __name__ == "__main__":
     unittest.main()

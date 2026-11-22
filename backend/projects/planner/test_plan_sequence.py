@@ -167,7 +167,7 @@ class SequencePlanPromptTests(unittest.TestCase):
         )
         self.assertIn("list_project_files", prompt)
         self.assertIn("read_project_file", prompt)
-        self.assertIn("5-15 sequential steps", prompt)
+        self.assertIn("2-15 sequential steps", prompt)
         self.assertIn("file_contains needs path and pattern", prompt)
         self.assertIn("validated and rejected", prompt)
         self.assertIn("Do the thing", prompt)

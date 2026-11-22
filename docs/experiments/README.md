@@ -1,11 +1,53 @@
 # Experiments: local-AI efficiency on Kan's RTX 4070 PC
 
 Copy-ready experiments for the RTX 4070 12 GB VRAM / Ryzen 7 / 32 GB RAM /
-Windows + WSL2 machine. **Nothing here has been run on that PC — every
-result is unmeasured until Kan runs it.** None of these is integrated
-into the app: no FreeToken/MTP code in the app, no model swap, no engine
-switch. The app keeps Ollama as its default backend with the app-level
-wins documented in `../features/local-ai-efficiency.md`.
+Windows + WSL2 machine. None of these is integrated into the app: no
+FreeToken/MTP code in the app, no model swap, no engine switch. The app
+keeps Ollama as its default backend with the app-level wins documented in
+`../features/local-ai-efficiency.md`.
+
+## Measured on the reference PC (2026-11-21, through Ollama)
+
+Qwen3.6-35B-A3B and its MTP head turned out to need no WSL2 or
+llama-server to measure: Ollama 0.40.15 publishes `qwen3.6:35b-a3b`
+(22 GB, Q4_K_M, built from the `35b-a3b-mtp` source) and runs MTP
+speculative decoding itself (`draft_num_predict 2` in the model's
+parameters). MTP off is the same weights with `PARAMETER
+draft_num_predict 0` in a Modelfile (`ollama create
+qwen3.6-mtp-off:35b-a3b`; no extra disk). PC: RTX 4070 **SUPER** 12 GB,
+Windows, `OLLAMA_CONTEXT_LENGTH=32768`.
+
+| | `qwen3.5:9b` | `qwen3.6:35b-a3b`, MTP on (default) | Qwen3.6, MTP off |
+|---|---|---|---|
+| Placement (`ollama ps`) | 100% GPU | 61% CPU / 39% GPU | 57% CPU / 43% GPU |
+| Decode, 400 tokens, temp 0 (median of 3) | 72.7 tok/s | **66.5 tok/s** | 48.3 tok/s |
+| Prompt processing | ~1,980 tok/s | ~980 tok/s | ~1,010 tok/s |
+| Cold load | — | 31 s | 25 s |
+| `measure-tool-calls.py`, thinking really off | 9/9 | 9/9 | 9/9 |
+| Mean time to the tool call, thinking really off | 0.61 s | 1.01 s | 1.14 s |
+| Same, with only `"think": false` (thinking still on) | 1.50 s, 9/9 | 2.80 s, 8/9 | 4.13 s, 8/9 |
+
+- **MTP: +38% decode** (48.3 → 66.5 tok/s), and the three runs at
+  temperature 0 were identical within each mode. MTP on and off were
+  not identical to each other (one function name differed in a 400-token
+  answer), as the MTP doc warns: speculative decoding here is not
+  bit-exact.
+- **In PockPock (Qwen3.6 as the agent model):** chat works (a compacted
+  30K-token history answered correctly, 69 s including the model load).
+  The ten-file agent task from the compaction check passed with 10/10
+  correct, but took **326 s against 34 s for `qwen3.5:9b`**, and planning
+  40 s against 6 s: each agent step re-reads the growing prompt at about
+  half the 9B's prompt speed, partly on the CPU. On this PC Qwen3.6 is
+  fine for chat and too slow as the default agent model.
+- `--n-cpu-moe` in llama-server and **FreeToken were not run**: both need
+  WSL2 changes (FreeToken needs the 28 GB `.wslconfig` cap, a
+  `wsl --shutdown` that stops Docker Desktop and the NemoClaw sandbox, and
+  the CUDA 13 toolkit). The app cannot use FreeToken today anyway (see its
+  doc), so it is worth running only if Qwen3.6 becomes a target model.
+- Thinking: Ollama's `/v1` endpoint ignores `"think": false`. The script
+  now also sends `reasoning_effort: "none"`; before that, Qwen3.6's 512
+  tokens went to hidden reasoning on the plain-text task and the reply
+  was empty.
 
 ## The experiments
 

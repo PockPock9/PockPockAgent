@@ -10,8 +10,9 @@ cheap, deterministic steps, applied in order when the history passes
     head + tail with a marker giving the original size and, when the full
     content lives on disk (a saved artifact, or the file that was read), a
     pointer to it.
-2.  Prune old tool results (:func:`prune_tool_results`): replace the content
-    of all but the most recent tool messages with a one-line stub. The
+2.  Prune old tool results (:func:`prune_tool_results`): cut the content of
+    all but the most recent tool messages to its start and end, with a note
+    telling the model to call the tool again rather than guess the rest. The
     assistant messages that made the calls are kept, so the call record
     (which tool, which arguments) survives.
 3.  Summarise the old portion (:func:`compact_messages` step 2): replace the
@@ -178,19 +179,31 @@ def prune_tool_results(
     pruned = 0
     result: list[dict[str, Any]] = []
     for index, message in enumerate(messages):
-        if index in stub_after:
-            content = message.get("content", "")
-            result.append({
-                **message,
-                "content": (
-                    f"[tool result pruned: {len(str(content))} chars; "
-                    "call record kept above, result no longer in context]"
-                ),
-            })
+        content = str(message.get("content", "")) if isinstance(message, dict) else ""
+        if index in stub_after and len(content) > PRUNE_EXCERPT_HEAD_CHARS + PRUNE_EXCERPT_TAIL_CHARS:
+            result.append({**message, "content": _pruned_stub(content)})
             pruned += 1
         else:
             result.append(message)
     return result, pruned
+
+
+#: What a pruned result keeps. A bare "result no longer in context" stub made the model invent the
+#: dropped values instead of reading again: live, qwen3.5:9b wrote two made-up codewords out of ten
+#: after reading ten files (R&D validation 2026-11-21). The start and end of a result usually hold
+#: what a step needs (a file's first and last lines, a status, a count), and the note says what to do.
+PRUNE_EXCERPT_HEAD_CHARS = 200
+PRUNE_EXCERPT_TAIL_CHARS = 300
+
+
+def _pruned_stub(content: str) -> str:
+    head = content[:PRUNE_EXCERPT_HEAD_CHARS]
+    tail = content[-PRUNE_EXCERPT_TAIL_CHARS:]
+    return (
+        f"[tool result pruned to save context: {len(content)} chars, only the start and end are kept. "
+        "Do not guess the missing part; call the same tool again if you need it.]\n"
+        f"{head}\n[…]\n{tail}"
+    )
 
 
 # ---------------------------------------------------------------------------

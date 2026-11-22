@@ -67,22 +67,62 @@ class PlanCriticTests(unittest.TestCase):
             CriticVerdict.model_validate({"approved": False, "findings": []})
 
     def test_invalid_revision_is_not_returned_as_a_successful_plan(self):
-        responses = iter([
-            {"approved": False, "findings": ["Add validation."]},
-            {"plan": [], "success_checks": self.checks},
-        ])
+        # An unusable revision is never used. It used to fail the whole request (a 502 with a valid
+        # plan in hand); now the original plan is shown, marked unrevised, with the findings.
+        for bad_revision in ({"plan": [], "success_checks": self.checks}, {"plan": ["x"] * 11, "success_checks": self.checks}, "not json"):
+            responses = iter([{"approved": False, "findings": ["Add validation."]}, bad_revision])
 
-        async def generate_json(messages):
-            return next(responses)
+            async def generate_json(messages):
+                return next(responses)
 
-        with self.assertRaises(ValueError):
-            asyncio.run(review_plan(
+            result = asyncio.run(review_plan(
                 task=self.task,
                 task_brief=self.brief,
                 plan=self.plan,
                 success_checks=self.checks,
                 generate_json=generate_json,
             ))
+            self.assertEqual(result["plan"], self.plan, bad_revision)
+            self.assertEqual(result["success_checks"], self.checks)
+            self.assertEqual(result["critic_review"]["status"], "unrevised")
+            self.assertEqual(result["critic_review"]["findings"], ["Add validation."])
+
+    def test_revision_steps_written_as_objects_are_accepted(self):
+        responses = iter([
+            {"approved": False, "findings": ["Add validation."]},
+            {"plan": [{"step": "Inspect"}, {"action": "Validate"}], "success_checks": [{"check": "Files exist"}], "notes": "extra"},
+        ])
+
+        async def generate_json(messages):
+            return next(responses)
+
+        result = asyncio.run(review_plan(task=self.task, task_brief=self.brief, plan=self.plan, success_checks=self.checks, generate_json=generate_json))
+        self.assertEqual(result["plan"], ["Inspect", "Validate"])
+        self.assertEqual(result["success_checks"], ["Files exist"])
+        self.assertEqual(result["critic_review"]["status"], "revised")
+
+
+    def test_verdicts_as_small_models_write_them_are_read(self):
+        # R&D validation 2026-11-21: a strict verdict schema failed the whole plan request (HTTP 502).
+        from planner.critic import _lenient_verdict
+
+        self.assertTrue(_lenient_verdict({"approved": "true", "reason": "fine"}).approved)
+        verdict = _lenient_verdict({"approved": False, "findings": [{"issue": "Missing check"}, "x" * 500] + ["more"] * 10})
+        self.assertFalse(verdict.approved)
+        self.assertEqual(verdict.findings[0], "Missing check")
+        self.assertLessEqual(len(verdict.findings[1]), 320)
+        self.assertEqual(len(verdict.findings), 8)
+        self.assertEqual(_lenient_verdict({"approved": False}).findings, ["The reviewer did not approve the plan but gave no reason."])
+        self.assertIsNone(_lenient_verdict({"verdict": "ok"}))
+        self.assertIsNone(_lenient_verdict("approved"))
+
+    def test_an_unreadable_review_keeps_the_plan(self):
+        async def generate_json(messages):
+            return {"looks": "good"}
+
+        result = asyncio.run(review_plan(task=self.task, task_brief=self.brief, plan=self.plan, success_checks=self.checks, generate_json=generate_json))
+        self.assertEqual(result["plan"], self.plan)
+        self.assertEqual(result["critic_review"]["status"], "unreviewed")
 
 
 if __name__ == "__main__":

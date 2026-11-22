@@ -109,7 +109,7 @@ export type Session = {
   messages: Message[]
 }
 
-export type Model = { name: string; size: number; enabled: boolean; running: boolean; details?: Record<string, unknown> }
+export type Model = { name: string; size: number; enabled: boolean; running: boolean; embedding?: boolean; details?: Record<string, unknown> }
 
 export type Trace = {
   id: number

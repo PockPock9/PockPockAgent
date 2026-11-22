@@ -196,8 +196,14 @@ def run_task(base_url: str, model: str, task: dict, timeout: int) -> dict:
         "stream": True,
         "stream_options": {"include_usage": True},
         # Qwen models think by default and can return an empty reply on a
-        # tool turn; think off keeps the turn on the tool call.
+        # tool turn; think off keeps the turn on the tool call. Ollama's /v1
+        # ignores "think" (0.40.15): with max_tokens 512 the hidden reasoning
+        # used the whole budget and the reply came back empty, so also send
+        # the switches /v1 servers honour: reasoning_effort (Ollama) and
+        # chat_template_kwargs (llama-server).
         "think": False,
+        "reasoning_effort": "none",
+        "chat_template_kwargs": {"enable_thinking": False},
     }
     request = urllib.request.Request(
         f"{base_url.rstrip('/')}/chat/completions",
@@ -321,6 +327,8 @@ def warm_up(base_url: str, model: str, timeout: int) -> None:
         "max_tokens": 1,
         "stream": False,
         "think": False,
+        "reasoning_effort": "none",
+        "chat_template_kwargs": {"enable_thinking": False},
     }
     request = urllib.request.Request(
         f"{base_url.rstrip('/')}/chat/completions",

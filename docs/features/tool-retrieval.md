@@ -118,9 +118,14 @@ model call, recording a `context_compaction` run event when it acts:
    Other results get a size marker only; the marker never claims the
    full text is stored somewhere it is not.
 2. **Prune old tool results.** All but the most recent 3 tool messages
-   become one-line stubs. The assistant messages that made the calls are
-   kept, so the record of which tool was called with which arguments
-   survives.
+   are cut to their first 200 and last 300 characters, under a note that
+   tells the model the middle was dropped and to call the same tool
+   again rather than guess it (results that short are kept whole). The
+   assistant messages that made the calls are kept, so the record of
+   which tool was called with which arguments survives. An earlier
+   version replaced the whole result with a one-line stub; in a live run
+   (qwen3.5:9b, ten 11 KB files) the model then wrote two made-up values
+   for the files whose results were dropped.
 3. **Summarise the old portion.** If pruning is not enough, the oldest
    messages are replaced by a structured summary — user task, tools used,
    files mentioned, tool calls that errored as open items — while the
@@ -139,6 +144,18 @@ without a restart: `POCKPOCK_CONTEXT_WINDOW_TOKENS`,
 `POCKPOCK_TOOL_OUTPUT_HEAD_CHARS` (default 30,000),
 `POCKPOCK_TOOL_OUTPUT_TAIL_CHARS` (default 10,000),
 `POCKPOCK_PRUNE_KEEP_LAST_TOOL_RESULTS` (default 3).
+
+The `context_compaction` telemetry row stores the stage in `status` and
+the numbers in `reason`, for example `pruned` and `32158 -> 12577
+estimated tokens (threshold 24576); pruned 7, summarised 0`.
+
+**Measured live (2026-11-21, qwen3.5:9b, RTX 4070 SUPER):** an agent
+task with a folder open read ten ~11.7 KB files (about 29K estimated
+tokens) and saved one line per file. Compaction triggered once before
+the save (stage `pruned`, ~32K → ~12.6K estimated tokens); with the
+excerpt stubs the saved file was 10 of 10 correct and the run passed.
+A chat with a 122,000-character history was compacted and the reply
+still quoted a fact from the first message.
 
 ## Configuration
 
@@ -178,21 +195,27 @@ without a restart: `POCKPOCK_CONTEXT_WINDOW_TOKENS`,
   `search_public_site` 6th behind the single-page scrape tool — a
   genuinely ambiguous single-page vs multi-page research request.
 
-## Dense embeddings — wired, untested live on this VM
+## Dense embeddings — measured 2026-11-21
 
-The dense path is implemented (`OllamaEmbedder`, `/api/embed` with
+The dense path (`OllamaEmbedder`, `/api/embed` with
 `nomic-embed-text-v2-moe`, hybrid mean of normalised BM25 + cosine
-scores) but has not been exercised end to end: the model is not
-installed in Ollama on this machine, and three pull attempts on
-2026-11-18 all failed at the manifest fetch (`pull model manifest:
-context deadline exceeded` after the 60 s client deadline), even though
-the registry itself answers curl. Running the eval with `--embed` falls
-back to the keyword-only path and reports identical numbers — no dense
-numbers exist yet, and none are claimed. To measure the hybrid path,
-install the model (`ollama pull nomic-embed-text-v2-moe`, on a machine
-where the registry manifest fetch succeeds) and rerun the eval with
-`--embed`; expect Recall@5/Recall@10, latency, and token reduction for
-dense on vs off to be recorded then.
+scores) is switched on automatically when that model is installed. It
+was measured on the RTX 4070 SUPER PC with the model installed
+(`ollama pull nomic-embed-text-v2-moe`, 957 MB), same 131 cases:
+
+| Measure | Keyword-only | Hybrid (dense on) |
+|---|---|---|
+| Recall@5 combined / real-only | 0.992 / 0.990 | **1.000 / 1.000** |
+| Recall@10 | 1.000 | 1.000 |
+| Schema tokens per turn | ~1,227 (−36%) | ~1,218 (−36%) |
+| Retrieval latency, mean / max | 0.36 ms / 16 ms | **195 ms / 4,844 ms** |
+
+Dense retrieval fixes the one keyword miss (the developer.mozilla.org
+research request) but costs an embedding call per turn: about 0.2 s,
+and several seconds when Ollama first loads the embedding model. That
+is above the plan's 50 ms latency target; it is small next to a model
+turn. The embedding model is never offered as a chat model (the chat
+model menu and automatic chat fallback skip embedding models).
 
 ## Failure states
 

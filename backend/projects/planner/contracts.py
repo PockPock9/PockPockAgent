@@ -102,7 +102,7 @@ def _normalized_text_items(value: object) -> object:
     return normalized
 
 
-def _normalized_required_capabilities(value: object, original_request: str) -> object:
+def _normalized_required_capabilities(value: object, original_request: str, *, has_workspace: bool = False) -> object:
     aliases = {
         "list_project_files": "workspace_read",
         "search_project": "workspace_read",
@@ -155,6 +155,12 @@ def _normalized_required_capabilities(value: object, original_request: str) -> o
     # Research reports are built by the gateway from validated sources, so they are left alone.
     if _ARTIFACT_INTENT.search(original_request) and not {"artifact_creation", "workspace_write", "public_research"} & set(normalized):
         normalized.append("artifact_creation")
+    # A request to read the files in the folder the user opened needs the read tools. The planner prompt
+    # keeps workspace_read for code work, so "read the reports in this folder and save a summary" planned
+    # artifact_creation only and the agent had no tool to read with (R&D validation 2026-11-21). Reading
+    # stays inside the folder the user chose; edits still need workspace_write in the approved plan.
+    if has_workspace and _READ_INTENT.search(original_request) and "workspace_read" not in normalized:
+        normalized.append("workspace_read")
     return normalized
 
 
@@ -168,6 +174,13 @@ _ARTIFACT_INTENT = re.compile(
     r"\b(save|create|make|write|export|generate|produce|draft|prepare)\b[^.?!\n]{0,80}?"
     r"(?:\b(artifact|document|doc|report|spreadsheet|workbook|presentation|slides|deck|memo)\b"
     r"|\.(?:md|txt|docx|xlsx|pptx|csv|pdf|html)\b)",
+    re.IGNORECASE,
+)
+_READ_INTENT = re.compile(
+    r"\b(read|reads|review|summari[sz]e|analy[sz]e|inspect|check|scan|list|compare|look\s+(?:at|through|over)"
+    r"|go\s+through|open|extract|collect|use)\b[^.?!\n]{0,80}?"
+    r"(?:\b(files?|folders?|director(?:y|ies)|documents?|docs|notes|reports?|logs?|project|workspace|codebase)\b"
+    r"|\.(?:md|txt|csv|json|html|py|js|ts|log|yaml|yml|xml)\b)",
     re.IGNORECASE,
 )
 _BUILD_INTENT = re.compile(
@@ -283,8 +296,12 @@ def normalized_task_brief(
     original_request: str,
     plan: list[str],
     permission_level: str,
+    has_workspace: bool = False,
 ) -> dict:
-    """Validate planner content, preserving user input and preventing permission escalation."""
+    """Validate planner content, preserving user input and preventing permission escalation.
+
+    ``has_workspace`` is true when the user opened a folder for this task.
+    """
     source = raw if isinstance(raw, dict) else {}
     milestones = source.get("milestones")
     if not isinstance(milestones, list) or not milestones:
@@ -315,6 +332,7 @@ def normalized_task_brief(
         "required_capabilities": _normalized_required_capabilities(
             _as_list(source.get("required_capabilities", [])),
             original_request,
+            has_workspace=has_workspace,
         ),
         "permission_level": permission_level,
         "milestones": milestones,

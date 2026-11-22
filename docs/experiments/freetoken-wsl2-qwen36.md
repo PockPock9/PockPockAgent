@@ -1,5 +1,7 @@
 # Experiment: FreeToken in WSL2 for Qwen3.6-35B-A3B
 
+> **Update 2026-11-21:** still not run. It needs WSL2 changes (28 GB cap, `wsl --shutdown`, CUDA 13 toolkit) and the app cannot use FreeToken today. The Ollama numbers it would compare against are in [the README](README.md#measured-on-the-reference-pc-2026-11-21-through-ollama).
+
 **Status: unmeasured.** Nothing here has been run on Kan's PC. This is a
 copy-ready experiment, not an integration — no FreeToken code is in the
 app, and the app cannot point at FreeToken today (see below).

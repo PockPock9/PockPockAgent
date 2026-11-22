@@ -113,7 +113,7 @@ _BACKSTOP_CAPABILITIES = ("artifact_creation", "attachment_read")
 
 
 def effective_task_capabilities(
-    planned: list[str], *, requires_tool: bool, has_files: bool
+    planned: list[str], *, requires_tool: bool, has_files: bool, own_task_folder: bool = False
 ) -> list[str]:
     """The planned capabilities, plus low-risk ones a tool-requiring task cannot run without.
 
@@ -128,7 +128,37 @@ def effective_task_capabilities(
     if requires_tool and not any(item not in _BACKSTOP_CAPABILITIES for item in capabilities):
         if "artifact_creation" not in capabilities:
             capabilities.append("artifact_creation")
+    # With no folder open the agent works in its own task folder, which holds only files this run
+    # created. Reading it lets the agent check what it saved; without it a plan check such as "read
+    # the file back" could only end INCOMPLETE (R&D validation 2026-11-21).
+    if own_task_folder and "artifact_creation" in capabilities and "workspace_read" not in capabilities:
+        capabilities.append("workspace_read")
     return capabilities
+
+
+def saved_artifact_read_name(
+    requested: object, *, workspace_root: Path | None, output_dir: Path | None, artifacts: list[dict[str, str]]
+) -> str | None:
+    """The name of a file this run saved in its task folder that a workspace read is asking for.
+
+    With a folder open, save_text_artifact writes to the run's task folder, not the open folder, so
+    reading the saved file back to check it failed twice and stopped the run (R&D validation
+    2026-11-21). Only files this run saved are matched, and only when the open folder has no such file.
+    """
+    if workspace_root is None or output_dir is None or not isinstance(requested, str) or not requested.strip():
+        return None
+    name = requested.replace("\\", "/").rstrip("/").split("/")[-1]
+    try:
+        if (workspace_root / requested).is_file():
+            return None
+        folder = output_dir.resolve()
+        for artifact in artifacts:
+            path = Path(str(artifact.get("path") or ""))
+            if path.name == name and path.parent.resolve() == folder and path.is_file():
+                return name
+    except (OSError, ValueError):
+        return None
+    return None
 
 
 def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any]:
@@ -1178,6 +1208,7 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                     payload.task_brief.required_capabilities,
                     requires_tool=requires_tool,
                     has_files=bool(payload.files),
+                    own_task_folder=workspace_root is None,
                 )
                 needs_no_tools = not task_capabilities and not payload.files
                 if needs_no_tools:
@@ -2044,8 +2075,17 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                             if name in {"list_project_files", "search_project", "read_project_file", "propose_project_edit", "propose_project_patch", "validate_project"}:
                                 if project_context is None:
                                     raise ToolContractError("permission_required", "Workspace tools require Full Access permission")
+                                call_context, call_arguments = project_context, arguments
+                                if name == "read_project_file":
+                                    saved_name = saved_artifact_read_name(
+                                        arguments.get("path"), workspace_root=workspace_root,
+                                        output_dir=output_dir, artifacts=context.artifacts,
+                                    )
+                                    if saved_name:
+                                        call_context = ProjectAgentContext(task_id=task_id, project_root=output_dir)
+                                        call_arguments = {**arguments, "path": saved_name}
                                 tool_result = await _await_agent_operation(
-                                    execute_project_tool(name, arguments, project_context),
+                                    execute_project_tool(name, call_arguments, call_context),
                                     cancel_event,
                                     get_cancel_reason,
                                     timeout_seconds=contract.timeout_seconds,

@@ -91,6 +91,16 @@ def installed_models():
         return None
 
 
+def is_embedding_model(item):
+    """An embedding-only model (nomic-embed-text, bge, ...): it answers no chat request.
+
+    Ollama lists them with the chat models; /api/tags reports a BERT-family architecture for them.
+    """
+    details = item.get("details") if isinstance(item.get("details"), dict) else {}
+    families = [str(name).lower() for name in (details.get("families") or [details.get("family") or ""])]
+    return "embed" in str(item.get("name") or "").lower() or any("bert" in name for name in families)
+
+
 SUPPORTED_EVENTS = frozenset({
     "request_received",
     "route_decision",
@@ -127,6 +137,19 @@ def save_event(data):
             return max(0, min(int(value), maximum))
         return None
 
+    if event_type == "context_compaction" and not data.get("reason"):
+        # The table has no columns for these, and without them a compaction row says nothing about what was
+        # done (R&D validation 2026-11-21). The stage goes in status, the numbers in reason.
+        data = {
+            **data,
+            "status": data.get("stage") if isinstance(data.get("stage"), str) else "",
+            "reason": (
+                f"{data.get('tokens_before')} -> {data.get('tokens_after')} estimated tokens "
+                f"(threshold {data.get('threshold_tokens')}); pruned {data.get('pruned')}, "
+                f"summarised {data.get('summarised')}"
+            ),
+        }
+
     confidence = data.get("confidence")
     if not isinstance(confidence, (int, float)) or isinstance(confidence, bool):
         confidence = None
@@ -151,7 +174,7 @@ def save_event(data):
         number("duration_ms"),
         number("prompt_chars"),
     )
-    with DB_LOCK, connect_db() as connection:
+    with DB_LOCK, closing(connect_db()) as connection, connection:
         connection.execute(
             """INSERT INTO events (
                 created_at, request_id, call_id, event, model, automatic_model,
@@ -163,7 +186,7 @@ def save_event(data):
 
 
 def current_override():
-    with connect_db() as connection:
+    with closing(connect_db()) as connection, connection:
         row = connection.execute(
             "SELECT value FROM settings WHERE key = 'model_override'"
         ).fetchone()
@@ -190,7 +213,7 @@ def dashboard_state(models_override=None, running_override=None):
         except (OSError, URLError, TimeoutError, ValueError, json.JSONDecodeError):
             ollama_error = "Ollama is responding, but runtime status is unavailable"
 
-    with connect_db() as connection:
+    with closing(connect_db()) as connection, connection:
         aggregates = {
             row["model"]: dict(row)
             for row in connection.execute(
@@ -250,6 +273,7 @@ def dashboard_state(models_override=None, running_override=None):
             "modified_at": model.get("modified_at", ""),
             "installed": True,
             "running": name in running_models,
+            "embedding": is_embedding_model(model),
             "decisions": counts.get("decisions") or 0,
             "calls": counts.get("calls") or 0,
             "successes": counts.get("successes") or 0,

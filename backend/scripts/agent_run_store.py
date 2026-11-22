@@ -6,6 +6,7 @@ and inside the run-store process itself.
 """
 
 import json
+from contextlib import closing
 import asyncio
 import anyio
 import hashlib
@@ -250,7 +251,7 @@ def initialize_agent_store() -> None:
     if _use_remote_store():
         _service_request("/health")
         return
-    with telemetry.DB_LOCK, telemetry.connect_db() as connection:
+    with telemetry.DB_LOCK, closing(telemetry.connect_db()) as connection, connection:
         connection.execute("""CREATE TABLE IF NOT EXISTS agent_runs (
             run_id TEXT PRIMARY KEY,
             conversation_id TEXT,
@@ -361,7 +362,7 @@ def create_agent_run(
         })
         return
     now = datetime.now(timezone.utc).isoformat()
-    with telemetry.DB_LOCK, telemetry.connect_db() as connection:
+    with telemetry.DB_LOCK, closing(telemetry.connect_db()) as connection, connection:
         if connection.execute("SELECT 1 FROM agent_runs WHERE run_id=?", (run_id,)).fetchone():
             raise RunAlreadyExists("This run ID has already been used. Start the task again.")
         if effective_permission not in {"default", "auto-review", "full-access"}:
@@ -458,7 +459,7 @@ def claim_delegate_execution(run_id: str, parent_run_id: str) -> bool:
         )
         return result.get("claimed") is True
     now = datetime.now(timezone.utc).isoformat()
-    with telemetry.DB_LOCK, telemetry.connect_db() as connection:
+    with telemetry.DB_LOCK, closing(telemetry.connect_db()) as connection, connection:
         run = connection.execute(
             "SELECT parent_run_id, status FROM agent_runs WHERE run_id=?", (run_id,)
         ).fetchone()
@@ -501,7 +502,7 @@ def store_agent_event(run_id: str, sequence: int, event: dict[str, Any]) -> bool
     now = datetime.now(timezone.utc).isoformat()
     event_type = str(event.get("type", "progress"))[:40]
     payload = json.dumps(event, ensure_ascii=False, separators=(",", ":"))
-    with telemetry.DB_LOCK, telemetry.connect_db() as connection:
+    with telemetry.DB_LOCK, closing(telemetry.connect_db()) as connection, connection:
         current = connection.execute(
             "SELECT status, parent_run_id FROM agent_runs WHERE run_id=?", (run_id,)
         ).fetchone()
@@ -563,7 +564,7 @@ def create_agent_approval(run_id: str, approval_id: str, action_hash: str, actio
     action_json = json.dumps(action, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     if hashlib.sha256(action_json.encode("utf-8")).hexdigest() != action_hash:
         raise ValueError("The approval hash does not match its action payload")
-    with telemetry.DB_LOCK, telemetry.connect_db() as connection:
+    with telemetry.DB_LOCK, closing(telemetry.connect_db()) as connection, connection:
         run = connection.execute("SELECT status FROM agent_runs WHERE run_id=?", (run_id,)).fetchone()
         if not run:
             raise RunNotFound("Run not found")
@@ -587,7 +588,7 @@ def resolve_agent_approval(run_id: str, approval_id: str, action_hash: str, deci
             "action_hash": action_hash, "decision": decision,
         })
     now = datetime.now(timezone.utc).isoformat()
-    with telemetry.DB_LOCK, telemetry.connect_db() as connection:
+    with telemetry.DB_LOCK, closing(telemetry.connect_db()) as connection, connection:
         approval = connection.execute(
             "SELECT * FROM agent_run_approvals WHERE approval_id=? AND run_id=?", (approval_id, run_id)
         ).fetchone()
@@ -612,7 +613,7 @@ def expire_agent_approval(run_id: str, approval_id: str, action_hash: str) -> bo
         result = _service_request(f"/runs/{quote(run_id, safe='')}/approvals/{quote(approval_id, safe='')}/expire", method="POST", payload={"action_hash": action_hash})
         return result.get("expired") is True
     now = datetime.now(timezone.utc).isoformat()
-    with telemetry.DB_LOCK, telemetry.connect_db() as connection:
+    with telemetry.DB_LOCK, closing(telemetry.connect_db()) as connection, connection:
         result = connection.execute(
             "UPDATE agent_run_approvals SET status='expired', resolved_at=? WHERE run_id=? AND approval_id=? AND action_hash=? AND status='pending' AND expires_at<=?",
             (now, run_id, approval_id, action_hash, now),
@@ -625,7 +626,7 @@ def finish_incomplete_agent_run(run_id: str) -> None:
         _service_request(f"/runs/{quote(run_id, safe='')}/finish", method="POST", payload={})
         return
     now = datetime.now(timezone.utc).isoformat()
-    with telemetry.DB_LOCK, telemetry.connect_db() as connection:
+    with telemetry.DB_LOCK, closing(telemetry.connect_db()) as connection, connection:
         run = connection.execute(
             "SELECT status, cancel_requested_at, cancel_reason FROM agent_runs WHERE run_id=?", (run_id,)
         ).fetchone()
@@ -665,7 +666,7 @@ def recover_incomplete_agent_runs() -> int:
     if _use_remote_store():
         result = _service_request("/runs/recover", method="POST", payload={})
         return int(result.get("recovered", 0))
-    with telemetry.connect_db() as connection:
+    with closing(telemetry.connect_db()) as connection, connection:
         run_ids = [row["run_id"] for row in connection.execute(
             "SELECT run_id FROM agent_runs WHERE status IN ('running', 'cancelling')"
         ).fetchall()]
@@ -681,7 +682,7 @@ def request_agent_run_cancel(run_id: str, *, reason: str = "user") -> dict[str, 
     if _use_remote_store():
         return _service_request(f"/runs/{quote(run_id, safe='')}/cancel", method="POST", payload={"reason": reason})
     now = datetime.now(timezone.utc).isoformat()
-    with telemetry.DB_LOCK, telemetry.connect_db() as connection:
+    with telemetry.DB_LOCK, closing(telemetry.connect_db()) as connection, connection:
         run = connection.execute("SELECT status, cancel_reason FROM agent_runs WHERE run_id=?", (run_id,)).fetchone()
         if not run:
             raise RunNotFound("Run not found")
@@ -798,7 +799,7 @@ async def track_agent_stream(run_id: str, source, encode_event):
 def list_runs_for_conversation(conversation_id: str) -> list[dict[str, Any]]:
     if _use_remote_store():
         return _service_request(f"/conversations/{quote(conversation_id, safe='')}/runs")["runs"]
-    with telemetry.connect_db() as connection:
+    with closing(telemetry.connect_db()) as connection, connection:
         rows = connection.execute(
             "SELECT run_id, conversation_id, task_type, status, created_at, updated_at, title, parent_run_id, subtask_id, delegate_role, dependency_ids, context_scope, workspace_scope, artifact_scope, allowed_tools, permission_level, deadline_at, max_tool_calls, max_duration_seconds FROM agent_runs WHERE conversation_id=? ORDER BY created_at",
             (conversation_id,),
@@ -815,7 +816,7 @@ def get_run_events(run_id: str, after: int, limit: int) -> tuple[dict[str, Any] 
             # a 404. Letting it escape made the gateway answer 500 (issue #66).
             return None, []
         return result.get("run"), result.get("events", [])
-    with telemetry.connect_db() as connection:
+    with closing(telemetry.connect_db()) as connection, connection:
         run = connection.execute(
             "SELECT run_id, conversation_id, task_type, status, created_at, updated_at, title, parent_run_id, subtask_id, delegate_role, dependency_ids, context_scope, workspace_scope, artifact_scope, allowed_tools, permission_level, deadline_at, max_tool_calls, max_duration_seconds FROM agent_runs WHERE run_id=?",
             (run_id,),
@@ -904,7 +905,7 @@ def get_research_collection(task_id: str, workspace_key: str) -> dict[str, Any] 
         return _service_request(
             f"/research-collections/{quote(task_id, safe='')}?workspace_key={quote(workspace_key, safe='')}"
         ).get("collection")
-    with telemetry.DB_LOCK, telemetry.connect_db() as connection:
+    with telemetry.DB_LOCK, closing(telemetry.connect_db()) as connection, connection:
         return _research_collection_for_connection(connection, task_id, workspace_key)
 
 
@@ -921,7 +922,7 @@ def get_research_collection_source(
             f"/research-collections/{quote(task_id, safe='')}/sources/{quote(source_id, safe='')}"
             f"?workspace_key={quote(workspace_key, safe='')}"
         ).get("source")
-    with telemetry.DB_LOCK, telemetry.connect_db() as connection:
+    with telemetry.DB_LOCK, closing(telemetry.connect_db()) as connection, connection:
         if _check_research_collection_scope(connection, task_id, workspace_key) is None:
             return None
         row = connection.execute(
@@ -963,7 +964,7 @@ def get_research_snapshot(
             f"/research-collections/{quote(task_id, safe='')}/sources/{quote(source_id, safe='')}"
             f"/snapshots/{snapshot_id}?workspace_key={quote(workspace_key, safe='')}"
         ).get("snapshot")
-    with telemetry.DB_LOCK, telemetry.connect_db() as connection:
+    with telemetry.DB_LOCK, closing(telemetry.connect_db()) as connection, connection:
         if _check_research_collection_scope(connection, task_id, workspace_key) is None:
             return None
         row = connection.execute(
@@ -1016,7 +1017,7 @@ def add_research_collection_source(
                 "notes": notes,
             },
         ).get("collection")
-    with telemetry.DB_LOCK, telemetry.connect_db() as connection:
+    with telemetry.DB_LOCK, closing(telemetry.connect_db()) as connection, connection:
         if not connection.execute("SELECT 1 FROM agent_runs WHERE run_id=?", (task_id,)).fetchone():
             raise RunNotFound("Run not found")
         collection = _check_research_collection_scope(connection, task_id, workspace_key)
@@ -1096,7 +1097,7 @@ def add_research_collection_snapshot(
                 "truncated": truncated,
             },
         )
-    with telemetry.DB_LOCK, telemetry.connect_db() as connection:
+    with telemetry.DB_LOCK, closing(telemetry.connect_db()) as connection, connection:
         if _check_research_collection_scope(connection, task_id, workspace_key) is None:
             return None
         saved = connection.execute(
@@ -1162,7 +1163,7 @@ def update_research_collection_note(
             method="PATCH",
             payload={"workspace_key": workspace_key, "notes": notes},
         ).get("source")
-    with telemetry.DB_LOCK, telemetry.connect_db() as connection:
+    with telemetry.DB_LOCK, closing(telemetry.connect_db()) as connection, connection:
         if _check_research_collection_scope(connection, task_id, workspace_key) is None:
             return None
         cursor = connection.execute(
@@ -1181,7 +1182,7 @@ def delete_research_collection(task_id: str, workspace_key: str) -> bool:
             f"/research-collections/{quote(task_id, safe='')}?workspace_key={quote(workspace_key, safe='')}",
             method="DELETE",
         ).get("deleted") is True
-    with telemetry.DB_LOCK, telemetry.connect_db() as connection:
+    with telemetry.DB_LOCK, closing(telemetry.connect_db()) as connection, connection:
         if _check_research_collection_scope(connection, task_id, workspace_key) is None:
             return False
         connection.execute("PRAGMA secure_delete=ON")
@@ -1211,7 +1212,7 @@ def _decode_run(row) -> dict[str, Any]:
 def get_completed_run_event(run_id: str) -> dict[str, Any] | None:
     if _use_remote_store():
         return _service_request(f"/runs/{quote(run_id, safe='')}/done-event").get("event")
-    with telemetry.connect_db() as connection:
+    with closing(telemetry.connect_db()) as connection, connection:
         row = connection.execute(
             "SELECT payload FROM agent_run_events WHERE run_id=? AND event_type='done' ORDER BY sequence DESC LIMIT 1",
             (run_id,),

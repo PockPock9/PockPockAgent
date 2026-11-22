@@ -61,6 +61,15 @@ tool-call turns previously sent neither, so agent turns ran on the 4K
 default. The shared `to_payload()` contract used by cloud providers is
 unchanged; these fields are added by the Ollama adapter only.
 
+**Measured 2026-11-21: the OpenAI-compatible tool path ignores `num_ctx`.** Ollama's
+`/v1/chat/completions` uses the server default (`OLLAMA_CONTEXT_LENGTH`, which Setup sets to
+32768), and Ollama reloads a model whenever a request asks for a different context size. One agent
+task loaded the same model at 8K (planner), then 32K (first tool call). The Ollama adapter now
+avoids that: when the model is already loaded with a context at least as large as the request
+needs (up to 64K), it reuses the loaded size; when the model is not loaded, it asks for
+`OLLAMA_CONTEXT_LENGTH` when that is larger. Live check: one full agent task (plan, review, tool
+calls) now loads `qwen3.5:9b` once. Tests: `backend/projects/model_router/test_loaded_context.py`.
+
 Raising `POCKPOCK_NUM_CTX` much above 16K costs KV VRAM (roughly
 200 KB per token for a 14B model) and can force partial CPU offload on
 a 12 GB card. The agent loop's compaction budget (32K estimated tokens,

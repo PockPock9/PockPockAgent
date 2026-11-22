@@ -68,15 +68,18 @@ class ValidateSequencePlanTests(unittest.TestCase):
         # The normalised form is exactly what the model dumps.
         self.assertEqual(result, SequencePlan.model_validate(plan).model_dump(mode="json"))
 
-    def test_four_steps_rejected(self):
-        with self.assertRaisesRegex(ValueError, "at least 5"):
-            validate_sequence_plan(_n_step_plan(4))
+    def test_one_step_rejected(self):
+        with self.assertRaisesRegex(ValueError, "at least 2"):
+            validate_sequence_plan(_n_step_plan(1))
 
     def test_sixteen_steps_rejected(self):
         with self.assertRaisesRegex(ValueError, "at most 15"):
             validate_sequence_plan(_n_step_plan(16))
 
-    def test_five_and_fifteen_steps_accepted(self):
+    def test_two_four_and_fifteen_steps_accepted(self):
+        # A small task plans naturally in 3-4 steps (live validation 2026-11-21).
+        validate_sequence_plan(_n_step_plan(2))
+        validate_sequence_plan(_n_step_plan(4))
         validate_sequence_plan(_n_step_plan(5))
         validate_sequence_plan(_n_step_plan(15))
 
@@ -218,11 +221,28 @@ class ConstantsTests(unittest.TestCase):
             MIN_STEPS,
             SEQUENCE_CONTRACT_VERSION,
         )
-        self.assertEqual((MIN_STEPS, MAX_STEPS), (5, 15))
+        self.assertEqual((MIN_STEPS, MAX_STEPS), (2, 15))
         self.assertEqual(MAX_CAPSULE_TOKENS, 400)
         self.assertEqual(MAX_STEP_RETRIES, 2)
         self.assertEqual(MAX_TOOLS_PER_STEP, 3)
         self.assertEqual(SEQUENCE_CONTRACT_VERSION, 1)
+
+
+class ArtifactToolRepairTests(unittest.TestCase):
+    def step(self, tools, path):
+        return {"steps": [{"id": "s", "tools_allowed": tools, "done_condition": {"type": "file_exists", "path": path}}]}
+
+    def test_the_tool_matches_the_file_kind(self):
+        # Live validation 2026-11-21: create_office_document was pinned to a step that writes notes.md.
+        from projects.plan_sequence.contracts import repair_artifact_tools
+
+        fixed = repair_artifact_tools(self.step(["create_office_document", "read_project_file"], "notes.md"))
+        self.assertEqual(fixed["steps"][0]["tools_allowed"], ["save_text_artifact", "read_project_file"])
+        fixed = repair_artifact_tools(self.step(["save_text_artifact"], "Report.DOCX"))
+        self.assertEqual(fixed["steps"][0]["tools_allowed"], ["create_office_document"])
+        for tools, path in ((["save_text_artifact"], "a.md"), (["create_office_document"], "a.xlsx"), (["read_project_file"], "a.md"), (["create_office_document"], "")):
+            self.assertEqual(repair_artifact_tools(self.step(list(tools), path))["steps"][0]["tools_allowed"], tools)
+        self.assertEqual(repair_artifact_tools("nonsense"), "nonsense")
 
 
 if __name__ == "__main__":
