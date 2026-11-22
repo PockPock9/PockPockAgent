@@ -1048,3 +1048,51 @@ html[data-platform='mac'] .titlebar { padding: 0 8px 0 78px; }
   .plan__row { grid-template-columns: 1fr; gap: 0; }
   .composer__note { display: none; }
 }
+
+/* ---------- Workshop pages (Agent Studio) ---------- */
+.page__inner--wide { width: min(1080px, 100% - 48px); }
+.page__head .page__actions { flex: none; }
+.page-toolbar { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 16px; margin: 18px 0 12px; border-bottom: 1px solid var(--border); }
+.page-toolbar .tabs { margin: 0; border-bottom: 0; }
+.page-toolbar__search { width: min(280px, 100%); margin-bottom: 6px; }
+.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; margin: 0; padding: 0; list-style: none; }
+.skill-card { align-content: start; gap: 6px; }
+.skill-card__head { display: flex; align-items: center; gap: 10px; }
+.skill-card__head svg { flex: none; color: var(--accent-strong); }
+.skill-card__open { flex: 1; min-width: 0; min-height: 32px; padding: 0; border: 0; background: none; color: var(--text); font-weight: 600; text-align: left; overflow-wrap: anywhere; }
+.skill-card__open:hover { color: var(--accent-strong); text-decoration: underline; text-underline-offset: 3px; }
+.skill-card > p { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; }
+.skill-card small { color: var(--text-3); font-size: 12px; overflow-wrap: anywhere; }
+.skill-card small .badge { margin-left: 0; }
+.learned { margin-bottom: 8px; }
+.learned .list-title svg { color: var(--accent-strong); }
+.learned__list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.setting-card { display: flex; grid-template-columns: none; align-items: center; gap: 12px; margin-bottom: 14px; }
+.setting-card > svg { flex: none; color: var(--accent-strong); }
+.setting-card .badge { flex: none; margin: 0; }
+.tags { display: flex !important; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+.tags em { padding: 0 7px; border: 1px solid var(--border-strong); border-radius: 999px; color: var(--text-2); font-size: 11px; font-style: normal; }
+.row--off .row__text strong { color: var(--text-2); }
+.row.is-selected { border-color: var(--accent-border); box-shadow: 0 0 0 2px var(--accent-ring); }
+.recipes { display: grid; gap: 16px; }
+.recipes--editing { grid-template-columns: minmax(260px, 340px) minmax(0, 1fr); align-items: start; }
+.recipes--editing .recipes__list .row { flex-wrap: wrap; }
+.recipes--editing .recipes__list .row__actions { width: 100%; justify-content: flex-end; }
+.recipes__list { min-width: 0; }
+.drawer-backdrop { position: fixed; inset: 38px 0 24px; z-index: 60; border: 0; background: var(--backdrop); }
+.drawer { position: fixed; top: 38px; right: 0; bottom: 24px; z-index: 61; display: flex; flex-direction: column; width: min(420px, 100vw - 32px); border-left: 1px solid var(--border-strong); background: var(--bg-popover); box-shadow: -18px 0 50px var(--shadow); }
+.drawer__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 52px; padding: 8px 10px 8px 18px; border-bottom: 1px solid var(--border); }
+.drawer__head h2 { margin: 0; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.drawer__body { display: grid; align-content: start; gap: 10px; flex: 1; min-height: 0; padding: 16px 18px; overflow-y: auto; color: var(--text-2); font-size: 13px; }
+.drawer__body p { margin: 0; }
+.drawer__label { margin: 8px 0 0; color: var(--text-3); font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.drawer__list { margin: 0; padding-left: 18px; }
+.drawer__foot { display: flex; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--border); }
+.drawer .connector-detail .card { margin-bottom: 0; }
+@media (max-width: 860px) {
+  .recipes--editing { grid-template-columns: 1fr; }
+  .setting-card { flex-wrap: wrap; }
+}
+/* A note with inline emphasis reads as one line of text: .note is a flex row for icon + text. */
+.note--text, .connectors-foot { display: block; }
+.note--text svg { vertical-align: -2px; margin-right: 4px; }

@@ -1,6 +1,8 @@
-// Whether PockPock Agent may fetch public websites that a task names. Backed by /api/research/provider.
+// Workshop → Research: whether PockPock Agent tasks may read public websites. Backed by
+// /api/research/provider (named_host_fetcher = on, disabled = off).
 import { useEffect, useState } from 'react'
-import { Globe2, LoaderCircle, ShieldOff } from 'lucide-react'
+import { Bookmark, Globe2, ShieldOff } from 'lucide-react'
+import { ErrorNote, Loading, PageFrame, Toggle } from '../components/page'
 import { getJson, sendJson } from '../lib/api'
 
 type Provider = { provider: 'disabled' | 'named_host_fetcher'; enabled: boolean; destination: string; supports_search: boolean }
@@ -9,32 +11,29 @@ export function ResearchPage() {
   const [state, setState] = useState<Provider | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  useEffect(() => { getJson<Provider>('/api/research/provider').then(setState, (loadError: unknown) => setError(loadError instanceof Error ? loadError.message : 'Research settings are unavailable.')) }, [])
+  const load = () => { getJson<Provider>('/api/research/provider').then((next) => { setState(next); setError('') }, (loadError: unknown) => setError(loadError instanceof Error ? loadError.message : 'Research settings are unavailable.')) }
+  useEffect(load, [])
   const choose = async (provider: Provider['provider']) => {
-    setBusy(true)
-    setError('')
+    setBusy(true); setError('')
     try { setState(await sendJson<Provider>('/api/research/provider', { provider }, 'PUT')) } catch (saveError) { setError(saveError instanceof Error ? saveError.message : 'Could not save.') } finally { setBusy(false) }
   }
+  const on = state?.provider === 'named_host_fetcher'
   return (
-    <div className="page">
-      <div className="page__inner">
-        <header className="page__head"><div><span className="eyebrow">Customize · PockPock Agent</span><h1>Research</h1><p>Whether PockPock Agent tasks may read public websites. Sources it reads appear under its reply, where you can save them to check for changes later.</p></div></header>
-        {error && <div className="banner banner--error" role="alert"><span>{error}</span></div>}
-        {!state && !error && <p className="note"><LoaderCircle size={13} className="spin" /> Loading…</p>}
-        {state && (
-          <>
-            <div className="choice-cards" role="radiogroup" aria-label="Research access">
-              <button type="button" role="radio" aria-checked={state.provider === 'named_host_fetcher'} className={`choice-card${state.provider === 'named_host_fetcher' ? ' is-selected' : ''}`} disabled={busy} onClick={() => void choose('named_host_fetcher')}>
-                <Globe2 size={18} /><span><strong>Named public websites</strong><small>Read text from public sites the task names by hostname. No general web search. Private and local addresses are blocked, with time and size limits.</small></span>
-              </button>
-              <button type="button" role="radio" aria-checked={state.provider === 'disabled'} className={`choice-card${state.provider === 'disabled' ? ' is-selected' : ''}`} disabled={busy} onClick={() => void choose('disabled')}>
-                <ShieldOff size={18} /><span><strong>Off</strong><small>Research tools make no network requests.</small></span>
-              </button>
-            </div>
-            <p className="note">Requests go to: {state.destination}. No API keys are used or stored. The OpenClaw engine has its own web access, controlled by its permission setting.</p>
-          </>
-        )}
-      </div>
-    </div>
+    <PageFrame eyebrow="Workshop · Capabilities" title="Research" intro="Whether PockPock Agent tasks may read public websites. Sources it reads appear under its reply, where you can save them and check them for changes later.">
+      <ErrorNote message={error} onRetry={load} />
+      {!state && !error && <Loading>Loading…</Loading>}
+      {state && (
+        <>
+          <div className="card setting-card">
+            {on ? <Globe2 size={16} aria-hidden="true" /> : <ShieldOff size={16} aria-hidden="true" />}
+            <div className="row__text"><strong>Allow reading public websites</strong>
+              <span>{on ? 'On: tasks may read text from public sites they name by hostname. No general web search; private and local addresses are blocked, with time and size limits.' : 'Off: research tools make no network requests.'}</span></div>
+            <Toggle checked={on} busy={busy} label="Allow reading public websites" onChange={(next) => void choose(next ? 'named_host_fetcher' : 'disabled')} />
+          </div>
+          <p className="note">Requests go to: {state.destination}. No API keys are used or stored. The OpenClaw engine has its own web access, controlled by its permission setting.</p>
+          <p className="note note--text"><Bookmark size={13} aria-hidden="true" />Saved sources are kept with each task: open the task and use <strong>Check for changes</strong> on its sources card.</p>
+        </>
+      )}
+    </PageFrame>
   )
 }

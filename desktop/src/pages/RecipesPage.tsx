@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Check, ChevronLeft, Globe, LoaderCircle, Play, Plus, Power, RefreshCw, Save, Trash2, X } from 'lucide-react'
 import { Empty } from '../components/ui'
+import { PageFrame } from '../components/page'
 import { getJson, sendJson, stream, text, uid } from '../lib/api'
 import type { StreamEvent } from '../lib/api'
 
@@ -162,17 +163,35 @@ export function RecipesPage() {
   const setInput = (index: number, change: Partial<RecipeInput>) => setDraft((current) => current && { ...current, inputs: current.inputs.map((input, position) => position === index ? { ...input, ...change } : input) })
 
   return (
-    <div className="page">
-      <div className="page__inner">
-        <header className="page__head">
-          <div><span className="eyebrow">Workspace</span><h1>Browser recipes</h1><p>Saved browser workflows for repeated web tasks. They run only when you start them, in an isolated browser, and every step asks for approval.</p></div>
-          <div className="page__actions"><button type="button" className="button button--primary" onClick={() => void open(null)}><Plus size={13} /> New recipe</button></div>
-        </header>
+    <PageFrame eyebrow="Workshop · Capabilities" title="Browser recipes" intro="Saved browser workflows for repeated web tasks. They run only when you start them, in an isolated browser, and every step asks for approval." wide
+      actions={<button type="button" className="button button--primary" onClick={() => void open(null)}><Plus size={13} /> New recipe</button>}>
         {error && <div className="banner banner--error" role="alert"><span>{error}</span><button type="button" className="icon-button icon-button--small" onClick={() => setError('')} aria-label="Dismiss"><X size={13} /></button></div>}
         {notice && <div className="banner" role="status"><span>{notice}</span></div>}
         {running && <RunPanel key={running.recipe_id + running.version} recipe={running} onClose={() => setRunning(null)} />}
 
-        {draft ? (
+        <div className={`recipes${draft ? ' recipes--editing' : ''}`}>
+        <div className="recipes__list">
+        {recipes === null && !error ? <p className="note"><LoaderCircle size={13} className="spin" /> Loading recipes…</p>
+          : recipes && !recipes.length ? <Empty icon={<Globe size={20} />} title="No recipes yet"><p>Create one for a web task you repeat, such as checking an order status.</p><button type="button" className="button button--primary" onClick={() => void open(null)}><Plus size={13} /> New recipe</button></Empty>
+            : (
+              <ul className="rows">
+                {recipes?.map((recipe) => (
+                  <li key={recipe.recipe_id} className={`row${editing?.id === recipe.recipe_id ? ' is-selected' : ''}`}>
+                    <Globe size={16} className="row__icon" aria-hidden="true" />
+                    <div className="row__text"><strong>{recipe.name} <small className={`badge ${recipe.enabled ? 'badge--ok' : 'badge--off'}`}>{recipe.enabled ? 'On' : 'Off'}</small></strong><span>{recipe.allowed_domains.join(', ')} · {recipe.steps.length} {recipe.steps.length === 1 ? 'step' : 'steps'} · version {recipe.version}</span></div>
+                    <div className="row__actions">
+                      <button type="button" className="button button--small" disabled={!recipe.enabled} onClick={() => { setDraft(null); setRunning(recipe) }}><Play size={12} /> Run</button>
+                      <button type="button" className="button button--small" onClick={() => void open(recipe)}>Edit</button>
+                      <button type="button" className="icon-button" aria-label={recipe.enabled ? `Switch off ${recipe.name}` : `Switch on ${recipe.name}`} title={recipe.enabled ? 'Switch off' : 'Switch on'} disabled={busy} onClick={() => void toggle(recipe)}><Power size={14} /></button>
+                      <button type="button" className="icon-button" aria-label={`Delete ${recipe.name}`} title="Delete" disabled={busy} onClick={() => void remove(recipe)}><Trash2 size={14} /></button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+        {recipes && <p className="note"><button type="button" className="link-button" onClick={() => void refresh()}><RefreshCw size={12} /> Refresh</button></p>}
+        </div>
+        {draft && (
           <form className="card recipe-editor" onSubmit={(event) => void save(event)}>
             <header><button type="button" className="icon-button icon-button--small" onClick={() => setDraft(null)} aria-label="Back to recipes"><ChevronLeft size={14} /></button><strong>{editing ? `Edit “${draft.name}” · version ${editing.version}` : 'New recipe'}</strong><span>{editing ? `Saving creates version ${editing.version + 1}` : 'Not run until you start it'}</span></header>
             <label className="field">Name<input className="input" required maxLength={120} value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="Check order status" /></label>
@@ -209,26 +228,8 @@ export function RecipesPage() {
             {versions.length > 0 && <details className="recipe-versions"><summary>Version history ({versions.length})</summary>{versions.map((version) => <details key={version.version}><summary>Version {version.version} · {new Date(version.created_at).toLocaleString()}</summary><pre>{JSON.stringify(version.definition, null, 2)}</pre></details>)}</details>}
             <div className="card__actions"><button type="submit" className="button button--primary" disabled={busy}>{busy ? <LoaderCircle size={13} className="spin" /> : <Save size={13} />} {editing ? 'Save new version' : 'Save recipe'}</button><button type="button" className="button" onClick={() => setDraft(null)}>Cancel</button></div>
           </form>
-        ) : recipes === null && !error ? <p className="note"><LoaderCircle size={13} className="spin" /> Loading recipes…</p>
-          : recipes && !recipes.length ? <Empty icon={<Globe size={20} />} title="No recipes yet"><p>Create one for a web task you repeat, such as checking an order status.</p><button type="button" className="button button--primary" onClick={() => void open(null)}><Plus size={13} /> New recipe</button></Empty>
-            : (
-              <ul className="rows">
-                {recipes?.map((recipe) => (
-                  <li key={recipe.recipe_id} className="row">
-                    <Globe size={16} className="row__icon" />
-                    <div className="row__text"><strong>{recipe.name}</strong><span>Version {recipe.version} · {recipe.steps.length} steps · {recipe.allowed_domains.join(', ')}{recipe.enabled ? '' : ' · switched off'}</span></div>
-                    <div className="row__actions">
-                      <button type="button" className="button" disabled={!recipe.enabled} onClick={() => { setDraft(null); setRunning(recipe) }}><Play size={12} /> Run</button>
-                      <button type="button" className="button" onClick={() => void open(recipe)}>Edit</button>
-                      <button type="button" className="icon-button" aria-label={recipe.enabled ? `Switch off ${recipe.name}` : `Switch on ${recipe.name}`} title={recipe.enabled ? 'Switch off' : 'Switch on'} disabled={busy} onClick={() => void toggle(recipe)}><Power size={14} /></button>
-                      <button type="button" className="icon-button" aria-label={`Delete ${recipe.name}`} title="Delete" disabled={busy} onClick={() => void remove(recipe)}><Trash2 size={14} /></button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-        {!draft && recipes && <p className="note"><button type="button" className="link-button" onClick={() => void refresh()}><RefreshCw size={12} /> Refresh</button></p>}
-      </div>
-    </div>
+        )}
+        </div>
+    </PageFrame>
   )
 }

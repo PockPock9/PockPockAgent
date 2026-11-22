@@ -2,6 +2,7 @@
 // each model performs. Prompts and replies are never stored, only routing metadata.
 import { Activity, CircleAlert, Gauge, Server } from 'lucide-react'
 import { Empty } from '../components/ui'
+import { ErrorNote, PageFrame, Stat } from '../components/page'
 import type { Status } from '../lib/status'
 import type { Trace } from '../lib/types'
 
@@ -20,20 +21,18 @@ export function ActivityPage({ status }: { status: Status }) {
   const totals = state?.totals ?? {}
   const models = (state?.models ?? []).filter((model) => (model.calls ?? 0) > 0).sort((a, b) => (b.calls ?? 0) - (a.calls ?? 0))
   return (
-    <div className="page">
-      <div className="page__inner">
-        <header className="page__head"><div><span className="eyebrow">Workspace</span><h1>Activity</h1><p>What the Smart Router did recently. Only routing details are kept: never your prompts or the replies.</p></div></header>
-        {!state ? <div className="banner banner--error" role="alert"><span>The PockPock gateway is not answering. Start it from Services.</span></div> : (
+    <PageFrame eyebrow="Workshop · System" title="Activity" intro="What the Smart Router did recently. Only routing details are kept: never your prompts or the replies.">
+        {!state ? <ErrorNote message="The PockPock gateway is not answering. Start it from Services." /> : (
           <>
             <div className="stats">
-              <div className="stat"><Activity size={16} /><span>Requests</span><strong>{totals.requests ?? 0}</strong></div>
-              <div className="stat"><Server size={16} /><span>Model calls</span><strong>{totals.calls ?? 0}</strong></div>
-              <div className="stat"><Gauge size={16} /><span>Average time</span><strong>{totals.avg_ms ? `${(totals.avg_ms / 1000).toFixed(1)} s` : '—'}</strong></div>
-              <div className="stat"><Server size={16} /><span>Loaded now</span><strong>{state.models.filter((model) => model.running).length}</strong></div>
+              <Stat icon={<Activity size={16} />} label="Requests" value={totals.requests ?? 0} />
+              <Stat icon={<Server size={16} />} label="Model calls" value={totals.calls ?? 0} />
+              <Stat icon={<Gauge size={16} />} label="Average time" value={totals.avg_ms ? `${(totals.avg_ms / 1000).toFixed(1)} s` : '—'} />
+              <Stat icon={<Server size={16} />} label="Loaded now" value={state.models.filter((model) => model.running && !model.embedding).length} />
             </div>
             <h2 className="list-title">By model</h2>
             {!models.length ? <p className="note">No model has been used yet.</p> : (
-              <table className="table">
+              <table className="table"><caption className="visually-hidden">Calls, success rate and average time by model</caption>
                 <thead><tr><th>Model</th><th>Calls</th><th>Succeeded</th><th>Average time</th></tr></thead>
                 <tbody>{models.map((model) => (
                   <tr key={model.name}><td>{model.name}</td><td>{model.calls}</td><td>{model.calls ? `${Math.round(((model.successes ?? 0) / model.calls) * 100)}%` : '—'}</td><td>{model.avg_ms ? `${(model.avg_ms / 1000).toFixed(1)} s` : '—'}</td></tr>
@@ -57,7 +56,6 @@ export function ActivityPage({ status }: { status: Status }) {
             )}
           </>
         )}
-      </div>
-    </div>
+    </PageFrame>
   )
 }

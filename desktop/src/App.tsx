@@ -11,7 +11,11 @@ import { Rail, sectionOf, StatusBar, TitleBar, WorkshopNav } from './components/
 import type { Page, Section } from './components/Shell'
 import { TaskPanel } from './components/TaskPanel'
 import { TerminalPanel } from './components/TerminalPanel'
-import { McpPage, MemoryPage, ModelsPage, SettingsPage, SkillsPage } from './pages/Pages'
+import { SettingsPage } from './pages/Pages'
+import { SkillsPage } from './pages/SkillsPage'
+import { McpPage } from './pages/McpPage'
+import { ModelsPage } from './pages/ModelsPage'
+import { MemoryPage } from './pages/MemoryPage'
 import { MaintenancePage } from './pages/MaintenancePage'
 import { CloudPage } from './pages/CloudPage'
 import { ConnectorsPage } from './pages/ConnectorsPage'
@@ -302,7 +306,7 @@ export default function App() {
         )}
         {page === 'skills' && <SkillsPage status={status} />}
         {page === 'mcp' && <McpPage status={status} />}
-        {page === 'models' && <ModelsPage status={status} />}
+        {page === 'models' && <ModelsPage status={status} onOpenTerminal={() => patch({ terminal: true })} />}
         {page === 'cloud' && <CloudPage status={status} />}
         {page === 'connectors' && <ConnectorsPage />}
         {page === 'memory' && <MemoryPage />}

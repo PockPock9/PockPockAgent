@@ -429,7 +429,7 @@ if (!app.requestSingleInstanceLock()) {
     setInterval(async () => {
       const wanted = connectors.count()
       if (!wanted || !gatewayWasUp) return
-      const reply = await httpJson('http://127.0.0.1:8766/api/connectors', 3000)
+      const reply = await httpJson(`${BACKEND_URL}/api/connectors`, 3000)
       const live = Array.isArray(reply?.json?.connectors) ? reply.json.connectors.filter((item) => item.connected).length : wanted
       if (reply?.status === 200 && live !== wanted) void connectors.push()
     }, 60_000).unref()
@@ -437,7 +437,7 @@ if (!app.requestSingleInstanceLock()) {
     setInterval(async () => {
       const wanted = cloud.chosenModels().length
       if (!wanted || !gatewayWasUp) return
-      const reply = await httpJson('http://127.0.0.1:8766/api/cloud/models', 3000)
+      const reply = await httpJson(`${BACKEND_URL}/api/cloud/models`, 3000)
       if (reply?.status === 200 && Array.isArray(reply.json?.models) && reply.json.models.length !== wanted) void cloud.push()
     }, 60_000).unref()
     fixes = new FixRunner({ maintenance, reports, userData: app.getPath('userData'), emit: (event) => send('maintenance:event', event) })

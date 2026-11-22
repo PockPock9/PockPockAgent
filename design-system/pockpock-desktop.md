@@ -80,7 +80,12 @@ The mark is a chicken foot whose centre toe is a lightning bolt. Files and gener
 - **Tabs** (Connectors): a row of text buttons with a count badge; the active one has an accent underline; they use `role="tablist"`, `role="tab"` and `aria-selected`.
 - **Connector cards and rows** (Connectors): a neutral icon tile (a pictogram, never an app's logo), name, one-line description, and a pill action (**Connect**, or the account name when connected). Featured connectors are cards in an auto-fit grid; the rest are rows grouped by a section title.
 - **Searchable choice list** (Cloud models): a search field above a bordered, scrolling list of checkbox rows, each with a title and a secondary line; the count and any limit are announced below it.
-- **Rows** on Customize pages: icon, title, secondary line, optional description, then a switch and/or a remove button.
+- **Rows** on Workshop pages: icon, title with a status badge, secondary line, optional description or tags, then a switch and/or actions.
+- **Workshop page frame** (`components/page.tsx`): eyebrow "Workshop · <group>", title, one-line intro and actions on the right; 820 px column, 1080 px for pages with a grid or an editor beside a list (Skills, Browser recipes).
+- **Card grid** (Skills): auto-fill columns of at least 260 px; a card has the name as a button that opens details, a switch, a three-line description and its source or a **Needs setup** badge; a card that needs setup has a dashed border.
+- **Setting card**: an accent icon, a title and one line, an optional badge, and a switch (Smart route, Remember preferences, Allow reading public websites).
+- **Drawer**: details beside a list, 420 px from the right edge between the title and status bars, over a backdrop; a header with the title and Close, a scrolling body, an optional footer for destructive actions. Escape closes it and focus returns to what opened it.
+- **Toolbar**: tabs with counts on the left, a search field on the right, sharing one bottom border.
 
 ## States and accessibility
 

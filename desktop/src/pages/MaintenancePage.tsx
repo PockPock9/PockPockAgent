@@ -6,7 +6,7 @@ import { ArrowLeft, Flag, LoaderCircle, Trash2, Wrench } from 'lucide-react'
 import { Empty } from '../components/ui'
 import { MaintenanceSetup } from '../components/MaintenanceSetup'
 import { FixPanel } from '../components/FixPanel'
-import { PageFrame } from './Pages'
+import { PageFrame } from '../components/page'
 import { bridge } from '../lib/types'
 import type { MaintenanceStatus, Report, ReportCategory, ReportStatus, ReportSummary } from '../lib/types'
 import { captureText, CATEGORY_LABEL, describeRedactions, STATUS_LABEL } from '../lib/reports'
@@ -33,7 +33,7 @@ export function MaintenancePage() {
   if (open) return <ReportDetail id={open} setup={setup} onBack={() => { setOpen(null); load() }} />
   const openCount = reports?.filter((report) => report.status === 'open').length ?? 0
   return (
-    <PageFrame eyebrow="System" title="Maintenance" intro="Problems you reported with the Report button under a reply. Each report keeps that exchange so it can be reproduced and fixed. Reports stay on this PC.">
+    <PageFrame eyebrow="Workshop · System" title="Maintenance" intro="Problems you reported with the Report button under a reply. Each report keeps that exchange so it can be reproduced and fixed. Reports stay on this PC.">
       {error && <div className="banner banner--error" role="alert"><span>{error}</span></div>}
       {setup && <MaintenanceSetup status={setup} onChange={load} />}
       <h2 className="section-title">Reports</h2>
@@ -88,7 +88,7 @@ function ReportDetail({ id, setup, onBack }: { id: string; setup: MaintenanceSta
   }
 
   return (
-    <PageFrame eyebrow="Maintenance" title="Report" intro={report ? `Reported ${relativeTime(report.createdAt)}${report.capture.chatTitle ? ` from “${report.capture.chatTitle}”` : ''}.` : 'Loading…'}
+    <PageFrame eyebrow="Workshop · Maintenance" title="Report" intro={report ? `Reported ${relativeTime(report.createdAt)}${report.capture.chatTitle ? ` from “${report.capture.chatTitle}”` : ''}.` : 'Loading…'}
       actions={<button type="button" className="button" onClick={onBack}><ArrowLeft size={13} /> All reports</button>}>
       {error && <div className="banner banner--error" role="alert"><span>{error}</span></div>}
       {message && <div className="banner" role="status"><span>{message}</span></div>}
