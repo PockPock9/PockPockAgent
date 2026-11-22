@@ -55,6 +55,17 @@ A switch turns the skill or server off for the agent without deleting it: OpenCl
 
 Each page covers loading (a spinner), empty (a note with what to do), error (the reason, including when the OpenClaw gateway is not running), and success (the list updates).
 
+### Find on mcpservers.org
+
+Both pages have a search card, **Find an MCP server on mcpservers.org** and **Find a skill on mcpservers.org** (`desktop/src/pages/DirectorySearch.tsx`, `backend/projects/agent_extensions/directory.py`). Results appear as you type.
+
+- **Where results come from.** mcpservers.org puts its pages behind a browser check (Cloudflare) and its `robots.txt` disallows `/api/`, so PockPock does not read its pages or API. It uses what the site publishes for machines:
+  - its **curated list**: mcpservers.org is the site of the GitHub list [`wong2/awesome-mcp-servers`](https://github.com/wong2/awesome-mcp-servers), whose README gives each curated server's name, description and repository link (about 500 servers, read from the Reference, Official and Community sections);
+  - its **sitemaps**, which `robots.txt` allows: every server page (about 13,000) and every skill page (about 8,000), names only.
+- **MCP servers**: the curated list is always searched. **Search all servers on mcpservers.org** adds the whole site; it downloads the server sitemaps (about 57 MB, because they list every page in 15 languages) once, keeps only the names, and refreshes them at most once a week. After that the whole site is searched every time. **Skills** have no curated list, so the first **Search skills on mcpservers.org** downloads the skill sitemap (about 9 MB), refreshed weekly too.
+- **Each result** has **Open on mcpservers.org** (the server or skill page, in the browser; a curated server opens the site's search for its name). A curated server with a GitHub link also has **Preview and install**, which runs the normal preview below: you see exactly what would be installed and approve it. When PockPock cannot tell how to start a server from its repository (for example one that must be built first and run with `node dist/index.js`), the reason appears under that result with what to do: open its page for the setup steps, then paste the command or server address in the box above. Skills are added by pasting the skill's GitHub link from its page.
+- **Privacy.** The search runs on this PC. The downloads are plain requests for public files with a generic User-Agent; nothing about the user or the search is sent.
+
 ### How a link is recognized
 
 | Link | Result |
@@ -114,6 +125,7 @@ All routes accept requests from this PC only (same check as agent runs) and retu
 | `GET /api/extensions` | – | `{skills:[{slug,key?,name,description,source,missing,enabled}], builtin_skills:[{key,name,description,enabled,ready,needs}], mcp:[{name,transport,target,source,managed,enabled}], openclaw_ready, detail}` |
 | `POST /api/extensions/inspect` | `{url, prefer?: "skills"\|"mcp"}` | Proposal: `{id, kind, source, commit, also, expires_in, skills?: [...], mcp?: {...}}` |
 | `POST /api/extensions/install` | `{proposal_id, skills?: [slug], args?: [string], env?: {KEY: value}, authorization?: string}` | `{kind:"skills", installed:[{slug,name}]}` or `{kind:"mcp", name, verified, tools:[{name,description}]}` |
+| `GET /api/extensions/directory?kind=mcp\|skills&q=&limit=30&full=false` | – | `{results:[{name, description, owner, curated, install_url, source_url, page_url}], total, counts:{curated, index}, index_cached, note, site}`. `full=true` downloads the site index when it is not cached; `note` says when an older copy is used because mcpservers.org could not be reached. Not rate-limited: it searches the cached lists, and downloads at most daily (curated) or weekly (index). `503` when nothing is cached and the site cannot be reached |
 | `POST /api/extensions/cancel` | `{proposal_id}` | `{ok:true}` |
 | `POST /api/extensions/remove` | `{kind: "skill"\|"mcp", name}` | `{ok:true}` |
 | `POST /api/extensions/toggle` | `{kind: "skill"\|"mcp", name, enabled}` (`name` is a skill's `key` or a server's name) | `{ok:true, enabled}` |
@@ -128,6 +140,7 @@ Status codes: `400` invalid link or input, `404` not found on GitHub or not inst
 - MCP servers: `mcp.servers.<name>` in `~/.openclaw/openclaw.json`, including any API key or Authorization value entered on the card.
 - Switches: `skills.entries.<name>.enabled` and `mcp.servers.<name>.enabled` in `~/.openclaw/openclaw.json`.
 - `~/.openclaw/pockpock/extensions.json`: names, source links, commit, and install time of what PockPock installed. No secrets.
+- `~/.openclaw/pockpock/mcpservers-directory.json`: the mcpservers.org lists used by the search (the curated list, and the server and skill names once downloaded; under 1 MB), with the time each was downloaded.
 - A previewed repository archive is kept in the system temp folder under `pockpock-extensions/` until it is installed, cancelled, or replaced by newer previews. Proposals expire after 15 minutes and at most four are kept.
 - Nothing is written to telemetry or run tables.
 

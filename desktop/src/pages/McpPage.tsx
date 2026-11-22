@@ -6,6 +6,7 @@ import { Empty } from '../components/ui'
 import { ErrorNote, Loading, PageFrame, Toggle } from '../components/page'
 import type { Status } from '../lib/status'
 import { AddLink, useExtensions, useProposal } from './extensions'
+import { DirectorySearch } from './DirectorySearch'
 
 export function McpPage({ status }: { status: Status }) {
   const { list, error, setError, pending, load, act } = useExtensions(() => void status.refreshCounts())
@@ -15,6 +16,7 @@ export function McpPage({ status }: { status: Status }) {
     <PageFrame eyebrow="Workshop · Capabilities" title="MCP servers" intro="Programs that give the OpenClaw agent extra tools. Every call still follows the permission you pick in the task.">
       <AddLink kind="mcp" busy={busy} onPreview={(url) => void preview(url)} />
       {proposal && <ExtensionCard key={proposal.id} proposal={proposal} onClose={() => { setProposal(null); void load(); void status.refreshCounts() }} onSwitch={(next) => void preview(proposal.source, next)} onOpen={(url) => void preview(url, 'mcp')} />}
+      <DirectorySearch kind="mcp" busy={busy} onPreview={(url) => preview(url, 'mcp', true)} />
       <ErrorNote message={error} onRetry={() => void load()} />
       {!list && !error && <Loading>Loading servers…</Loading>}
       {list && !list.openclaw_ready && <ErrorNote message={`${list.detail || 'OpenClaw is not reachable.'} Servers cannot be listed until it is running.`} />}

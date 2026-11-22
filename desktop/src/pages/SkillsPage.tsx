@@ -9,6 +9,7 @@ import { Drawer, ErrorNote, Loading, PageFrame, Tabs, Toggle } from '../componen
 import { getJson, relativeTime, sendJson } from '../lib/api'
 import type { Status } from '../lib/status'
 import { AddLink, useExtensions, useProposal } from './extensions'
+import { DirectorySearch } from './DirectorySearch'
 
 type Skill = { id: string; name: string; description: string; kind: 'added' | 'builtin'; enabled: boolean; needsSetup: boolean; needs: string[]; source: string; toggleKey?: string; removeKey?: string; note?: string }
 type Candidate = { id: string; kind: string; name: string; source_run_id: string; status: string; verification_result: { passed?: boolean; detail?: string } | null; created_at: string }
@@ -82,6 +83,7 @@ export function SkillsPage({ status }: { status: Status }) {
     <PageFrame eyebrow="Workshop · Capabilities" title="Skills" intro="Instructions and helpers the OpenClaw agent can use. Turn off what you don't want it to reach for." wide>
       <AddLink kind="skills" busy={busy} onPreview={(url) => void preview(url)} />
       {proposal && <ExtensionCard key={proposal.id} proposal={proposal} onClose={() => { setProposal(null); void load(); void status.refreshCounts() }} onSwitch={(next) => void preview(proposal.source, next)} onOpen={(url) => void preview(url, 'mcp')} />}
+      <DirectorySearch kind="skills" busy={busy} onPreview={(url) => preview(url, 'skills', true)} />
       <ErrorNote message={error} onRetry={() => void load()} />
       <LearnedSkills />
       {!list && !error && <Loading>Loading skills…</Loading>}

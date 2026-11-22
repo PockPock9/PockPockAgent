@@ -5,9 +5,10 @@ from __future__ import annotations
 import asyncio
 from typing import Callable
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
+from .directory import Directory, DirectoryError
 from .service import ExtensionError, ExtensionService
 
 
@@ -39,7 +40,7 @@ class TogglePayload(BaseModel):
     enabled: bool
 
 
-def create_router(service: ExtensionService, require_local: Callable[[Request], None]) -> APIRouter:
+def create_router(service: ExtensionService, require_local: Callable[[Request], None], directory: Directory | None = None) -> APIRouter:
     def local_only(request: Request) -> None:
         require_local(request)
 
@@ -54,6 +55,21 @@ def create_router(service: ExtensionService, require_local: Callable[[Request], 
     @router.get("")
     async def list_extensions():
         return await run(service.list)
+
+    # mcpservers.org search (directory.py): public lists, downloaded at most once a day.
+    finder = directory or Directory(service.state_dir / "pockpock" / "mcpservers-directory.json")
+
+    @router.get("/directory")
+    async def search_directory(
+        kind: str = Query(pattern="^(mcp|skills)$"),
+        q: str = Query(default="", max_length=100),
+        limit: int = Query(default=30, ge=1, le=60),
+        full: bool = Query(default=False),
+    ):
+        try:
+            return await asyncio.to_thread(finder.search, kind, q, limit, full)
+        except DirectoryError as err:
+            raise HTTPException(status_code=err.status_code, detail=str(err)) from err
 
     @router.post("/inspect")
     async def inspect_link(payload: InspectPayload):
