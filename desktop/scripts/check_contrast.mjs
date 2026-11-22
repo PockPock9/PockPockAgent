@@ -89,6 +89,19 @@ export const PAIRS = [
   ...['ok', 'warn', 'err', 'info', 'dot-off'].flatMap((dot) => [[dot, 'bg-side', UI, 'status dot'], [dot, 'bg', UI, 'status dot']]),
   ['tree-folder', 'bg-side', UI, 'folder icon'],
   ['accent-border@bg', 'bg', UI, 'waiting card border'],
+  // Agent Studio shell: run bar, rail, segmented engine switch, command palette, inspector.
+  ['ok-text', 'bg-panel', TEXT, 'run bar: finished phase'],
+  ['ok-text', 'ok-bg@bg-panel', TEXT, 'run bar: finished phase marker'],
+  ['warn-text', 'warn-bg@bg-panel', TEXT, 'run bar: slow note'],
+  ['err-text', 'err-bg@bg-panel', TEXT, 'run bar: failed note'],
+  ['control-border', 'bg-panel', UI, 'run bar: phase marker ring'],
+  ['accent-strong', 'bg-active', UI, 'rail: active icon'],
+  ['accent-strong', 'bg-side', UI, 'rail: needs-you badge'],
+  ['warn', 'bg-side', UI, 'rail: services badge'],
+  ['err', 'bg-panel', UI, 'run bar: failed track'],
+  ['accent-strong', 'border@bg-panel', UI, 'run bar: working track on its rail'],
+  ['text', 'accent-bg@bg-popover', TEXT, 'palette: selected result'],
+  ['accent-strong', 'bg-active', TEXT, 'Workshop: active page icon and inspector meter'],
 ]
 
 const all = themes()

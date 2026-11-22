@@ -128,7 +128,8 @@ class ServiceManager {
 
   async healthy(definition) {
     if (definition.id === 'ollama') return Boolean((await httpJson('http://127.0.0.1:11434/api/version'))?.status === 200)
-    if (definition.id === 'gateway') return (await httpJson('http://127.0.0.1:8766/api/health'))?.status === 200
+    // The app talks to POCKPOCK_BACKEND_URL when it is set (main.cjs), so check that gateway, not only :8766.
+    if (definition.id === 'gateway') return (await httpJson(`${(process.env.POCKPOCK_BACKEND_URL || 'http://127.0.0.1:8766').replace(/\/$/, '')}/api/health`))?.status === 200
     if (definition.project) {
       const reply = await httpJson(`http://127.0.0.1:${definition.port}/health`)
       return Boolean(reply?.json?.ok === true && reply.json.service === definition.id)

@@ -6,8 +6,12 @@ PockPock Agent is the PockPock interface: a desktop app (Electron) for Windows a
 
 | Area | Behavior |
 |---|---|
-| Chats | Create (**Ctrl+N**, **⌘N** on a Mac), search, reopen and delete chats. Saved in the app's data folder; the newest 200 are kept. |
-| Modes | **Chat** (direct answer, no tools), **PockPock Agent** (plan, review, then run built-in tools), **OpenClaw** (agent on this PC with skills and MCP servers), **NemoClaw** (OpenClaw in a sandbox: WSL on Windows, Docker on a Mac). Chosen in the composer's mode picker. |
+| Layout | An icon rail (**Tasks**, **Workshop**, **Activity**; **Services** and **Settings** at the bottom), the task list or the Workshop navigation (252 px), the task or page, and the inspector (320 px, tabs **Context**, **Files**, **Terminal**). The terminal opens under the composer. Below 1100 px the inspector opens over the content; below 860 px the rail and the task list open from the menu button in the title bar. **Ctrl+B** shows or hides the task list, **Ctrl+Shift+E** the inspector, **Ctrl+J** the terminal (⌘ on a Mac). |
+| Tasks | Create (**Ctrl+N**, **⌘N** on a Mac), search, reopen and delete tasks (each is one conversation). The list groups them as **Needs you** (the running task is waiting for a plan or approval), **Running**, **Today**, **This week** and **Older**; each row says what its newest turn did, for example "Waiting for you · 4.1 s", "PockPock Agent · Done · 5:32 PM" or "Failed". The rail's Tasks icon shows a dot while a task needs you. Saved in the app's data folder; the newest 200 are kept. |
+| Run bar | Above every task: the phases (PockPock Agent: **Understand**, **Plan**, **Act**, **Verify**; Chat: Understand, Write; OpenClaw and NemoClaw: Understand, Act), what is happening now, **Signal** (time since the run last sent anything), the elapsed time, and **Stop**. Working: the mark's bolt pulses and a 2 px bar sweeps under the bar. Waiting for a plan or an approval: a solid accent bar, a still bolt, how long it has waited, and **Review**, which scrolls to the card. Slow (no event for 10 s): a note saying why and **Keep waiting** (hides the note for 30 s), **Use *model*** (stops the run and sends the same request again with the smallest switched-on local model smaller than the one in use, a loaded one first; Chat and PockPock Agent only) and **Stop**. Failed: a red bar, the error, what was kept (the plan, finished steps, saved files), **Retry** (sends the same request again), **Open Services** and **Report**. Finished, stopped and interrupted turns say so with the total time. Status text and elapsed time are always shown; with reduced motion the bar is solid and the bolt still. |
+| Inspector | **Context**: engine, model and where it runs (this PC, loaded or not, or the cloud provider), **context used** (the newest model call's prompt tokens out of the loaded context, PockPock Agent only), the permission mode, the workspace, the task folder (known before the run starts: `<tasks folder>\<run id>`) and the files the run read, changed or saved. **Files**: the open folder. **Terminal**: opens the terminal under the composer. Tabs move with the arrow keys. |
+| Command palette | **Ctrl+K** (⌘K), or the search box in the title bar: new task, show or hide the inspector or terminal, every page, every theme, and the 30 newest tasks. Arrow keys move, Enter runs, Escape closes and returns focus. |
+| Modes | **Chat** (direct answer, no tools), **PockPock Agent** (plan, review, then run built-in tools), **OpenClaw** (agent on this PC with skills and MCP servers), **NemoClaw** (OpenClaw in a sandbox: WSL on Windows, Docker on a Mac). Chosen in the composer's mode picker or the engine switch in the task header. |
 | Plan review | PockPock Agent shows its plan, success checks, deliverables, reviewer notes and task folder. **Approve and run**, **Edit plan**, or **Decline**. Nothing runs before approval. |
 | Approvals | OpenClaw tool calls (Ask first / Auto-approve safe) and PockPock Agent file or browser actions show a card with **Allow once** / **Deny** and the exact command, path, URL or diff. |
 | Permissions | PockPock Agent: Default, Auto-review, Full access, plus **Work in the open folder** or **Use a new temporary folder**. OpenClaw: Ask first, Auto-approve safe, Full access. Full access is shown in amber. |
@@ -15,9 +19,9 @@ PockPock Agent is the PockPock interface: a desktop app (Electron) for Windows a
 | Timing | Live counters (tenths of a second) while a reply is thinking, planning or running a step; each finished step's duration; the planning time on the plan card; and under every reply a breakdown: **Thinking** (or **Planning**), **Waiting for you**, **Writing** (Chat) or **Working**, and **Total**. |
 | Agent results | A collapsible list of steps; research sources (with **Save** and **Check for changes**); changed files; produced files; and a button to open the task folder. |
 | Attachments | Upload documents or images, drag them onto the chat, or attach a text file from the Files panel. OpenClaw and NemoClaw accept text and documents only. |
-| Files | Browse the open folder, attach files to the next message, open files or show folders in Explorer or Finder. |
+| Files | The inspector's **Files** tab: browse the open folder, attach files to the next message, open files or show folders in Explorer or Finder. |
 | Reports | **Report** under a reply saves that exchange and your description, redacted, on this PC; **Maintenance** lists them. See [Problem reports and Maintenance](maintenance.md). |
-| Themes | **Settings → Theme**: PockPock Dark (default), Volt, Storm, Feather (light) or System. Applied before the first paint. The title bar shows the PockPock mark; its bolt pulses while an agent works. See [Themes and the brand mark](themes.md). |
+| Themes | **Settings → Theme**: PockPock Dark (default), Volt, Storm, Feather (light) or System. Applied before the first paint. The title bar shows the PockPock mark; in the run bar its bolt pulses while a turn works. See [Themes and the brand mark](themes.md). |
 | Terminal | PowerShell (or PowerShell 7 when installed) on Windows; the user's login shell (zsh by default) on a Mac. Opens in the open folder. **Ctrl+J** / **⌘J**. |
 | Browser recipes | Saved, versioned browser workflows: editor with allowed sites, inputs, steps and stop conditions; version history; switch on/off; run with per-step approval and screenshots. |
 | Activity | Request totals, per-model call counts, success rate and average time, and recent routing events. No prompt text. |
@@ -27,7 +31,7 @@ PockPock Agent is the PockPock interface: a desktop app (Electron) for Windows a
 | Models / Memory / Research | Switch local models on or off; review and delete learned preferences; allow or block agent access to named public websites. |
 | Services | Every service with its state, **Start all** / **Stop all**, start/stop/restart each one, its log, and startup options. |
 | Setup | Installs every prerequisite and the backend, Ollama and models, OpenClaw (with a skills choice) and NemoClaw, then starts and checks every service. Opens automatically on first launch. |
-| Status bar | Backend, Ollama, Smart Router, OpenClaw and NemoClaw state, and which models are loaded in memory. Click it to open Services. |
+| Status bar | Gateway, Ollama (with how many chat models are loaded), Smart router, OpenClaw and NemoClaw state, and the names of the loaded models. Click it to open Services. |
 
 ## Installing
 
@@ -138,7 +142,9 @@ Renderer (desktop/src/, React + Vite)
   lib/engines.ts               Chat, PockPock Agent, OpenClaw and NemoClaw turns; approvals and plan decisions
   lib/api.ts, lib/status.ts    API helpers, server-sent-event reader, live status (backend, services, OpenClaw, NemoClaw)
   lib/store.ts                 chats and settings persistence
-  components/                  title bar, sidebar, status bar, chat and composer, messages and cards, files, terminal
+  lib/runState.ts              a turn's phase and state (working, slow, waiting, failed, done) for the run bar and task list
+  components/                  Shell (title bar, rail, Workshop navigation, status bar), TaskPanel, RunBar, Inspector,
+                               CommandPalette, chat and composer, messages and cards, files, terminal
   pages/                       Skills, MCP servers, Models, Memory (Pages.tsx); Research; Browser recipes; Activity; Services; Setup; Settings
 ```
 
@@ -166,6 +172,25 @@ One turn runs at a time across all chats; the send button is disabled while anot
 - `turnPhases` splits a finished turn into phases. Chat: **Thinking** (start to first token) and **Writing**. OpenClaw and NemoClaw: **Thinking** (start to first output) and **Working**. PockPock Agent: **Planning** (start to plan card) and **Working**. Time spent on the plan card and on approval cards is reported as **Waiting for you** and subtracted from the model's phases. Phases under 0.05 s are hidden; **Total** is always shown. A step's own duration includes any approval it waited for (a file change waits for its approval card); the breakdown under the reply counts that time as **Waiting for you**.
 - Durations are shown as `12.3 s`, `2 min 5.0 s` or `1 h 2 min 5.0 s`, with tabular figures so live counters do not jitter. Live counters update every 100 ms.
 - Timing is saved with the chat in `sessions.json`. Replies from before this feature have no timing and show none.
+- `timing.lastEventAt` is the newest stream event of the turn. The run bar's **Signal** counts from it, and a live turn with no event for 10 s (`SLOW_AFTER_MS` in `lib/runState.ts`) is shown as slow.
+
+### Run bar and inspector data
+
+`lib/runState.ts` derives everything the run bar and the task list show from the message itself, so a finished or reopened task shows what it showed live:
+
+| Shown | Source |
+|---|---|
+| Phase: Understand → Plan | PockPock Agent: the first step or the plan card |
+| Plan → Act | The plan card is approved |
+| Act → Verify | The gateway's `verifying` event (`{"type": "verifying", "checks": N}`), sent once when the agent stops calling tools and its answer is checked against the approved success checks |
+| Waiting | A pending plan card or approval card |
+| Slow | A live turn with no event for 10 s |
+| Failed / stopped | The reply's status (`error`, `stopped`); a reply still marked as streaming when the app opens was interrupted |
+| Context used | The gateway's `usage` event after every agent model call: `prompt_tokens`, `completion_tokens`, and `context_window`, the context Ollama loaded the model with (from `/api/ps`; absent for cloud models) |
+| Files touched | `read_project_file` results (read), applied patches (edited) and saved artifacts (new) |
+| Task folder before the run | `/api/state` → `output_directory`; a run's folder is `<output_directory>/<run id>`, and the app chooses the run id before planning |
+
+Not shown, because nothing reports it: which plan step a tool call belongs to (the bar shows the running step's label instead of "step 3 of 5"), and context use for Chat, OpenClaw and NemoClaw.
 
 ### Status
 
@@ -211,6 +236,8 @@ The backend data folder was called `FrogAI` before 2026-11-15. On start, the app
 | "NemoClaw is not ready" right after starting it | The status had not refreshed yet | The app re-checks before refusing a message; if it still refuses, open **Services** → NemoClaw log |
 | NemoClaw does not start | Docker Desktop not running or not set up for WSL | Start Docker Desktop, then **Services** → NemoClaw → **Start**; check its log |
 | Send button greyed out with "Another chat is still working" | One turn at a time | Wait or press Stop in that chat |
+| Run bar: "No new output for 14 s" | The model is loading, or a long step is running | **Keep waiting**, **Use *a smaller model*** or **Stop** |
+| Run bar turns red: "Stopped: …" | The run failed; the bar says what was kept | **Retry**, **Open Services** to check the services, or **Report** |
 | Terminal: "The terminal component could not be loaded" | `@lydell/node-pty` is missing | Reinstall the app, or `npm install` in `desktop/` |
 | The window does not open when started from a VS Code terminal | VS Code sets `ELECTRON_RUN_AS_NODE` | Use `npm run app`, `npm run dev`, or the shortcut |
 
@@ -222,6 +249,8 @@ npm run typecheck
 npm run build
 npm run dist:win  # optional: Windows installer (dist:mac on a Mac)
 ```
+
+Agent Studio shell, checked on 2026-11-21 (`desktop/` at the `feat/studio-shell` branch): typecheck, build and the 49 Electron tests passed; `npm run check:contrast` passed 80 of 80 pairs in every theme (12 new pairs for the run bar, rail, palette and inspector). The real app was driven with Playwright's Electron driver, a throwaway data folder, and a gateway started from source on a test port (8866), in PockPock Dark, Volt, Storm and Feather at 1440×900 and 820 px: a finished task, a failed task, the Files tab, a Workshop page, the command palette (also used to switch every theme), and a live PockPock Agent turn whose planning and run requests were answered by the test (no model): working after 2.5 s, slow after 12 s, waiting with the plan card and the rail's needs-you dot, then done with **Context used** and **Files touched** filled from the `usage` and `tool_result` events; at 820 px the menu and inspector overlays. 56 screenshots, no console errors, no horizontal overflow. axe-core (WCAG 2.2 A/AA) found no violations on eight screens in PockPock Dark and Feather; Ctrl+K puts focus in the search box and Escape returns it; arrow keys move between inspector tabs. A real PockPock Agent run with `qwen3.5:9b` (gateway and planner from source) sent two `usage` events (2,211 and 2,442 prompt tokens of a 32,768-token context) and one `verifying` event. Not verified: the run bar's slow state in a real run, **Use *model*** and **Retry** with a real model, and anything on a Mac.
 
 Checked on 2026-11-15 by driving the real app with Playwright's Electron driver and a throwaway data folder (`POCKPOCK_DESKTOP_USER_DATA`):
 

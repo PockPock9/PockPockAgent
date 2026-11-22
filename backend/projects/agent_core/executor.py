@@ -136,6 +136,37 @@ def effective_task_capabilities(
     return capabilities
 
 
+def context_window_from_ps(ps: object, model: str) -> int | None:
+    """The context length Ollama loaded ``model`` with, from an ``/api/ps`` reply, or None."""
+    items = ps.get("models") if isinstance(ps, dict) else None
+    for item in items if isinstance(items, list) else []:
+        if isinstance(item, dict) and item.get("name") in (model, f"{model}:latest"):
+            length = item.get("context_length")
+            return length if isinstance(length, int) and not isinstance(length, bool) and length > 0 else None
+    return None
+
+
+def usage_event(result: object, context_window: int | None) -> dict[str, Any] | None:
+    """A ``usage`` run event from a model reply's token counts, or None when it has none.
+
+    The desktop app shows "context used" from it: ``prompt_tokens`` is the whole prompt sent on
+    this call, so it is how full the model's context is at this step.
+    """
+    usage = result.get("usage") if isinstance(result, dict) else None
+    if not isinstance(usage, dict):
+        return None
+    prompt = usage.get("prompt_tokens")
+    completion = usage.get("completion_tokens")
+    if not isinstance(prompt, int) or isinstance(prompt, bool) or prompt < 0:
+        return None
+    event: dict[str, Any] = {"type": "usage", "prompt_tokens": prompt}
+    if isinstance(completion, int) and not isinstance(completion, bool) and completion >= 0:
+        event["completion_tokens"] = completion
+    if context_window:
+        event["context_window"] = context_window
+    return event
+
+
 def saved_artifact_read_name(
     requested: object, *, workspace_root: Path | None, output_dir: Path | None, artifacts: list[dict[str, str]]
 ) -> str | None:
@@ -1384,6 +1415,8 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                 profile = router._tune_execution_parameters("agentic", decision.get("complexity", 5))
 
                 tool_call_limit = payload.delegation_contract.max_tool_calls if payload.delegation_contract else 20
+                context_window: int | None = None
+                verifying_announced = False
                 for _ in range(tool_call_limit):
                     if cancel_event.is_set():
                         raise AgentRunTermination(get_cancel_reason())
@@ -1470,7 +1503,16 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                         "status": "success",
                         "duration_ms": round((time.monotonic() - call_started) * 1000),
                     })
-
+                    # Token counts for the app's "context used" meter. The context size is read once
+                    # from Ollama's loaded models; a cloud model has none there and is shown without it.
+                    if context_window is None:
+                        try:
+                            context_window = context_window_from_ps(await ollama_json("/api/ps"), selected) or 0
+                        except HTTPException:
+                            context_window = 0
+                    usage = usage_event(result, context_window)
+                    if usage:
+                        yield sse(usage)
 
                     choices = result.get("choices", [])
                     assistant = choices[0].get("message", {}) if isinstance(choices, list) and choices and isinstance(choices[0], dict) else {}
@@ -1496,6 +1538,12 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                             assistant["content"] = ""
                     tool_calls = assistant.get("tool_calls", [])
                     if not isinstance(tool_calls, list) or not tool_calls:
+                        # The model has stopped calling tools: what follows checks its answer against
+                        # the approved success checks. The app shows this as the Verify phase.
+                        if not verifying_announced and payload.success_checks and not needs_no_tools:
+                            verifying_announced = True
+                            count = len(payload.success_checks)
+                            yield sse({"type": "verifying", "checks": count, "message": f"Checking {count} success check{'s' if count != 1 else ''}"})
                         answer = assistant.get("content", "")
                         raw_answer = answer if isinstance(answer, str) else ""
                         # A model that prints a call to a tool it was not given would otherwise end the run with that

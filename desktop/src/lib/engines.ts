@@ -4,7 +4,7 @@
 import { sendJson, stream, text, uid } from './api'
 import type { StreamEvent } from './api'
 import { stampTiming } from './timing'
-import type { AgentPermission, Approval, Artifact, Attachment, ClawPermission, Engine, Message, PlanCard, Step } from './types'
+import type { AgentPermission, Approval, Artifact, Attachment, ClawPermission, Engine, Message, PlanCard, Step, TouchedFile } from './types'
 
 export type TurnOptions = {
   engine: Engine
@@ -52,6 +52,17 @@ function addStep(message: Message, step: Omit<Step, 'id'> & { id?: string }, fin
   if (index >= 0) steps[index] = { ...next, startedAt: steps[index].startedAt, endedAt: next.status === 'running' ? undefined : steps[index].endedAt }
   else steps.push(next)
   return { ...message, steps: steps.slice(-80) }
+}
+
+/** Records a file the run used. A later, stronger use (read → edited) replaces the earlier one. */
+function touch(message: Message, path: string, kind: TouchedFile['kind']): Message {
+  if (!path) return message
+  const rank = { read: 0, edited: 1, new: 2 }
+  const touched = [...(message.touched ?? [])]
+  const index = touched.findIndex((item) => item.path === path)
+  if (index >= 0) { if (rank[kind] > rank[touched[index].kind]) touched[index] = { path, kind } }
+  else touched.push({ path, kind })
+  return { ...message, touched: touched.slice(-200) }
 }
 
 function settleSteps(message: Message, status: Step['status']): Message {
@@ -103,7 +114,11 @@ export async function runTurn(options: TurnOptions): Promise<void> {
   // updater, which may run later), so steps, approvals and phases get precise start and end times.
   const patch: TurnOptions['patch'] = (change) => {
     const at = Date.now()
-    options.patch((message) => stampTiming(change(message), at))
+    options.patch((message) => {
+      const next = stampTiming(change(message), at)
+      // The run bar's "signal" and its slow state count from the newest event.
+      return next.timing ? { ...next, timing: { ...next.timing, lastEventAt: at } } : next
+    })
   }
   const startedAt = Date.now()
   options.patch((message) => ({ ...message, timing: { startedAt } }))
@@ -315,10 +330,23 @@ function handleAgentEvent(event: StreamEvent, patch: TurnOptions['patch'], pushT
   }
   switch (type) {
     case 'token': pushToken(text(event.content)); break
+    case 'usage': {
+      const promptTokens = Number(event.prompt_tokens)
+      if (!Number.isFinite(promptTokens)) break
+      const completion = Number(event.completion_tokens)
+      const window = Number(event.context_window)
+      patch((message) => ({ ...message, usage: { promptTokens, completionTokens: Number.isFinite(completion) ? completion : undefined, contextWindow: Number.isFinite(window) && window > 0 ? window : message.usage?.contextWindow } }))
+      break
+    }
+    case 'verifying': patch((message) => ({ ...addStep(message, { label: text(event.message) || 'Checking the success checks', status: 'running' }), verifying: true })); break
     case 'status': patch((message) => addStep(message, { label: text(event.message) || 'Working', status: 'running' })); break
     case 'decision': patch((message) => ({ ...addStep(message, { label: `Using ${text(event.model) || 'a local model'}`, status: 'done' }), model: text(event.model) || message.model })); break
     case 'tool_start': patch((message) => addStep(message, { id: `tool:${text(event.tool)}:${text(event.sequence) || uid()}`, label: text(event.message) || text(event.tool).replaceAll('_', ' ') || 'Running a tool', status: 'running' })); break
     case 'tool_result':
+      if (event.status === 'success' && text(event.tool) === 'read_project_file') {
+        const details = event.details && typeof event.details === 'object' ? event.details as Record<string, unknown> : {}
+        if (text(details.path)) patch((message) => touch(message, text(details.path), 'read'))
+      }
       patch((message) => {
         const steps = [...(message.steps ?? [])]
         const tool = text(event.tool)
@@ -368,7 +396,7 @@ function handleAgentEvent(event: StreamEvent, patch: TurnOptions['patch'], pushT
     }
     case 'patch':
       if (event.status === 'applied' && text(event.path)) {
-        patch((message) => message.changes?.some((item) => item.path === text(event.path)) ? message : { ...message, changes: [...(message.changes ?? []), { path: text(event.path), summary: text(event.summary) || text(event.message) }] })
+        patch((message) => touch(message.changes?.some((item) => item.path === text(event.path)) ? message : { ...message, changes: [...(message.changes ?? []), { path: text(event.path), summary: text(event.summary) || text(event.message) }] }, text(event.path), 'edited'))
       }
       break
     case 'command_result':
@@ -377,7 +405,7 @@ function handleAgentEvent(event: StreamEvent, patch: TurnOptions['patch'], pushT
     case 'artifact': {
       const artifact: Artifact = { name: text(event.name), path: text(event.path), url: text(event.url), kind: text(event.kind) }
       if (['answer.md', 'run_report.md', 'task_brief.json'].includes(artifact.name)) break
-      patch((message) => message.artifacts?.some((item) => item.path === artifact.path) ? message : { ...message, artifacts: [...(message.artifacts ?? []), artifact] })
+      patch((message) => touch(message.artifacts?.some((item) => item.path === artifact.path) ? message : { ...message, artifacts: [...(message.artifacts ?? []), artifact] }, artifact.name || artifact.path, 'new'))
       break
     }
     case 'done':

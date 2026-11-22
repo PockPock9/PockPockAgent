@@ -7,8 +7,10 @@ import { Empty, IconButton } from './ui'
 
 type Tree = Record<string, { items: FileEntry[]; truncated: boolean } | 'loading' | { error: string }>
 
-export function FilesPanel({ overlay, workspace, onChooseFolder, onAttach }: {
+export function FilesPanel({ overlay, embedded, workspace, onChooseFolder, onAttach }: {
   overlay?: boolean
+  /** Inside the inspector's Files tab: no panel of its own, the tab is the label. */
+  embedded?: boolean
   workspace?: string
   onChooseFolder: () => void
   onAttach: (file: { name: string; text: string; size: number }) => void
@@ -87,9 +89,9 @@ export function FilesPanel({ overlay, workspace, onChooseFolder, onAttach }: {
 
   const name = workspace?.split(/[\\/]/).filter(Boolean).at(-1)
   return (
-    <aside className={`files${overlay ? ' is-overlay' : ''}`} aria-label="Files">
+    <div className={`files${embedded ? ' files--embedded' : ''}${overlay ? ' is-overlay' : ''}`}>
       <div className="panel-head">
-        <span className="panel-head__title">Files</span>
+        <span className="panel-head__title" title={workspace}>{embedded ? (name || 'No folder open') : 'Files'}</span>
         <span className="panel-head__actions">
           <IconButton label="Open folder" onClick={onChooseFolder}><FolderOpen size={14} /></IconButton>
           {workspace && <IconButton label="Refresh" onClick={refresh}><RefreshCw size={13} /></IconButton>}
@@ -108,6 +110,6 @@ export function FilesPanel({ overlay, workspace, onChooseFolder, onAttach }: {
           </div>
         )}
       {message && <div className="files__toast" role="status">{message}</div>}
-    </aside>
+    </div>
   )
 }

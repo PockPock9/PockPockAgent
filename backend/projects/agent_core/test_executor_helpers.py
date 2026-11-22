@@ -7,7 +7,7 @@ SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-from projects.agent_core.executor import effective_task_capabilities, saved_artifact_read_name  # noqa: E402
+from projects.agent_core.executor import context_window_from_ps, effective_task_capabilities, saved_artifact_read_name, usage_event  # noqa: E402
 
 
 class EffectiveCapabilityTests(unittest.TestCase):
@@ -27,6 +27,27 @@ class EffectiveCapabilityTests(unittest.TestCase):
         self.assertEqual(effective_task_capabilities([], requires_tool=False, has_files=False), [])
         for risky in ("workspace_write", "public_research", "browser_action"):
             self.assertNotIn(risky, effective_task_capabilities([], requires_tool=True, has_files=True))
+
+
+class UsageEventTests(unittest.TestCase):
+    """The desktop run bar shows "context used" from these events (Agent Studio redesign)."""
+
+    def test_usage_event_carries_token_counts_and_context(self):
+        result = {"choices": [], "usage": {"prompt_tokens": 8123, "completion_tokens": 91, "total_tokens": 8214}}
+        self.assertEqual(usage_event(result, 32768), {"type": "usage", "prompt_tokens": 8123, "completion_tokens": 91, "context_window": 32768})
+        self.assertEqual(usage_event(result, 0), {"type": "usage", "prompt_tokens": 8123, "completion_tokens": 91})
+
+    def test_no_event_without_usable_counts(self):
+        for result in ({}, {"usage": None}, {"usage": {"prompt_tokens": "8"}}, {"usage": {"prompt_tokens": -1}}, {"usage": {"prompt_tokens": True}}, None):
+            self.assertIsNone(usage_event(result, 32768), result)
+
+    def test_context_window_comes_from_the_loaded_model(self):
+        ps = {"models": [{"name": "qwen3.5:9b", "context_length": 32768}, {"name": "nomic-embed-text:latest", "context_length": 2048}]}
+        self.assertEqual(context_window_from_ps(ps, "qwen3.5:9b"), 32768)
+        self.assertEqual(context_window_from_ps(ps, "nomic-embed-text"), 2048)
+        self.assertIsNone(context_window_from_ps(ps, "qwen3.6:35b-a3b"))
+        self.assertIsNone(context_window_from_ps({"models": [{"name": "x", "context_length": "big"}]}, "x"))
+        self.assertIsNone(context_window_from_ps(None, "x"))
 
 
 class SavedArtifactReadTests(unittest.TestCase):

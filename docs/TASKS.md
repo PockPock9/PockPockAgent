@@ -2,7 +2,7 @@
 
 This is the execution queue for [the agent capability roadmap](ROADMAP.md). An AI agent starting work should read this tracker, `AGENTS.md`, and the roadmap before editing code.
 
-**Tracker updated:** 2026-11-17
+**Tracker updated:** 2026-11-21
 
 **2026-11-15 change:** the web frontend (`frontend/app`) was removed; the only interface is the Electron desktop app in `desktop/`. Completion notes below that mention `frontend/app/...` files, the Conversations page or 390/1440 px browser checks describe work as it was done then; the same behaviour now lives in `desktop/src/` (see [desktop app](features/desktop-app.md)). New UI work targets the desktop app. The Chrome companion scaffold (`backend/projects/chrome_companion/`) was also removed, so the AUT-02 group (AUT-02B, B1–B3 and C) is blocked until signed-in browser access is reconsidered; OpenClaw now covers operating the user's real browser and PC.  
 **Rule:** pick one task only: the highest-priority `Ready` task whose dependencies are all `Done`. If none is ready, report the blocking dependency. Do not start `Blocked`, `In progress`, or `Not started` work without explicitly coordinating with the current task owner.
@@ -102,6 +102,13 @@ Choose the first `Ready` task in this table. Priority order is computer/browser 
 | 45.3 | SEQ-01C | P2 — Code-first verifier, retry, re-plan trigger | SEQ-01A | Done |
 | 45.4 | SEQ-01D | P3 — Router wiring (planner service plan-sequence endpoint) | SEQ-01A, PLN-05 | In progress |
 | 45.5 | SEQ-01E | P4 — OpenClaw as tool provider (subtask mode) | SEQ-01C, LRN-01 | In progress |
+| 46 | UI-01 | Agent Studio desktop redesign (tracking group) | — | In progress |
+| 46.1 | UI-01A | Tokens, shell layout, rail, task list, run bar, inspector, command palette; `usage` and `verifying` run events | — | Done |
+| 46.2 | UI-01B | Plan card, thread cards, pickers; plan pre-check, "Allow for this task", answer choices for questions, install card, notes while a task runs, retry from step N | UI-01A | Ready |
+| 46.3 | UI-01C | Workshop pages (Models, Cloud models, Connectors with a drawer, MCP servers, Browser recipes, Research, Memory, Activity, Services, Maintenance) | UI-01A | Ready |
+| 46.4 | UI-01D | Settings with the theme picker, Setup, dialogs and toasts, themes | UI-01A | Ready |
+| 46.5 | UI-01E | Watch saved sources for changes | UI-01B | Not started |
+| 46.6 | UI-01F | Plan-step progress ("step 3 of 5") reported by the agent | UI-01B | Not started |
 ## Task definitions and acceptance checks
 
 ### Foundation
@@ -813,12 +820,24 @@ Consolidate synthetic end-to-end capability cases with typed-contract, permissio
 
 **Done when:** a deterministic suite reports case/build/contract versions and pass/fail evidence; external APIs/browser sessions use mocks or synthetic fixtures by default; replay is proven not to execute tools; privacy-safe metrics exclude prompts, responses, page/document content, and credentials by default; representative regression cases cover browser/runtime selection, document parsing, connector denial/revocation, scheduled-run recovery, and notification failure.
 
+### Agent Studio desktop redesign
+
+The user asked (2026-11-21) for the "Agent Studio" redesign of the desktop app from a design canvas of 21 boards, as a UI and information-architecture change that keeps every page, behaviour and the main-process boundary, and then (same day) for PockPock to support every element of the design, adding the backend events and features some elements need. Split into reviewable pull requests:
+
+- **UI-01A** — the shell. **Done when:** a 56 px icon rail (Tasks, Workshop, Activity, Services, Settings), a 252 px task list or Workshop navigation, the task or page, and a 320 px inspector (Context, Files, Terminal) with the terminal under the composer; overlays below 1100 px (inspector) and 860 px (rail and task list); a run bar above every task with phases, current step, signal, elapsed time, Stop and a 2 px bar, and distinct working, slow (10 s), waiting and failed states that never look hung (reduced motion included); every existing page reachable; a command palette; the gateway sends `usage` and `verifying` events; contrast, axe and screenshots checked in every theme at 1440 and 820 px.
+- **UI-01B** — thread and composer: plan card (delivers, workspace, task folder, reviewer, questions with answer choices, editable step list, success checks), thread cards (collapsed steps, approvals with "Allow for this task", install from a link, saved sources, message actions, failed step with "Retry from step N"), pickers. Needs: a plan pre-check, run-scoped approval grants, structured answer choices with re-planning, notes accepted by a running task, and a resumable run from step N.
+- **UI-01C** — the Workshop pages in the new layout with their empty, loading and error states.
+- **UI-01D** — Settings, Setup, dialogs, toasts and themes.
+- **UI-01E** — watching saved sources for changes (network access while PockPock runs, off by default, per source).
+- **UI-01F** — plan-step progress reported by the agent, shown only when reported.
+
 ## Completion log
 
 TOL-01, FND-01, TOL-02, FND-02, FND-04, PLN-01, PLN-02, PLN-03, BRW-01, BRW-02, BRW-03, BRW-04, BRW-05, BRW-06, BRW-06A, BRW-06B, BRW-06C, BRW-06C1, BRW-06C2, BRW-06C2A, BRW-06C2B, BRW-06C2C, BRW-06C3, RES-01, RES-02, RES-03, RES-04, RES-05, RES-06, MAG-01, MAG-02, MAG-03, MAG-04A, MAG-04B, MAG-04C, MAG-05A, MAG-05B, AUT-01, AUT-06A, AUT-06B, AUT-06, SEQ-01A, and SEQ-01C are complete. Operational controls such as cancellation, timeouts, and payload limits remain to keep local runs reliable.
 
 | Date | Task ID | Agent/owner | Result and verification | Changed files |
 | --- | --- | --- | --- | --- |
+| 2026-11-21 | UI-01A | Primary agent | Agent Studio shell: rail, task list with Needs you / Running groups, Workshop navigation (all page ids kept), run bar (`lib/runState.ts`: working, slow after 10 s, waiting, failed with what was kept, stopped, done), inspector (Context with context used and files touched, Files, Terminal), command palette; gateway `usage` and `verifying` events and `output_directory` in `/api/state`. Verification: backend suite and 3 new helper tests pass (except the known Developer-Mode symlink test); typecheck, build, 49 Electron tests; `check:contrast` 80/80 in every theme; 56 screenshots in all four themes at 1440 and 820 px with mocked agent calls (no console errors, no overflow); axe-core 0 violations on 16 screens; a real `qwen3.5:9b` run emitted `usage` and `verifying`. | `desktop/src/App.tsx`, `desktop/src/components/{Shell,TaskPanel,RunBar,Inspector,CommandPalette,ChatPane,FilesPanel,ui}.tsx`, `desktop/src/lib/{runState,permissions,engines,types}.ts`, `desktop/src/styles.css`, `desktop/electron/services.cjs`, `desktop/scripts/check_contrast.mjs`, `backend/projects/agent_core/executor.py`, `backend/scripts/pockpock_server.py`, docs |
 | 2026-11-17 | SEQ-01A | Plan-sequence wave | P0 schema + validation + capsule: `SequencePlan` / `SequenceStep` / `DoneCondition` / `StateCapsule` (Pydantic v2, `extra="forbid"`), `validate_sequence_plan` (5–15 steps, unique ids, registered tools only, typed done-conditions, no dangling inputs), `build_capsule` (≤400 tokens, ≤24 entries, pointer-loss flag). Verification: 84-test `plan_sequence` suite passes, including invalid-plan rejection and capsule-trimming tests. | `backend/projects/plan_sequence/contracts.py`, `capsule.py`, `__init__.py`, `README.md` |
 | 2026-11-17 | SEQ-01C | Plan-sequence wave | P2 verifier + retry: `verify_done_condition` checks typed done-conditions against files and the recorded step result (never the model's claim, never raises); `SequenceRunner` retries a failed step ≤2× with grounded feedback, then stops with `needs_replan` for the remaining steps only; executor always called with `think=False`; pinned tools harness-enforced. Verification: 84-test `plan_sequence` suite passes, including wrong-step retry → `needs_replan`, tool-outside-allowed rejection, and prompt-over-budget cases. Not yet wired: no in-repo runner caller, no adapter to the real tools, no run-store persistence of runner events. | `backend/projects/plan_sequence/verifier.py`, `runner.py`, `__init__.py`, `README.md` |
 | 2026-11-16 | LRN-04A, LRN-04B | Claude Code (user session) | Setup (AI detection for PockPock itself, GitHub Copilot, Claude Code and Codex with data notices; GitHub CLI sign-in; clone or fork after an explicit Allow; no-reply git identity) verified end to end in the real app with a real clone. Fix runs in git worktrees with the Manager's own checks and a required documentation change; "PockPock itself" is a native tool loop on Ollama (`maintenance-agent.cjs`) after an OpenClaw-based attempt stalled on a hung tool for 21 minutes; automatic mode works through open reports one at a time. Real run: automatic mode picked up a documentation report, `qwen3.5:9b` produced a fix with a docs update in 1.8 min, all four desktop checks passed, the run reached "ready for review", and discard removed the worktree and branch. 23 node tests. The watchdog in `gateway_turn.mjs` now counts only real progress. Not yet exercised: approval opening a real draft PR (LRN-04C). | `desktop/electron/maintenance*.cjs`, `desktop/src/components/MaintenanceSetup.tsx`, `FixPanel.tsx`, `desktop/src/pages/MaintenancePage.tsx`, `backend/projects/openclaw_bridge/gateway_turn.mjs`, `docs/features/maintenance.md` |
