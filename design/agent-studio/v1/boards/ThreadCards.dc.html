@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Thread cards</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.app{font-family:Inter,"Segoe UI Variable","Segoe UI",system-ui,sans-serif;font-size:13.5px;line-height:1.45;color:var(--text);background:var(--bg);display:flex;flex-direction:column;box-sizing:border-box;overflow:hidden}
+.app *{box-sizing:border-box}
+:where(.app) :where(button){font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+.mono{font-family:"JetBrains Mono","Cascadia Code",ui-monospace,monospace}
+.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.i.s{width:14px;height:14px}
+.mark .toe{fill:var(--toe)}
+.mark .bolt{fill:var(--bolt);stroke:var(--gap);stroke-width:12;paint-order:stroke;stroke-linejoin:round;transform-box:fill-box;transform-origin:center}
+.working .bolt{animation:pulse 1.1s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.55;transform:scale(.86)}}
+@keyframes sweep{0%{transform:translateX(-100%)}100%{transform:translateX(320%)}}
+@keyframes blink{50%{opacity:0}}
+@keyframes spin{to{transform:rotate(360deg)}}
+.sweep{position:relative;height:2px;background:var(--border);overflow:hidden}
+.sweep::after{content:"";position:absolute;inset:0 auto 0 0;width:30%;background:var(--accs);animation:sweep 1.6s ease-in-out infinite}
+.spin{animation:spin 1s linear infinite}
+@media (prefers-reduced-motion:reduce){.working .bolt,.sweep::after,.spin,.caret{animation:none}.sweep::after{width:100%}}
+.title{height:38px;flex:none;display:flex;align-items:center;gap:12px;padding:0 0 0 14px;background:var(--side);border-bottom:1px solid var(--border)}
+.cmd{margin:0 auto;width:min(420px,40%);height:26px;display:flex;align-items:center;gap:8px;padding:0 10px;border:1px solid var(--border2);border-radius:8px;color:var(--t3);background:var(--bg)}
+.cmd kbd{margin-left:auto;font:500 11px "JetBrains Mono",monospace;color:var(--t3)}
+.body{flex:1;min-height:0;display:flex}
+.rail{width:56px;flex:none;background:var(--side);border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 0}
+.rail button{width:40px;height:40px;border-radius:10px;display:grid;place-items:center;color:var(--t2);position:relative}
+.rail button:hover{background:var(--hover)}
+.rail button.on{background:var(--active);color:var(--accs)}
+.rail .dot{position:absolute;top:8px;right:8px;width:7px;height:7px;border-radius:50%;background:var(--warn)}
+.rail .sp{flex:1}
+.tasks{width:252px;flex:none;background:var(--side);border-right:1px solid var(--border);display:flex;flex-direction:column;min-height:0}
+.newtask{margin:12px 12px 8px;height:36px;border-radius:8px;background:var(--accfill);color:var(--onacc)!important;display:flex;align-items:center;justify-content:center;gap:8px;font-weight:600}
+.newtask:hover{filter:brightness(1.08)}
+.search{margin:0 12px 6px;height:32px;display:flex;align-items:center;gap:8px;padding:0 10px;border:1px solid var(--border2);border-radius:8px;color:var(--t3)}
+.group{padding:10px 16px 4px;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--t3)}
+.task{margin:1px 8px;padding:8px 10px;border-radius:8px;display:flex;gap:10px;align-items:flex-start;text-align:left;width:calc(100% - 16px)}
+.task:hover{background:var(--hover)}
+.task.on{background:var(--active)}
+.task .ic{width:16px;height:16px;margin-top:2px;flex:none;display:grid;place-items:center}
+.task b{display:block;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:168px}
+.task small{display:block;color:var(--t3);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:168px}
+.sdot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:none}
+.main{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bg)}
+.head{height:56px;flex:none;display:flex;align-items:center;gap:16px;padding:0 20px;border-bottom:1px solid var(--border)}
+.head h1{margin:0;font-size:15px;font-weight:600;line-height:1.2}
+.head p{margin:0;color:var(--t3);font-size:12px}
+.seg{margin-left:auto;display:flex;padding:3px;gap:2px;background:var(--raise);border:1px solid var(--border);border-radius:10px}
+.seg button{padding:5px 11px;border-radius:7px;color:var(--t2);font-size:12.5px;font-weight:500}
+.seg button.on{background:var(--active);color:var(--text)}
+.runbar{flex:none;display:flex;align-items:center;gap:18px;padding:0 20px;height:46px;background:var(--panel)}
+.phases{display:flex;align-items:center;gap:8px;flex:1;min-width:0}
+.ph{display:flex;align-items:center;gap:7px;color:var(--t3);font-size:12.5px;font-weight:500;white-space:nowrap}
+.ph.done{color:var(--oktext)}
+.ph.now{color:var(--text)}
+.ph .n{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;border:1.5px solid var(--ctl);font-size:11px}
+.ph.done .n{background:var(--ok);border-color:var(--ok);color:#06150f}
+.ph.now .n{border-color:var(--accs);color:var(--accs)}
+.ph+.ph::before{content:"";width:28px;height:1.5px;background:var(--border2);margin-right:1px}
+.ph.done+.ph::before,.ph.now::before{background:var(--ok)}
+.beat{display:flex;align-items:center;gap:8px;color:var(--t2);font-size:12.5px;white-space:nowrap}
+.beat .sdot{background:var(--ok)}
+.btn{height:30px;padding:0 12px;border-radius:8px;border:1px solid var(--border2)!important;display:inline-flex;align-items:center;gap:7px;font-weight:500;font-size:12.5px}
+.btn:hover{background:var(--hover)}
+.btn.fill{background:var(--accfill);border-color:var(--accfill)!important;color:var(--onacc)!important}
+.thread{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;align-items:center;padding:20px 20px 4px}
+.col{width:min(760px,100%);display:flex;flex-direction:column;gap:14px;margin-top:auto}
+.who{font-size:12px;font-weight:600;color:var(--t3);margin-bottom:4px;display:flex;align-items:center;gap:8px}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:10px}
+.card .ch{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--border)}
+.chip{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 9px;border-radius:999px;font-size:12px;font-weight:500;background:var(--raise);border:1px solid var(--border2);color:var(--t2);white-space:nowrap}
+.chip.ok{background:var(--okbg);border-color:transparent;color:var(--oktext)}
+.chip.acc{background:var(--accbg);border-color:transparent;color:var(--accs)}
+.step{display:flex;align-items:center;gap:10px;padding:8px 14px;min-height:36px}
+.step .t{flex:1;min-width:0}
+.step .m{color:var(--t3);font-size:12px;font-variant-numeric:tabular-nums}
+.step.run{background:var(--accbg)}
+.step.pend{color:var(--t3)}
+.sub{margin:0 14px 8px 38px;padding:0;display:flex;flex-direction:column;gap:2px;color:var(--t2);font-size:12.5px}
+.sub div{display:flex;gap:8px;align-items:center;min-height:24px}
+.sub .m{margin-left:auto;color:var(--t3);font-size:12px}
+.log{margin:6px 14px 12px 38px;padding:9px 12px;border-radius:8px;background:var(--code);border:1px solid var(--border);font-size:12px;line-height:1.55;color:var(--log)}
+.caret{display:inline-block;width:7px;height:14px;background:var(--accs);vertical-align:-2px;margin-left:2px;animation:blink 1s steps(1) infinite}
+.composer{flex:none;display:flex;justify-content:center;padding:6px 20px 16px}
+.cbox{width:min(760px,100%)}
+.ctx{display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap}
+.input{background:var(--raise);border:1px solid var(--ctl);border-radius:12px;overflow:hidden}
+.input .txt{padding:12px 14px 6px;color:var(--t3);min-height:44px}
+.input .bar{display:flex;align-items:center;gap:6px;padding:6px 8px 8px}
+.pick{height:28px;padding:0 9px;border-radius:8px;display:inline-flex;align-items:center;gap:6px;color:var(--t2);font-size:12.5px;font-weight:500}
+.pick:hover{background:var(--hover)}
+.send{margin-left:auto;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:var(--text);color:var(--bg)}
+.insp{width:320px;flex:none;background:var(--side);border-left:1px solid var(--border);display:flex;flex-direction:column;min-height:0}
+.tabs{display:flex;gap:2px;padding:0 10px;border-bottom:1px solid var(--border);height:46px;align-items:flex-end}
+.tabs button{padding:0 10px 12px;color:var(--t3);font-weight:500;border-bottom:2px solid transparent}
+.tabs button.on{color:var(--text);border-bottom-color:var(--accs)}
+.sec{padding:14px 16px;border-bottom:1px solid var(--border)}
+.sec h3{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--t3)}
+.kv{display:flex;align-items:center;gap:10px;min-height:30px}
+.kv span:first-child{color:var(--t3);width:78px;flex:none}
+.meter{height:6px;border-radius:99px;background:var(--active);overflow:hidden;margin:8px 0 6px}
+.meter i{display:block;height:100%;background:var(--accs);border-radius:99px}
+.file{display:flex;align-items:center;gap:8px;height:30px;color:var(--t2)}
+.file em{margin-left:auto;font-style:normal;color:var(--t3);font-size:12px}
+.status{height:24px;flex:none;display:flex;align-items:center;gap:18px;padding:0 14px;background:var(--side);border-top:1px solid var(--border);font-size:12px;color:var(--t3)}
+.status span{display:flex;align-items:center;gap:6px}
+
+.sub-nav{width:252px;flex:none;background:var(--side);border-right:1px solid var(--border);padding:14px 8px;overflow:auto}
+.sub-nav h2{margin:0 8px 10px;font-size:15px;font-weight:600}
+.nav{width:100%;display:flex;align-items:center;gap:10px;height:34px;padding:0 10px;border-radius:8px;color:var(--t2);text-align:left}
+.nav:hover{background:var(--hover)}
+.nav.on{background:var(--active);color:var(--text)}
+.nav small{margin-left:auto;color:var(--t3);font-size:12px}
+.nav small.warn{color:var(--warntext);font-weight:600}
+.page{flex:1;min-width:0;overflow:auto;padding:26px 32px 24px}
+.page h1{margin:0;font-size:22px;font-weight:600;line-height:1.25}
+.page .lead{margin:4px 0 0;color:var(--t2);max-width:560px}
+.toolbar{display:flex;align-items:center;gap:12px;margin:22px 0 16px;flex-wrap:wrap}
+.filters{display:flex;gap:6px}
+.filters button{height:30px;padding:0 12px;border-radius:999px;border:1px solid var(--border2);color:var(--t2);font-weight:500;font-size:12.5px}
+.filters button.on{background:var(--active);color:var(--text);border-color:var(--active)}
+.filters b{font-weight:500;color:var(--t3);margin-left:5px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(280px,100%),1fr));gap:12px}
+.sk{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px;text-align:left}
+.sk:hover{border-color:var(--border2);background:var(--raise)}
+.sk.sel{border-color:var(--accs);box-shadow:0 0 0 3px var(--accbg)}
+.sk .top{display:flex;gap:12px;align-items:flex-start}
+.tile{width:36px;height:36px;border-radius:9px;background:var(--active);display:grid;place-items:center;color:var(--t2);flex:none}
+.sk b{font-weight:600;display:block}
+.sk p{margin:0;color:var(--t2);font-size:12.5px}
+.sk .foot{display:flex;align-items:center;gap:8px;color:var(--t3);font-size:12px;margin-top:auto}
+.sw{margin-left:auto;width:36px;height:20px;border-radius:99px;background:var(--active);border:1.5px solid var(--ctl)!important;position:relative;flex:none}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:var(--t2)}
+.sw[aria-checked=true]{background:var(--accfill);border-color:var(--accfill)!important}
+.sw[aria-checked=true]::after{left:19px;background:#fff}
+.chip.warn{background:rgba(229,168,59,.14);border-color:transparent;color:var(--warntext)}
+.detail{width:340px;flex:none;border-left:1px solid var(--border);background:var(--side);overflow:auto}
+.detail .sec{padding:16px 20px}
+.perm{display:flex;gap:10px;align-items:flex-start;padding:6px 0;color:var(--t2);font-size:12.5px}
+.pg{max-width:880px}
+.page>.pg{margin:0 auto}
+.eyebrow{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--t3);margin-bottom:6px}
+.rows{list-style:none;margin:0;padding:0;border:1px solid var(--border);border-radius:10px;background:var(--panel);overflow:hidden}
+.rw{display:flex;align-items:center;gap:14px;padding:12px 16px;border-bottom:1px solid var(--border);min-height:60px}
+.rw:last-child{border-bottom:0}
+.rw .rt{flex:1;min-width:0}
+.rw .rt b{display:block;font-weight:600}
+.rw .rt span{display:block;color:var(--t3);font-size:12.5px}
+.rw .rt p{margin:4px 0 0;color:var(--t2);font-size:12.5px}
+.rw .act{display:flex;align-items:center;gap:8px;flex:none}
+.h2{font-size:13px;font-weight:600;margin:26px 0 10px;display:flex;align-items:center;gap:8px}
+.h2 small{color:var(--t3);font-weight:500}
+.banner{display:flex;gap:10px;align-items:flex-start;padding:11px 14px;border-radius:10px;border:1px solid var(--border2);background:var(--raise);color:var(--t2);font-size:12.5px;margin:14px 0}
+.banner.warn{background:var(--warnbg);border-color:transparent;color:var(--warntext)}
+.banner.err{background:var(--errbg);border-color:transparent;color:var(--errtext)}
+.banner.acc{background:var(--accbg);border-color:transparent;color:var(--text)}
+.field{display:flex;flex-direction:column;gap:6px;margin:12px 0}
+.field label{font-weight:500;font-size:12.5px}
+.field small{color:var(--t3);font-size:12px}
+.in{min-height:36px;border:1px solid var(--ctl);border-radius:8px;background:var(--raise);padding:7px 12px;display:flex;align-items:center;gap:8px;color:var(--text)}
+.in.ph{color:var(--t3)}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.stat{padding:14px 16px;border:1px solid var(--border);border-radius:10px;background:var(--panel);display:flex;flex-direction:column;gap:2px}
+.stat span{color:var(--t3);font-size:12.5px;display:flex;gap:6px;align-items:center}
+.stat strong{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums}
+.tb{width:100%;border-collapse:separate;border-spacing:0;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--panel)}
+.tb th,.tb td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--border);font-size:12.5px}
+.tb tr:last-child td{border-bottom:0}
+.tb th{color:var(--t3);font-weight:600;background:var(--side)}
+.pop{background:var(--pop);border:1px solid var(--border2);border-radius:10px;box-shadow:0 12px 32px var(--shadow);padding:6px}
+.pop .pt{padding:8px 10px 4px;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--t3)}
+.mi{display:flex;gap:10px;padding:8px 10px;border-radius:8px;text-align:left;width:100%;align-items:flex-start;color:var(--text)}
+.mi:hover{background:var(--hover)}
+.mi.sel{background:var(--accbg)}
+.mi b{display:block;font-weight:600}
+.mi small{display:block;color:var(--t3);font-size:12.5px}
+.mi .ck{margin-left:auto;color:var(--accs);flex:none}
+.cb{width:16px;height:16px;border-radius:4px;border:1.5px solid var(--ctl);flex:none;display:grid;place-items:center}
+.cb.on{background:var(--accfill);border-color:var(--accfill);color:var(--onacc)}
+.cb .i{width:12px;height:12px;stroke-width:3}
+.scrim{background:rgba(0,0,0,.5);position:absolute;inset:0}
+.dlg{background:var(--pop);border:1px solid var(--border2);border-radius:14px;box-shadow:0 20px 48px var(--shadow);display:flex;flex-direction:column}
+.dlg .dh{padding:16px 20px 4px}
+.dlg .dh h2{margin:0;font-size:16px;font-weight:600}
+.dlg .db{padding:8px 20px 16px}
+.dlg .df{display:flex;gap:8px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--border)}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));gap:20px}
+.cap{font-size:12px;font-weight:600;color:var(--t3);margin:0 0 8px;display:flex;gap:8px;align-items:center}
+.hint{color:var(--t3);font-size:12.5px}
+.tree .file{height:28px;padding:0 6px;border-radius:6px}
+.tree .file:hover{background:var(--hover)}
+.tree .file.m em{color:var(--warntext)}
+.xterm{background:var(--code);border-top:1px solid var(--border);font-size:12.5px;line-height:1.6;color:var(--log);padding:10px 16px;overflow:hidden}
+.pgcard{border:1px solid var(--border);border-radius:10px;background:var(--panel);padding:16px}
+.th{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.th .tc{border:1px solid var(--border);border-radius:10px;padding:10px;background:var(--panel);display:flex;flex-direction:column;gap:8px;text-align:left}
+.th .tc.on{border-color:var(--accs);box-shadow:0 0 0 3px var(--accbg)}
+.sw .i{display:none}
+.stepper{display:flex;gap:10px;align-items:center;color:var(--t3);font-size:12.5px;font-weight:500}
+.stepper .ph{font-size:12.5px}
+</style>
+</helmet>
+<div class="app" style="{{vars}} width:100%; height:1560px"><header class="title"><svg class="mark working" viewBox="0 0 256 256" width="20" height="20" aria-hidden="true"><path class="toe" d="M116 73 L51 119 L26 216 L73 137 L132 95 Z"/><path class="toe" d="M140 73 L205 119 L230 216 L183 137 L124 95 Z"/><path class="bolt" d="M138 28 L92 130 L122 130 L108 230 L172 108 L140 108 L168 28 Z"/></svg><strong style="font-weight:600">PockPock</strong><span style="color:var(--t3)">Agent Studio</span><button class="cmd" aria-label="Search or jump to anything"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span>Search tasks, skills, files, settings</span><kbd>Ctrl K</kbd></button><div style="width:150px;flex:none"></div></header><div class="body"><nav class="rail" aria-label="Studio sections"><button class="on" aria-current="page" aria-label="Tasks"><svg class="i " viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg></button><button aria-label="Workshop: skills, tools, models, memory"><svg class="i " viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4a2 2 0 1 1 4 0v1h4v4h1a2 2 0 1 1 0 4h-1v4h-4v-1a2 2 0 1 0-4 0v1H6v-4H5a2 2 0 1 1 0-4h1V5h4z"/></svg></button><button aria-label="Activity"><svg class="i " viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg></button><div class="sp"></div><button aria-label="Services: one needs attention"><svg class="i " viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span class="dot"></span></button><button aria-label="Settings"><svg class="i " viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg></button></nav><aside class="tasks" aria-label="Tasks">
+      <button class="newtask"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New task</button>
+      <div class="search"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span>Search tasks</span></div>
+      <div class="group">Running</div>
+      <button class="task on"><span class="ic"><svg class="mark working" viewBox="0 0 256 256" width="16" height="16" aria-hidden="true" style="--gap:var(--active)"><path class="toe" d="M116 73 L51 119 L26 216 L73 137 L132 95 Z"/><path class="toe" d="M140 73 L205 119 L230 216 L183 137 L124 95 Z"/><path class="bolt" d="M138 28 L92 130 L122 130 L108 230 L172 108 L140 108 L168 28 Z"/></svg></span><span><b>Find why failover test is flaky</b><small>Agent · Step 3 of 5 · 0:42</small></span></button>
+      <div class="group">Needs you</div>
+      <button class="task"><span class="ic"><span class="sdot" style="background:var(--accs);box-shadow:0 0 0 3px var(--accbg)"></span></span><span><b>Clean up Downloads by project</b><small>Waiting for approval · 4 min</small></span></button>
+      <div class="group">Today</div>
+      <button class="task"><span class="ic"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true" style="color:var(--ok)"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span><span><b>Weekly PR digest</b><small>Agent · Done · 11:20</small></span></button>
+      <button class="task"><span class="ic"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true" style="color:var(--ok)"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span><span><b>Explain the Smart Router</b><small>Chat · Done · 9:05</small></span></button>
+      <div class="group">Earlier</div>
+      <button class="task"><span class="ic"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true" style="color:var(--err)"><path d="M12 8v5M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg></span><span><b>Install the PDF skill</b><small>OpenClaw · Failed · Tue</small></span></button>
+      <button class="task"><span class="ic"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true" style="color:var(--ok)"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span><span><b>Rename photos by date</b><small>Agent · Done · Mon</small></span></button>
+    </aside><main class="main"><div class="head"><div><h1>Check the router docs</h1><p class="mono" style="font-size:12px">C:\dev\pockpockagent</p></div><div class="seg" role="tablist" aria-label="Engine"><button role="tab" aria-selected="false">Chat</button><button role="tab" aria-selected="true" class="on">PockPock Agent</button><button role="tab" aria-selected="false">OpenClaw</button><button role="tab" aria-selected="false">NemoClaw</button></div></div><div class="runbar working" role="status" aria-live="polite"><div class="phases"><span class="ph done"><span class="n"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:3"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span>Understand</span><span class="ph done"><span class="n"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:3"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span>Plan</span><span class="ph now"><span class="n">3</span>Act</span><span class="ph "><span class="n">4</span>Verify</span></div><div class="beat"><span class="sdot"></span>Signal 1 s ago<span style="color:var(--t3)">·</span><span class="mono">01:12</span></div><button class="btn "><svg class="i s" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Stop</button></div><div class="sweep" aria-hidden="true"></div><section class="thread" aria-label="Conversation"><div class="col"><div><div class="who">You</div><div>Check the router docs online and add the helper skill from this link: github.com/example/pockpock-notes</div></div>
+<section class="card" aria-label="Steps"><button class="ch" style="width:100%;text-align:left;border-bottom:1px solid var(--border)"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg><strong style="font-weight:600">Worked through 7 steps</strong><span style="color:var(--t3);margin-left:auto">1 retried · 0:34</span></button><div class="step" style="min-height:32px"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true" style="color:var(--ok)"><path d="M5 12.5l4.5 4.5L19 7"/></svg><span class="t">Planned 6 steps with qwen3.5:9b</span><span class="m">2.4 s</span></div><div class="step" style="min-height:32px"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true" style="color:var(--ok)"><path d="M5 12.5l4.5 4.5L19 7"/></svg><span class="t">Helper · Reviewer: checked the plan</span><span class="m">2.1 s</span></div><div class="step" style="min-height:32px"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true" style="color:var(--ok)"><path d="M5 12.5l4.5 4.5L19 7"/></svg><span class="t">Opened docs.example.com/router</span><span class="m">1.1 s</span></div><div class="step" style="min-height:32px"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true" style="color:var(--ok)"><path d="M5 12.5l4.5 4.5L19 7"/></svg><span class="t">Read “Routing rules”</span><span class="m">0.8 s</span></div><div class="step" style="min-height:32px"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true" style="color:var(--ok)"><path d="M5 12.5l4.5 4.5L19 7"/></svg><span class="t">Revised the plan: the docs split into two pages</span><span class="m"></span></div><div class="step" style="min-height:32px"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true" style="color:var(--err)"><path d="M12 4 2.5 20h19zM12 10v4M12 17h.01"/></svg><span class="t">Browser click “Next page” failed</span><span class="m">retried</span></div></section>
+<section class="card wait" aria-label="Approval needed"><div class="ch"><svg class="i " viewBox="0 0 24 24" aria-hidden="true" style="color:var(--accs)"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg><strong>Run a command?</strong><span class="chip acc">Waiting for you</span><span style="margin-left:auto;color:var(--t3);font-size:12px">Auto-review · task folder</span></div>
+  <div style="padding:12px 16px"><div class="log mono" style="margin:0">python -m pytest backend/projects/model_router -q</div><p class="hint" style="margin:8px 0 0">Reads files and prints results. It changes nothing.</p></div>
+  <div style="display:flex;gap:8px;padding:0 16px 14px;flex-wrap:wrap"><button class="btn fill">Allow once</button><button class="btn ">Allow for this task</button><button class="btn ">Deny</button></div></section>
+<section class="card" aria-label="Add a skill from a link"><div class="ch"><span class="tile"><svg class="i " viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4a2 2 0 1 1 4 0v1h4v4h1a2 2 0 1 1 0 4h-1v4h-4v-1a2 2 0 1 0-4 0v1H6v-4H5a2 2 0 1 1 0-4h1V5h4z"/></svg></span><div><strong>pockpock-notes</strong><div class="hint">Skill from github.com/example/pockpock-notes</div></div><span class="chip ok"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg>Inspected</span></div>
+  <div style="padding:12px 16px;display:flex;flex-direction:column;gap:6px;font-size:12.5px;color:var(--t2)"><div style="display:flex;gap:8px"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true" style="color:var(--ok)"><path d="M5 12.5l4.5 4.5L19 7"/></svg>Reads and writes Markdown files in the task folder</div><div style="display:flex;gap:8px"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true" style="color:var(--t3)"><circle cx="12" cy="12" r="8"/><path d="M6 6l12 12"/></svg>No network access, no commands</div><div style="display:flex;gap:8px"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true" style="color:var(--t3)"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>Added switched on; you can turn it off in Workshop</div></div>
+  <div style="display:flex;gap:8px;padding:0 16px 14px"><button class="btn fill"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add skill</button><button class="btn ">Cancel</button><button class="btn "><svg class="i s" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>View instructions</button></div></section>
+<div style="color:var(--text)">The router scores each request, then picks the smallest local model that fits. Cloud models are only used when you choose them yourself.</div>
+<section class="card" aria-label="Sources"><div class="ch"><strong>Sources</strong><span class="hint">3 pages read</span></div>
+  <div class="step"><span class="t"><b style="font-weight:600">Routing rules</b><div class="hint">docs.example.com/router</div></span><button class="btn " style="color:var(--oktext)"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg>Saved</button></div>
+  <div class="step"><span class="t"><b style="font-weight:600">Model sizes</b><div class="hint">docs.example.com/models</div></span><button class="btn "><svg class="i s" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>Watch for changes</button></div>
+  <div class="step"><span class="t"><b style="font-weight:600">Release notes</b><div class="hint">docs.example.com/releases</div></span><button class="btn "><svg class="i s" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>Watch for changes</button></div></section>
+<div style="display:flex;gap:6px;color:var(--t3)"><button class="pick" aria-label="Copy reply"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg>Copy</button><button class="pick" aria-label="Retry"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2 6M20 4v7h-7"/></svg>Retry</button><button class="pick" aria-label="Report a problem with this reply"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4 2.5 20h19zM12 10v4M12 17h.01"/></svg>Report a problem</button></div>
+<section class="card" style="border-color:var(--err)" aria-label="Failed step"><div class="ch" style="border:0"><svg class="i " viewBox="0 0 24 24" aria-hidden="true" style="color:var(--err)"><path d="M12 4 2.5 20h19zM12 10v4M12 17h.01"/></svg><div><strong>Stopped: the page did not load</strong><div class="hint">The plan and 5 finished steps are kept.</div></div><span style="margin-left:auto;display:flex;gap:8px"><button class="btn fill">Retry from step 6</button><button class="btn ">Report</button></span></div></section></div></section><div class="composer">
+        <div class="cbox">
+          <div class="ctx"><span class="chip"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>pockpockagent</span><span class="chip"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg>Auto-review</span><span class="chip acc">Queued messages run after this step</span></div>
+          <div class="input">
+            <div class="txt">Add a note while it works. It joins the plan at the next step.</div>
+            <div class="bar">
+              <button class="pick" aria-label="Attach or add context"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+              <button class="pick">Smart route<svg class="i s" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+              <span style="color:var(--t3);font-size:12px">qwen3-coder 30B · local</span>
+              <button class="send" aria-label="Queue message" disabled style="background:var(--active);color:var(--t3)"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main><aside class="insp" aria-label="Inspector">
+      <div class="tabs" role="tablist"><button role="tab" class="on" aria-selected="true">Context</button><button role="tab" aria-selected="false">Files</button><button role="tab" aria-selected="false">Terminal</button></div>
+      <div class="sec"><h3>Model</h3>
+        <div class="kv"><span>Engine</span><span>PockPock Agent</span></div>
+        <div class="kv"><span>Model</span><span class="mono" style="font-size:12px">qwen3-coder:30b</span></div>
+        <div class="kv"><span>Where</span><span class="chip ok">Local · loaded</span></div>
+        <div class="meter" role="img" aria-label="Context used: 8.1 thousand of 32 thousand tokens"><i style="width:25%"></i></div>
+        <div style="display:flex;justify-content:space-between;color:var(--t3);font-size:12px"><span>Context used</span><span class="mono">8.1k / 32k</span></div>
+      </div>
+      <div class="sec"><h3>Permission</h3>
+        <div class="kv"><span>Mode</span><span style="display:flex;align-items:center;gap:6px"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg>Auto-review</span></div>
+        <p style="margin:4px 0 0;color:var(--t3);font-size:12.5px">Changes inside the task folder run on their own. Risky actions ask you first.</p>
+      </div>
+      <div class="sec" style="border:0"><h3>Files touched</h3>
+        <div class="file"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l5 5v13H7zM14 3v5h5"/></svg><span class="mono" style="font-size:12px">failover.py</span><em>read</em></div>
+        <div class="file"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l5 5v13H7zM14 3v5h5"/></svg><span class="mono" style="font-size:12px">test_failover.py</span><em>read</em></div>
+        <div class="file"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l5 5v13H7zM14 3v5h5"/></svg><span class="mono" style="font-size:12px">state.py</span><em>read</em></div>
+      </div>
+    </aside></div><footer class="status"><span><i class="sdot" style="background:var(--ok)"></i>Gateway ready</span><span><i class="sdot" style="background:var(--ok)"></i>Ollama · 1 model loaded</span><span><i class="sdot" style="background:var(--ok)"></i>Smart router on</span><span style="margin-left:auto">v0.2.5</span></footer></div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","default":"dark","options":["dark","volt","feather"],"section":"Theme"}}'>
+class Component extends DCLogic {
+renderVals() {
+const base = {"--bg": "#0d1014", "--side": "#111419", "--panel": "#10141a", "--raise": "#171c24", "--hover": "#1c222b", "--active": "#232a35", "--pop": "#161b22", "--code": "#0a0d11", "--border": "#222933", "--border2": "#2e3744", "--ctl": "#5c6878", "--text": "#e6ebf1", "--t2": "#aeb8c6", "--t3": "#8892a1", "--acc": "#8b6cff", "--accs": "#a78bfa", "--accbg": "rgba(139,108,255,.14)", "--accfill": "#6f52f0", "--onacc": "#ffffff", "--ok": "#3fb68b", "--oktext": "#7fdcb8", "--okbg": "rgba(63,182,139,.14)", "--warn": "#e5a83b", "--warntext": "#f2cd8a", "--warnbg": "rgba(229,168,59,.14)", "--err": "#f07470", "--errtext": "#ffb4b1", "--errbg": "rgba(240,116,112,.12)", "--log": "#c9d2de", "--shadow": "rgba(0,0,0,.5)", "--toe": "#fff4d6", "--bolt": "#ffd60a", "--gap": "#10141a"};
+const themes = {"dark": {}, "volt": {"--bg": "#14111c", "--side": "#1a1626", "--panel": "#1c1829", "--raise": "#251f37", "--hover": "#2b2440", "--active": "#352d4d", "--pop": "#221c33", "--code": "#0e0b15", "--border": "#2f2843", "--border2": "#40375a", "--ctl": "#8a80a6", "--text": "#fff4d6", "--t2": "#d4cbb4", "--t3": "#a69fb8", "--acc": "#ffd60a", "--accs": "#ffd60a", "--accbg": "rgba(255,214,10,.12)", "--accfill": "#ffd60a", "--onacc": "#14111c", "--log": "#d4cbb4", "--gap": "#1c1829"}, "feather": {"--bg": "#fffaf0", "--side": "#f7efdf", "--panel": "#fffdf7", "--raise": "#ffffff", "--hover": "#f1e8d4", "--active": "#eadfc6", "--pop": "#ffffff", "--code": "#f3ead7", "--border": "#e6dcc6", "--border2": "#d3c6a9", "--ctl": "#7d7488", "--text": "#14111c", "--t2": "#4a4458", "--t3": "#6b6478", "--acc": "#5b4bf0", "--accs": "#4a3bd6", "--accbg": "rgba(91,75,240,.1)", "--accfill": "#5b4bf0", "--onacc": "#ffffff", "--ok": "#1f8f68", "--oktext": "#176b4e", "--okbg": "rgba(31,143,104,.12)", "--warn": "#b97a0a", "--warntext": "#7a4f05", "--warnbg": "rgba(185,122,10,.12)", "--err": "#c0302c", "--errtext": "#8f1f1b", "--errbg": "rgba(192,48,44,.1)", "--log": "#3a3548", "--shadow": "rgba(20,17,28,.18)", "--toe": "#14111c", "--bolt": "#5b4bf0", "--gap": "#fffdf7"}};
+const t = Object.assign({}, base, themes[this.props.theme ?? 'dark'] || {});
+return { vars: Object.keys(t).map((k) => k + ':' + t[k] + ';').join('') };
+}
+}
+</script>
+</body>
+</html>

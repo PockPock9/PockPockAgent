@@ -68,7 +68,7 @@ export function ResearchPage() {
               <span>{on ? 'On: tasks may read text from public sites they name by hostname. No general web search; private and local addresses are blocked, with time and size limits.' : 'Off: research tools make no network requests.'}</span></div>
             <Toggle checked={on} busy={busy} label="Allow reading public websites" onChange={(next) => void choose(next ? 'named_host_fetcher' : 'disabled')} />
           </div>
-          <p className="note">Requests go to: {state.destination}. No API keys are used or stored. The OpenClaw engine has its own web access, controlled by its permission setting.</p>
+          <p className="note">Requests go to: {state.destination.replace(/\.\s*$/, '')}. No API keys are used or stored. The OpenClaw engine has its own web access, controlled by its permission setting.</p>
         </>
       )}
       <section className="settings-section" aria-labelledby="watched-title">

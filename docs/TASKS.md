@@ -109,6 +109,13 @@ Choose the first `Ready` task in this table. Priority order is computer/browser 
 | 46.4 | UI-01D | Settings with the theme picker, Setup, dialogs and toasts, themes | UI-01A | Done |
 | 46.5 | UI-01E | Watch saved sources for changes | UI-01B | Done |
 | 46.6 | UI-01F | Plan-step progress ("step 3 of 5") reported by the agent | UI-01B | Done |
+| 46.7 | UI-01G | Activity charts: requests per minute, model share, 24 h / 7 d range | UI-01A | Ready |
+| 46.8 | UI-01H | Terminal tabs: more than one terminal, New and Close terminal | UI-01A | Ready |
+| 46.9 | UI-01I | Services: Restart all and each service's port | UI-01A | Ready |
+| 46.10 | UI-01J | Models: Unload, purpose tags, slow-to-start note; skills: use counts and recent use | UI-01A | Ready |
+| 46.11 | UI-01K | The last lines of a running command's output under its step | UI-01A | Ready |
+| 46.12 | UI-01L | Research: View changes for a watched page; decide whether to add a saved site list | UI-01A | Ready |
+| 46.13 | UI-01M | Browser recipes: show the running step (step N of M) | UI-01A | Ready |
 ## Task definitions and acceptance checks
 
 ### Foundation
@@ -830,6 +837,7 @@ The user asked (2026-11-21) for the "Agent Studio" redesign of the desktop app f
 - **UI-01D** — Settings, Setup, dialogs, toasts and themes.
 - **UI-01E** — watching saved sources for changes (network access while PockPock runs, off by default, per source).
 - **UI-01F** — plan-step progress reported by the agent, shown only when reported.
+- **UI-01G to UI-01M** — design elements not built yet, listed in [Agent Studio design coverage](features/desktop-app.md#agent-studio-design-coverage). Ready, not started.
 
 ## Completion log
 
