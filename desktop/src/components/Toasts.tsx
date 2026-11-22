@@ -1,15 +1,17 @@
 // Toasts in the bottom-right corner: an update that is ready to install, and problems that block every
-// task (the gateway stopped or failed, Ollama not running). Each says what to do next; Later or the
-// close button hides it until its situation changes.
+// task (the gateway stopped or failed, Ollama not running), and watched pages that changed (UI-01E). Each
+// says what to do next; Later or the close button hides it until its situation changes.
 import { useState } from 'react'
-import { AlertTriangle, Download, RefreshCw, ServerCog, X } from 'lucide-react'
+import { AlertTriangle, Download, Eye, RefreshCw, ServerCog, X } from 'lucide-react'
 import type { Status } from '../lib/status'
 import type { Updates } from '../lib/updates'
+import { useWatchedSources } from '../lib/watch'
 
-type Toast = { key: string; tone: 'info' | 'error'; title: string; detail: string; actions: Array<{ label: string; primary?: boolean; run: () => void }> }
+type Toast = { key: string; tone: 'info' | 'error'; icon?: 'watch'; title: string; detail: string; actions: Array<{ label: string; primary?: boolean; run: () => void }> }
 
-export function Toasts({ status, updates, onOpenServices }: { status: Status; updates: Updates; onOpenServices: () => void }) {
+export function Toasts({ status, updates, onOpenServices, onOpenResearch }: { status: Status; updates: Updates; onOpenServices: () => void; onOpenResearch: () => void }) {
   const [hidden, setHidden] = useState<Set<string>>(new Set())
+  const watched = useWatchedSources(60_000, status.backend.phase === 'ready')
   const toasts: Toast[] = []
   const update = updates.state
   if (update?.status === 'ready') {
@@ -23,6 +25,14 @@ export function Toasts({ status, updates, onOpenServices }: { status: Status; up
     toasts.push({ key: 'ollama:off', tone: 'error', title: 'Ollama is not running', detail: 'Start it in Services, then try again. Chat and PockPock Agent need it; cloud models still work in Chat.',
       actions: [{ label: 'Open Services', primary: true, run: onOpenServices }] })
   }
+  const changed = watched.data?.sources.filter((item) => item.watch.unseen) ?? []
+  if (changed.length) {
+    // The key names every changed page and when, so a new change shows the toast again after Later.
+    toasts.push({ key: `watch:${changed.map((item) => `${item.source_id}@${item.watch.changed_at}`).join(',')}`, tone: 'info', icon: 'watch',
+      title: changed.length === 1 ? 'A watched page changed' : `${changed.length} watched pages changed`,
+      detail: changed.length === 1 ? `${changed[0].title || changed[0].url}. The new version is saved with its task.` : changed.slice(0, 3).map((item) => item.title || item.url).join(', ') + (changed.length > 3 ? ', …' : ''),
+      actions: [{ label: 'Open Research', primary: true, run: onOpenResearch }] })
+  }
   const shown = toasts.filter((toast) => !hidden.has(toast.key))
   if (!shown.length) return null
   const hide = (key: string) => setHidden((current) => new Set(current).add(key))
@@ -30,7 +40,7 @@ export function Toasts({ status, updates, onOpenServices }: { status: Status; up
     <div className="toasts" aria-label="Notifications">
       {shown.map((toast) => (
         <div key={toast.key} className={`toast toast--${toast.tone}`} role={toast.tone === 'error' ? 'alert' : 'status'}>
-          <span className="toast__icon" aria-hidden="true">{toast.tone === 'error' ? <AlertTriangle size={16} /> : <Download size={16} />}</span>
+          <span className="toast__icon" aria-hidden="true">{toast.tone === 'error' ? <AlertTriangle size={16} /> : toast.icon === 'watch' ? <Eye size={16} /> : <Download size={16} />}</span>
           <div className="toast__text"><strong>{toast.title}</strong><span>{toast.detail}</span>
             <div className="toast__actions">
               {toast.actions.map((action) => (

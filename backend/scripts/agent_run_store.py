@@ -33,6 +33,16 @@ RUN_EVENT_CONTRACT_VERSION = 1
 LEGACY_RUN_EVENT_CONTRACT_VERSION = 0
 MAX_RESEARCH_SNAPSHOT_BYTES = 200 * 1024
 MAX_RESEARCH_NOTE_CHARS = 2_000
+# Watching saved sources (UI-01E): off by default, per source. `watch_unseen` is set when a background
+# check finds a change and cleared when the user has seen it; `watch_error` holds the last failed check.
+RESEARCH_WATCH_COLUMNS = {
+    "watched": "INTEGER NOT NULL DEFAULT 0",
+    "watch_changed_at": "TEXT",
+    "watch_unseen": "INTEGER NOT NULL DEFAULT 0",
+    "watch_error": "TEXT NOT NULL DEFAULT ''",
+    "watch_error_at": "TEXT",
+}
+MAX_WATCHED_RESEARCH_SOURCES = 50
 
 
 class RunEventContractError(ValueError):
@@ -315,6 +325,10 @@ def initialize_agent_store() -> None:
             last_checked_at TEXT NOT NULL,
             PRIMARY KEY (task_id, source_id)
         )""")
+        source_columns = {row["name"] for row in connection.execute("PRAGMA table_info(research_collection_sources)").fetchall()}
+        for name, declaration in RESEARCH_WATCH_COLUMNS.items():
+            if name not in source_columns:
+                connection.execute(f"ALTER TABLE research_collection_sources ADD COLUMN {name} {declaration}")
         connection.execute("""CREATE TABLE IF NOT EXISTS research_collection_snapshots (
             snapshot_id INTEGER PRIMARY KEY AUTOINCREMENT,
             task_id TEXT NOT NULL,
@@ -865,13 +879,26 @@ def _research_snapshot_dict(row, *, include_text: bool = False) -> dict[str, Any
     return snapshot
 
 
+def _research_watch_dict(row) -> dict[str, Any]:
+    return {
+        "watched": bool(row["watched"]),
+        "changed_at": row["watch_changed_at"],
+        "unseen": bool(row["watch_unseen"]),
+        "error": row["watch_error"],
+        "error_at": row["watch_error_at"],
+    }
+
+
+_WATCH_SELECT = "watched, watch_changed_at, watch_unseen, watch_error, watch_error_at"
+
+
 def _research_collection_for_connection(connection, task_id: str, workspace_key: str) -> dict[str, Any] | None:
     collection = _check_research_collection_scope(connection, task_id, workspace_key)
     if collection is None:
         return None
     sources = []
     rows = connection.execute(
-        "SELECT source_id, source_json, notes, created_at, updated_at, last_checked_at "
+        f"SELECT source_id, source_json, notes, created_at, updated_at, last_checked_at, {_WATCH_SELECT} "
         "FROM research_collection_sources WHERE task_id=? ORDER BY created_at, source_id",
         (task_id,),
     ).fetchall()
@@ -887,6 +914,7 @@ def _research_collection_for_connection(connection, task_id: str, workspace_key:
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
             "last_checked_at": row["last_checked_at"],
+            "watch": _research_watch_dict(row),
             "version_count": len(snapshot_rows),
             "versions": [_research_snapshot_dict(item) for item in snapshot_rows],
             "latest": _research_snapshot_dict(snapshot_rows[-1]) if snapshot_rows else None,
@@ -926,7 +954,7 @@ def get_research_collection_source(
         if _check_research_collection_scope(connection, task_id, workspace_key) is None:
             return None
         row = connection.execute(
-            "SELECT source_json, notes, created_at, updated_at, last_checked_at "
+            f"SELECT source_json, notes, created_at, updated_at, last_checked_at, {_WATCH_SELECT} "
             "FROM research_collection_sources WHERE task_id=? AND source_id=?",
             (task_id, source_id),
         ).fetchone()
@@ -943,6 +971,7 @@ def get_research_collection_source(
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
             "last_checked_at": row["last_checked_at"],
+            "watch": _research_watch_dict(row),
             "versions": [_research_snapshot_dict(item) for item in snapshot_rows],
             "latest": _research_snapshot_dict(snapshot_rows[-1]) if snapshot_rows else None,
         }
@@ -1173,6 +1202,100 @@ def update_research_collection_note(
         if cursor.rowcount != 1:
             return None
     return get_research_collection_source(task_id, source_id, workspace_key)
+
+
+def update_research_source_watch(
+    task_id: str,
+    source_id: str,
+    workspace_key: str,
+    *,
+    watched: bool | None = None,
+    seen: bool = False,
+    result: str | None = None,
+    error: str | None = None,
+) -> dict[str, Any] | None:
+    """Change a saved source's watch state and return the source, or None when it is not saved.
+
+    watched: turn watching on or off (off also clears an unseen change and the last error).
+    seen: the user has seen the latest change. result: a background check finished, "changed" (marks
+    the change unseen) or "ok" (a check succeeded: clears the last error). error: a background check failed.
+    """
+    _validate_research_collection_args(task_id, workspace_key)
+    if not isinstance(source_id, str) or not re.fullmatch(r"[a-f0-9]{64}", source_id):
+        raise ValueError("A valid research source ID is required.")
+    if watched is not None and not isinstance(watched, bool):
+        raise ValueError("watched must be true or false.")
+    if result not in (None, "changed", "ok"):
+        raise ValueError("result must be changed or ok.")
+    if error is not None and (not isinstance(error, str) or not error.strip()):
+        raise ValueError("A watch error needs a message.")
+    if _use_remote_store():
+        return _service_request(
+            f"/research-collections/{quote(task_id, safe='')}/sources/{quote(source_id, safe='')}/watch",
+            method="PATCH",
+            payload={"workspace_key": workspace_key, "watched": watched, "seen": seen, "result": result, "error": error},
+        ).get("source")
+    now = datetime.now(timezone.utc).isoformat()
+    with telemetry.DB_LOCK, closing(telemetry.connect_db()) as connection, connection:
+        if _check_research_collection_scope(connection, task_id, workspace_key) is None:
+            return None
+        row = connection.execute(
+            "SELECT watched FROM research_collection_sources WHERE task_id=? AND source_id=?",
+            (task_id, source_id),
+        ).fetchone()
+        if row is None:
+            return None
+        if watched is True and not row["watched"]:
+            count = connection.execute("SELECT COUNT(*) FROM research_collection_sources WHERE watched=1").fetchone()[0]
+            if count >= MAX_WATCHED_RESEARCH_SOURCES:
+                raise ValueError(f"At most {MAX_WATCHED_RESEARCH_SOURCES} sources can be watched. Stop watching one first.")
+        updates: dict[str, Any] = {}
+        if watched is not None:
+            updates["watched"] = int(watched)
+            if not watched:
+                updates.update(watch_unseen=0, watch_error="", watch_error_at=None)
+        if seen:
+            updates["watch_unseen"] = 0
+        if result == "changed":
+            updates.update(watch_changed_at=now, watch_unseen=1, watch_error="", watch_error_at=None)
+        elif result == "ok":
+            updates.update(watch_error="", watch_error_at=None)
+        if error is not None:
+            updates.update(watch_error=" ".join(error.split())[:240], watch_error_at=now)
+        if updates:
+            assignments = ", ".join(f"{name}=?" for name in updates)
+            connection.execute(
+                f"UPDATE research_collection_sources SET {assignments} WHERE task_id=? AND source_id=?",
+                (*updates.values(), task_id, source_id),
+            )
+    return get_research_collection_source(task_id, source_id, workspace_key)
+
+
+def list_watched_research_sources() -> list[dict[str, Any]]:
+    """Every watched source across tasks, oldest check first, for the background watcher and the app."""
+    if _use_remote_store():
+        return _service_request("/research-watch").get("sources", [])
+    columns = ", ".join("s." + name for name in _WATCH_SELECT.split(", "))
+    with telemetry.DB_LOCK, closing(telemetry.connect_db()) as connection, connection:
+        rows = connection.execute(
+            f"SELECT s.task_id, s.source_id, s.source_json, s.last_checked_at, {columns}, c.workspace_key "
+            "FROM research_collection_sources s JOIN research_collections c ON c.task_id = s.task_id "
+            "WHERE s.watched=1 ORDER BY s.last_checked_at, s.task_id, s.source_id LIMIT ?",
+            (MAX_WATCHED_RESEARCH_SOURCES,),
+        ).fetchall()
+    sources = []
+    for row in rows:
+        source = json.loads(row["source_json"])
+        sources.append({
+            "task_id": row["task_id"],
+            "source_id": row["source_id"],
+            "workspace_key": row["workspace_key"],
+            "title": str(source.get("title") or source.get("canonical_url") or ""),
+            "url": str(source.get("canonical_url") or ""),
+            "last_checked_at": row["last_checked_at"],
+            "watch": _research_watch_dict(row),
+        })
+    return sources
 
 
 def delete_research_collection(task_id: str, workspace_key: str) -> bool:

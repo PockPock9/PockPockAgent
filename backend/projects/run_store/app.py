@@ -314,6 +314,35 @@ async def read_research_snapshot(task_id: str, source_id: str, snapshot_id: int,
     return {"snapshot": snapshot}
 
 
+class ResearchSourceWatch(BaseModel):
+    workspace_key: str
+    watched: bool | None = None
+    seen: bool = False
+    result: str | None = None
+    error: str | None = Field(default=None, max_length=2_000)
+
+
+@app.patch("/research-collections/{task_id}/sources/{source_id}/watch", dependencies=[Depends(require_internal_token)])
+async def update_research_source_watch(task_id: str, source_id: str, payload: ResearchSourceWatch):
+    if not _valid_id(task_id) or not _valid_hash(source_id):
+        raise HTTPException(status_code=404, detail="Research source not found")
+    try:
+        source = store.update_research_source_watch(
+            task_id, source_id, payload.workspace_key,
+            watched=payload.watched, seen=payload.seen, result=payload.result, error=payload.error,
+        )
+    except store.ResearchCollectionScopeError as err:
+        raise HTTPException(status_code=404, detail="Research source not found") from err
+    except ValueError as err:
+        raise HTTPException(status_code=422, detail=str(err)) from err
+    return {"source": source}
+
+
+@app.get("/research-watch", dependencies=[Depends(require_internal_token)])
+async def list_watched_research_sources():
+    return {"sources": store.list_watched_research_sources()}
+
+
 @app.delete("/research-collections/{task_id}", dependencies=[Depends(require_internal_token)])
 async def remove_research_collection(task_id: str, workspace_key: str):
     if not _valid_id(task_id):

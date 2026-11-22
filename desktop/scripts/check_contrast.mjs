@@ -123,6 +123,9 @@ export const PAIRS = [
   // Plan-step progress: the run bar's "Step 3 of 5" and the plan card's current step.
   ['accent-strong', 'accent-bg@bg-panel', TEXT, 'run bar: plan step chip'],
   ['accent-strong', 'accent-bg@bg-panel', UI, 'plan: current step marker'],
+  // Watched pages (Research): paused banner.
+  ['warn-text', 'warn-bg@bg', TEXT, 'research: checks paused banner'],
+  ['warn', 'bg', UI, 'research: checks paused banner border'],
 ]
 
 const all = themes()
