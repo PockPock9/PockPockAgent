@@ -1,7 +1,9 @@
 // Maintenance Manager setup: 1) choose the AI, 2) connect GitHub, 3) allow a copy of PockPock to be
 // cloned to a folder. Each step is an explicit choice; nothing is cloned or sent before the user acts.
+// PockPock itself (a local model) is the default AI. Connecting a Claude, OpenAI or Copilot account is
+// optional: a tool that is only signed in on this PC is not used until the user connects it here.
 import { useCallback, useEffect, useState } from 'react'
-import { Check, ExternalLink, FolderOpen, GitBranch, LoaderCircle, Plug, RotateCcw, Sparkles } from 'lucide-react'
+import { AlertTriangle, Check, ExternalLink, FolderOpen, GitBranch, HeartHandshake, LoaderCircle, Plug, RotateCcw, Sparkles, Unplug } from 'lucide-react'
 import { bridge } from '../lib/types'
 import type { GitHubAccount, MaintenanceAgent, MaintenanceStatus } from '../lib/types'
 
@@ -12,7 +14,8 @@ export function MaintenanceSetup({ status, onChange }: { status: MaintenanceStat
   const desktop = bridge()
   const [editing, setEditing] = useState(!status.ready)
   const [agents, setAgents] = useState<MaintenanceAgent[] | null>(null)
-  const [choice, setChoice] = useState<{ id: MaintenanceAgent['id']; model: string; openclaw?: boolean } | null>(status.agent ? { id: status.agent.id, model: status.agent.model, openclaw: status.agent.openclaw === true } : null)
+  const initial = status.chosen ?? status.agent
+  const [choice, setChoice] = useState<{ id: MaintenanceAgent['id']; model: string; openclaw?: boolean } | null>(initial ? { id: initial.id, model: initial.model, openclaw: initial.openclaw === true } : null)
   const [github, setGithub] = useState<GitHubAccount | null>(null)
   const [deviceCode, setDeviceCode] = useState<{ code: string; url: string } | null>(null)
   const [signingIn, setSigningIn] = useState(false)
@@ -28,7 +31,13 @@ export function MaintenanceSetup({ status, onChange }: { status: MaintenanceStat
     if (!desktop) return
     void desktop.maintenance.agents().then((list) => {
       setAgents(list)
-      setChoice((current) => current ?? (() => { const local = list.find((agent) => agent.id === 'local'); return local?.installed ? { id: 'local', model: local.suggested || '' } : null })())
+      // PockPock itself is the default; a chosen account that is not connected here is not kept.
+      setChoice((current) => {
+        const usable = current && list.find((agent) => agent.id === current.id && (agent.id === 'local' ? agent.installed : agent.connected))
+        if (usable) return current
+        const local = list.find((agent) => agent.id === 'local')
+        return local?.installed ? { id: 'local', model: local.suggested || '' } : null
+      })
     })
     void desktop.maintenance.github().then(setGithub)
   }, [desktop])
@@ -40,7 +49,19 @@ export function MaintenanceSetup({ status, onChange }: { status: MaintenanceStat
     if (event.type === 'agent-url') setConnectLog((log) => (log?.id === event.id ? { ...log, url: event.url } : log))
   }), [desktop])
 
-  const ready = (agent: MaintenanceAgent) => agent.installed && agent.signedIn !== false
+  // Usable: PockPock itself when Ollama has a model; an account only after Connect here.
+  const ready = (agent: MaintenanceAgent) => (agent.id === 'local' ? agent.installed : agent.canConnect ? agent.connected === true : agent.installed && agent.signedIn !== false)
+  const accountText = (agent: MaintenanceAgent) => [agent.account?.email, agent.account?.plan].filter(Boolean).join(', ')
+  const disconnect = async (agent: MaintenanceAgent) => {
+    if (!desktop) return
+    setError('')
+    try {
+      setAgents(await desktop.maintenance.disconnectAgent(agent.id))
+      setChoice((current) => (current?.id === agent.id ? null : current))
+      onChange()
+      refresh()
+    } catch (reason) { setError(clean(reason, `${agent.name} could not be disconnected.`)) }
+  }
   const connect = async (agent: MaintenanceAgent) => {
     if (!desktop) return
     setConnecting(agent.id); setError(''); setConnectLog({ id: agent.id, lines: [], url: '', error: '' })
@@ -55,7 +76,8 @@ export function MaintenanceSetup({ status, onChange }: { status: MaintenanceStat
     } finally { setConnecting(null) }
   }
 
-  const agentChosen = Boolean(status.agent)
+  // Step 1 is done once the user chose an AI here; until then PockPock itself would be used.
+  const agentChosen = Boolean(status.chosen ?? status.agent)
   const githubReady = Boolean(github?.loggedIn)
 
   const saveAgent = async () => {
@@ -78,13 +100,15 @@ export function MaintenanceSetup({ status, onChange }: { status: MaintenanceStat
     try { await desktop.maintenance.clone(folder); onChange(); setEditing(false) } catch (reason) { setError(clean(reason, 'Cloning failed.')) } finally { setCloning(false) }
   }
   const chosenAgent = agents?.find((agent) => agent.id === status.agent?.id)
+  const fallbackNote = status.fallback ? <div className="banner banner--warn" role="status"><AlertTriangle size={14} aria-hidden="true" /><span>{status.fallback} To use the account, connect it in <strong>Change setup</strong>; otherwise nothing needs doing.</span></div> : null
 
   if (!editing && status.ready) {
     return (
       <section className="card maint-summary" aria-labelledby="maint-title">
         <header><Sparkles size={15} /><strong id="maint-title">Maintenance Manager is set up</strong></header>
+        {fallbackNote}
         <dl className="setup-facts">
-          <div><dt>AI</dt><dd>{status.agent?.id === 'local' ? `PockPock itself, with ${status.agent.model}${status.agent.openclaw ? ', running commands through OpenClaw' : ' (reads and edits files only)'}` : chosenAgent?.name ?? status.agent?.id}</dd></div>
+          <div><dt>AI</dt><dd>{status.agent?.id === 'local' ? `PockPock itself, with ${status.agent.model}${status.agent.openclaw ? ', running commands through OpenClaw' : ' (reads and edits files only)'}` : `${chosenAgent?.name ?? status.agent?.id}, with your account${chosenAgent && accountText(chosenAgent) ? ` (${accountText(chosenAgent)})` : ''}`}</dd></div>
           <div><dt>Copy of PockPock</dt><dd><code>{status.repo?.dir}</code>{status.repo?.fork ? ` (your fork of ${UPSTREAM})` : ''}</dd></div>
         </dl>
         <div className="row maint-auto">
@@ -107,6 +131,11 @@ export function MaintenanceSetup({ status, onChange }: { status: MaintenanceStat
       <ol className="maint-steps">
         <li className={agentChosen ? 'is-done' : 'is-current'}>
           <h3><span className="maint-steps__n">{agentChosen ? <Check size={13} /> : 1}</span> Choose the AI</h3>
+          {fallbackNote}
+          <div className="maint-help">
+            <p><strong>PockPock itself</strong> is the default: it fixes your reports with a model on this PC, and nothing leaves it.</p>
+            <p><HeartHandshake size={14} aria-hidden="true" /> <strong>Optional: help with your own account.</strong> If you have a Claude, ChatGPT (OpenAI) or Copilot plan, you can connect it so a stronger model fixes the problems you report, which makes PockPock better for everyone. It uses your plan's usage, and sends the report, the parts of the PockPock code it reads and its changes to that company. Every fix still waits for your approval and goes to the project owner as a draft pull request. If the account is not connected or stops working, PockPock itself takes over. You can disconnect at any time.</p>
+          </div>
           {!agents ? <p className="note"><LoaderCircle size={13} className="spin" /> Looking for installed AI tools…</p> : (
             <fieldset className="report-categories">
               <legend className="visually-hidden">AI for maintenance</legend>
@@ -116,16 +145,25 @@ export function MaintenanceSetup({ status, onChange }: { status: MaintenanceStat
                     <input type="radio" name="maint-agent" value={agent.id} disabled={!ready(agent)} checked={choice?.id === agent.id}
                       onChange={() => setChoice({ id: agent.id, model: agent.id === 'local' ? (choice?.model || agent.suggested || '') : '', openclaw: agent.id === 'local' ? choice?.openclaw : undefined })} />
                     <span>
-                      <strong>{agent.name}{ready(agent) ? <small className="badge badge--ok">{agent.canConnect ? 'Connected' : agent.version || 'Ready'}</small> : agent.installed ? <small className="badge badge--warn">Not signed in</small> : <small className="badge badge--off">Not installed</small>}</strong>
-                      <em>{ready(agent) ? agent.dataNotice : agent.installed ? `Installed${agent.version ? ` (${agent.version})` : ''}, but not signed in. Connect opens the ${agent.vendor} sign-in page in your browser.` : agent.install}</em>
+                      <strong>{agent.id === 'local' ? `${agent.name} (default)` : agent.name}{ready(agent) ? <small className="badge badge--ok">{agent.canConnect ? 'Connected' : agent.version || 'Ready'}</small> : agent.installed && agent.signedIn ? <small className="badge badge--off">Not connected</small> : agent.installed ? <small className="badge badge--warn">Not signed in</small> : <small className="badge badge--off">Not installed</small>}</strong>
+                      <em>{ready(agent)
+                        ? `${agent.canConnect ? `Your account${accountText(agent) ? `: ${accountText(agent)}` : ''}. ` : ''}${agent.dataNotice}`
+                        : agent.installed && agent.signedIn
+                          ? `${agent.name} is signed in on this PC${accountText(agent) ? ` as ${accountText(agent)}` : ''}, for example from your editor. PockPock does not use it until you connect it here.`
+                          : agent.installed ? `Installed${agent.version ? ` (${agent.version})` : ''}, but not signed in. Connect opens the ${agent.vendor} sign-in page in your browser.` : agent.install}</em>
                     </span>
                   </label>
-                  {agent.canConnect && (!ready(agent) || connectLog?.id === agent.id) && (
+                  {agent.canConnect && (
                     <div className="maint-agent__options maint-connect">
-                      {!ready(agent) && (
+                      {ready(agent) ? (
+                        <div className="card__actions">
+                          <button type="button" className="button" disabled={connecting !== null} onClick={() => void disconnect(agent)}><Unplug size={13} /> Disconnect</button>
+                          <span className="note">PockPock stops using this account. {agent.name} stays signed in on this PC.</span>
+                        </div>
+                      ) : (
                         <div className="card__actions">
                           <button type="button" className="button" disabled={connecting !== null} onClick={() => void connect(agent)}>
-                            {connecting === agent.id ? <LoaderCircle size={13} className="spin" /> : <Plug size={13} />} {connecting === agent.id ? (agent.installed ? 'Signing in…' : 'Connecting…') : agent.installed ? `Sign in to ${agent.name}` : `Install and connect ${agent.name}`}
+                            {connecting === agent.id ? <LoaderCircle size={13} className="spin" /> : <Plug size={13} />} {connecting === agent.id ? (agent.installed ? 'Signing in…' : 'Connecting…') : agent.installed && agent.signedIn ? 'Connect this account' : agent.installed ? `Sign in to ${agent.name}` : `Install and connect ${agent.name}`}
                           </button>
                           {connecting === agent.id && <button type="button" className="button" onClick={() => void desktop?.maintenance.cancelConnect()}>Cancel</button>}
                         </div>
