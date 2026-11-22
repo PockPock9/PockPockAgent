@@ -189,6 +189,8 @@ class FixRunner {
     if (previous?.state === 'proposed') throw new Error('This report already has a pull request.')
     const short = reportId.split('-').pop()
     const run = { reportId, state: 'running', agent: setup.agent, branch: `fix/report-${short}`, worktree: path.join(path.dirname(setup.repo.dir), 'PockPockAgent-fixes', `report-${short}`), startedAt: Date.now(), log: [], checks: [] }
+    // No connected account (or it stopped working): say that PockPock itself is fixing this one.
+    if (setup.fallback) run.log.push(setup.fallback)
     this.active.set(reportId, null)
     this.save(run)
     if (report.status === 'open') this.reports.update(reportId, { status: 'in-progress' })
@@ -240,8 +242,23 @@ class FixRunner {
 
     const prompt = buildPrompt(report)
     this.log(run, `Asking ${run.agent.id === 'local' ? `the local model ${run.agent.model}` : run.agent.id} to find and fix the problem. This can take a while…`)
-    const agentResult = await this.runAgent(run, prompt)
+    let agentResult = await this.runAgent(run, prompt)
     if (this.cancelled?.has(run.reportId)) { this.cancelled.delete(run.reportId); return this.finish(run, 'cancelled', 'Stopped by you.') }
+    // A connected account that fails before changing anything (signed out, usage limit, not
+    // installed) is not the end: PockPock itself tries once, so the report still gets a fix.
+    if (!agentResult.ok && run.agent.id !== 'local') {
+      const pending = await this.git(['status', '--porcelain'], run.worktree)
+      const local = pending.output.trim() ? null : await this.maintenance.localAgent()
+      if (local) {
+        const last = String(agentResult.output || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean).pop() || `exit code ${agentResult.code}`
+        this.log(run, `${run.agent.id} stopped before changing anything (${redactText(last.slice(0, 160)).text}). Trying again with PockPock itself (${local.model})…`)
+        run.fallbackFrom = run.agent.id
+        run.agent = local
+        this.save(run)
+        agentResult = await this.runAgent(run, prompt)
+        if (this.cancelled?.has(run.reportId)) { this.cancelled.delete(run.reportId); return this.finish(run, 'cancelled', 'Stopped by you.') }
+      }
+    }
     this.log(run, agentResult.ok ? 'The AI finished.' : `The AI stopped with an error (exit code ${agentResult.code}).`)
     // An AI that stopped early (usage limit, crash) may leave a half-finished change. It is still shown
     // when it passes the checks, but with a warning so it is reviewed as possibly unfinished.

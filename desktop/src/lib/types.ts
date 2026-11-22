@@ -243,10 +243,14 @@ export type UpdateState = {
   canInstall: boolean // Windows installs updates itself; macOS links to the download page
   releaseUrl: string
 }
-export type MaintenanceAgent = { id: 'local' | 'claude' | 'codex' | 'copilot'; name: string; vendor: string; installed: boolean; canConnect?: boolean; signedIn?: boolean | null; version?: string; models?: string[]; suggested?: string; openclaw?: boolean; dataNotice: string; install: string }
+export type MaintenanceAgent = { id: 'local' | 'claude' | 'codex' | 'copilot'; name: string; vendor: string; installed: boolean; canConnect?: boolean; signedIn?: boolean | null; connected?: boolean; account?: { email: string; plan: string } | null; version?: string; models?: string[]; suggested?: string; openclaw?: boolean; dataNotice: string; install: string }
 export type GitHubAccount = { installed: boolean; loggedIn: boolean; login?: string; id?: number; canPush?: boolean; install?: string }
 export type MaintenanceStatus = {
+  /** The AI that fixes reports now: PockPock itself unless a connected account is chosen. */
   agent: { id: MaintenanceAgent['id']; model: string; openclaw?: boolean; chosenAt: string } | null
+  /** What the user chose, and why the AI in use differs (empty when it does not). */
+  chosen?: { id: MaintenanceAgent['id']; model: string; openclaw?: boolean; chosenAt: string } | null
+  fallback?: string
   repo: { dir: string; fork: boolean; owner: string; upstream: string; clonedAt: string; present: boolean } | null
   defaultFolder: string
   ready: boolean
@@ -360,6 +364,7 @@ export type DesktopBridge = {
     agents: () => Promise<MaintenanceAgent[]>
     setAgent: (choice: { id: MaintenanceAgent['id']; model?: string; openclaw?: boolean }) => Promise<unknown>
     connectAgent: (id: MaintenanceAgent['id']) => Promise<MaintenanceAgent[]>
+    disconnectAgent: (id: MaintenanceAgent['id']) => Promise<MaintenanceAgent[]>
     cancelConnect: () => Promise<boolean>
     github: () => Promise<GitHubAccount>
     githubLogin: () => Promise<GitHubAccount>

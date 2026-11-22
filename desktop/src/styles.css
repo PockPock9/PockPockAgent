@@ -671,6 +671,11 @@ button.context-chip:hover { color: var(--text); background: var(--bg-raise); }
 .maint-setup, .maint-summary { display: grid; gap: 12px; padding: 16px; }
 .maint-setup > header, .maint-summary > header { display: flex; align-items: center; gap: 8px; color: var(--accent-strong); }
 .maint-setup > header strong, .maint-summary > header strong { color: var(--text); font-size: 14px; }
+/* Maintenance Manager: what PockPock itself and a connected account mean (choose-the-AI step). */
+.maint-help { display: grid; gap: 6px; margin: 0 0 10px; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--bg-raise); color: var(--text-2); font-size: 12.5px; }
+.maint-help p { margin: 0; }
+.maint-help strong { color: var(--text); }
+.maint-help svg { vertical-align: -2px; color: var(--accent-strong); }
 .maint-steps { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
 .maint-steps > li { display: grid; gap: 10px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg-raise); }
 .maint-steps > li.is-current { border-color: var(--accent-border); }
