@@ -191,6 +191,29 @@ class TurnTests(unittest.TestCase):
             self.assertNotIn(secret, " ".join(harness.commands[0]))
             self.assertEqual(len(harness.commands[0]), 2)
             self.assertEqual(harness.permissions.read()[session_key("main", "pockpock-c1")], "auto")
+            self.assertNotIn("toolOverrides", start, "no selection: the session's tools are left as they are")
+
+    def test_a_tool_selection_goes_to_the_helper(self):
+        with tempfile.TemporaryDirectory() as directory:
+            harness = BridgeHarness(directory)
+            overlay = {"skills": {"meme": False}}
+            harness.bridge.start_turn("pockpock-c1", "read the pdf", "auto", selection={"toolOverrides": overlay})
+            self.assertEqual(harness.processes[0].received[0]["toolOverrides"], overlay)
+            harness.processes[0].emit({"type": "final", "text": "ok"})
+            drain(harness.bridge._active)
+            harness.bridge.start_turn("pockpock-c1", "hello", "auto", selection={"toolOverrides": None})
+            self.assertIsNone(harness.processes[1].received[0]["toolOverrides"], "null clears an earlier overlay")
+
+    def test_select_tools_never_fails_a_turn(self):
+        with tempfile.TemporaryDirectory() as directory:
+            harness = BridgeHarness(directory)
+            self.assertIsNone(harness.bridge.select_tools("pockpock-c1", "hi"), "no selector configured")
+
+            class Broken:
+                def select(self, session, message):
+                    raise RuntimeError("boom")
+            harness.bridge.tool_selector = Broken()
+            self.assertIsNone(harness.bridge.select_tools("pockpock-c1", "hi"))
 
     def test_only_one_turn_runs_and_slot_frees_after_final(self):
         with tempfile.TemporaryDirectory() as directory:
