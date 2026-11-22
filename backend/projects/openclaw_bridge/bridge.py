@@ -293,6 +293,17 @@ class OpenClawBridge:
         self._active: OpenClawTurn | None = None
         self._status_lock = threading.Lock()
         self._status_cache: tuple[float, dict[str, Any]] | None = None
+        # Per-turn skill and MCP-server selection (tool_selection.py); set by the gateway.
+        self.tool_selector: Any = None
+
+    def select_tools(self, session_id: str, message: str) -> dict[str, Any] | None:
+        """The tool overlay for one turn, or None when there is no selector or it failed."""
+        if self.tool_selector is None:
+            return None
+        try:
+            return self.tool_selector.select(validate_session_id(session_id), message)
+        except Exception:  # noqa: BLE001 - a turn never fails because of tool selection
+            return None
 
     def _command(self) -> list[str]:
         return [self._which(self.config.node) or self.config.node, str(self._helper_path)]
@@ -350,7 +361,7 @@ class OpenClawBridge:
         finally:
             turn.close()
 
-    def start_turn(self, session_id: str, message: str, mode: str, model: str | None = None) -> OpenClawTurn:
+    def start_turn(self, session_id: str, message: str, mode: str, model: str | None = None, selection: dict[str, Any] | None = None) -> OpenClawTurn:
         """Start one turn. Only one runs at a time; the caller must drain or abort it."""
         session = validate_session_id(session_id)
         text = validate_message(message)
@@ -383,6 +394,9 @@ class OpenClawBridge:
                 "model": chosen_model,
                 "agent": self.config.agent,
                 "timeoutSeconds": self.config.timeout_seconds,
+                # The session's tool overlay; null clears one left by an earlier turn. Absent when no
+                # selection ran, so OpenClaw's session is left as it is.
+                **({"toolOverrides": selection.get("toolOverrides")} if selection is not None else {}),
             })
             return turn
         except BaseException:

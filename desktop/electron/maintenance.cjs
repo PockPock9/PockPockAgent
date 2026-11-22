@@ -8,10 +8,14 @@ const { spawn } = require('node:child_process')
 const paths = require('./paths.cjs')
 const { run } = require('./platform.cjs')
 const { httpJson } = require('./services.cjs')
-const { INSTALLERS, LOGIN, installPlan, parseUrl, stream } = require('./maintenance-connect.cjs')
+const { INSTALLERS, LOGIN, STATUS, installPlan, parseAccount, parseUrl, stream } = require('./maintenance-connect.cjs')
 
 const UPSTREAM = 'PockPock9/PockPockAgent'
 const AGENT_IDS = ['local', 'claude', 'codex', 'copilot']
+// The user's own cloud accounts. Optional: PockPock itself (a local model) is the default, and the one
+// used whenever a chosen account is not connected here or stops working.
+const CLOUD_IDS = ['claude', 'codex', 'copilot']
+const STATUS_TTL_MS = 60_000
 
 const home = os.homedir()
 const env = (name) => process.env[name] || ''
@@ -37,7 +41,7 @@ const AGENTS = {
     name: 'OpenAI Codex', vendor: 'OpenAI',
     names: paths.IS_WIN ? ['codex.exe', 'codex.cmd'] : ['codex'],
     dirs: () => [path.join(env('APPDATA'), 'npm'), path.join(home, '.local', 'bin'), '/opt/homebrew/bin', '/usr/local/bin'],
-    install: 'Install the Codex CLI (`npm install -g @openai/codex`), then run `codex` once in a terminal to sign in.',
+    install: 'Not on this PC yet. Connect installs the Codex CLI and opens the OpenAI sign-in page. It needs a ChatGPT plan or an OpenAI API account.',
   },
   copilot: {
     name: 'GitHub Copilot', vendor: 'GitHub',
@@ -66,6 +70,7 @@ class Maintenance {
     this.emit = emit
     this.loginChild = null
     this.connecting = null // { id, child } while Connect is installing or signing in
+    this.cliCache = new Map() // id -> { file, at, value }: sign-in status, re-read at most once a minute
   }
 
   config() {
@@ -116,14 +121,18 @@ class Maintenance {
         version = (result.stdout || result.stderr).trim().split('\n')[0].slice(0, 80)
       }
       const canConnect = Boolean(INSTALLERS[id])
+      const cli = file && canConnect ? await this.cliStatus(id, file) : { signedIn: null, account: null }
       return {
         id, name: agent.name, vendor: agent.vendor, installed: Boolean(file), version, canConnect,
-        signedIn: file && canConnect ? await this.signedIn(id, file) : null,
+        signedIn: cli.signedIn, account: cli.account,
+        // Connected means the user pressed Connect here. A tool that is merely signed in on this PC
+        // (for example Claude Code used in an editor) is not used until then.
+        connected: Boolean(this.config().connected?.[id]) && cli.signedIn === true,
         dataNotice: `Sends the report, the parts of the PockPock code it reads, and its changes to ${agent.vendor}. Uses your own ${agent.name} account.`,
         install: agent.install,
       }
     }))
-    const order = ['local', 'claude', 'copilot', 'codex']
+    const order = ['local', 'claude', 'codex', 'copilot']
     return [local, ...others].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id))
   }
 
@@ -139,14 +148,67 @@ class Maintenance {
    * GitHub CLI is signed in, whose token it uses.
    */
   async signedIn(id, file = this.agentPath(id)) {
-    if (!file) return false
-    if (id === 'claude') return (await run(/\.cmd$/i.test(file) ? `"${file}"` : file, ['auth', 'status'], { timeout: 30000, shell: /\.cmd$/i.test(file) })).ok
-    if (id === 'copilot') {
-      if (this.config().connected?.copilot || env('COPILOT_GITHUB_TOKEN') || env('GH_TOKEN')) return true
+    return (await this.cliStatus(id, file)).signedIn
+  }
+
+  /** Whether the tool is signed in, and as whom (Claude Code: email and plan; Codex: how). */
+  async cliStatus(id, file = this.agentPath(id), { fresh = false } = {}) {
+    if (!file) return { signedIn: false, account: null }
+    const cached = this.cliCache.get(id)
+    if (!fresh && cached && cached.file === file && Date.now() - cached.at < STATUS_TTL_MS) return cached.value
+    let value = { signedIn: null, account: null }
+    if (STATUS[id]) {
+      const shell = /\.cmd$/i.test(file)
+      const result = await run(shell ? `"${file}"` : file, STATUS[id], { timeout: 30000, shell })
+      value = { signedIn: result.ok, account: result.ok ? parseAccount(id, `${result.stdout || ''}\n${result.stderr || ''}`) : null }
+    } else if (id === 'copilot') {
       const gh = this.gh()
-      return Boolean(gh) && (await run(gh, ['auth', 'token'], { timeout: 20000 })).ok
+      const signedIn = Boolean(this.config().connected?.copilot || env('COPILOT_GITHUB_TOKEN') || env('GH_TOKEN')) || (Boolean(gh) && (await run(gh, ['auth', 'token'], { timeout: 20000 })).ok)
+      value = { signedIn, account: null }
     }
-    return null
+    this.cliCache.set(id, { file, at: Date.now(), value })
+    return value
+  }
+
+  /**
+   * Stop using a connected account. The tool stays installed and signed in on this PC (other programs
+   * may use it); PockPock just no longer sends anything to it, and goes back to fixing with itself.
+   */
+  disconnectAgent(id) {
+    if (!CLOUD_IDS.includes(id)) throw new Error('Unknown AI.')
+    const config = this.config()
+    const connected = { ...config.connected }
+    delete connected[id]
+    this.save({ connected, ...(config.agent?.id === id ? { agent: null } : {}) })
+    this.cliCache.delete(id)
+    return this.agents()
+  }
+
+  /** PockPock itself with the suggested local model, or null when Ollama has none. */
+  async localAgent() {
+    const tags = await httpJson('http://127.0.0.1:11434/api/tags', 3000)
+    const model = suggestLocalModel(Array.isArray(tags?.json?.models) ? tags.json.models.map((item) => item.name) : [])
+    return model ? { id: 'local', model, openclaw: false, chosenAt: '' } : null
+  }
+
+  /**
+   * The AI that fixes reports now. A cloud account is used only when the user connected it here and
+   * its tool is still installed and signed in; otherwise PockPock itself, with a note saying why.
+   */
+  async effectiveAgent(config = this.config()) {
+    const chosen = config.agent
+    if (chosen?.id === 'local') return { agent: chosen, fallback: '' }
+    let reason = ''
+    if (chosen && CLOUD_IDS.includes(chosen.id)) {
+      const name = AGENTS[chosen.id].name
+      if (!config.connected?.[chosen.id]) reason = `${name} is chosen, but your ${AGENTS[chosen.id].vendor} account was never connected here`
+      else if (!this.agentPath(chosen.id)) reason = `${name} is no longer installed`
+      else if ((await this.cliStatus(chosen.id)).signedIn !== true) reason = `${name} is no longer signed in`
+      if (!reason) return { agent: chosen, fallback: '' }
+    }
+    const local = await this.localAgent()
+    if (!local) return { agent: null, fallback: reason ? `${reason}, and PockPock itself needs a local model (start Ollama on the Services page).` : '' }
+    return { agent: local, fallback: reason ? `${reason}, so PockPock itself fixes reports with ${local.model}.` : '' }
   }
 
   /**
@@ -176,6 +238,7 @@ class Maintenance {
         say(`${agent.name} is installed.`)
       }
       const file = this.agentPath(id)
+      this.cliCache.delete(id)
       // A fresh Copilot install is signed in explicitly, so it does not depend on the GitHub CLI's token.
       const needsLogin = id === 'copilot' ? !this.config().connected?.copilot && !(await this.signedIn(id, file)) : !(await this.signedIn(id, file))
       if (needsLogin) {
@@ -192,6 +255,7 @@ class Maintenance {
         say('Signed in.')
       }
       this.save({ connected: { ...this.config().connected, [id]: new Date().toISOString() } })
+      this.cliCache.delete(id)
       return this.agents()
     } finally {
       this.connecting = null
@@ -210,6 +274,7 @@ class Maintenance {
     if (!AGENT_IDS.includes(id)) throw new Error('Unknown AI.')
     const model = id === 'local' ? String(choice.model || '').slice(0, 120) : ''
     if (id === 'local' && !model) throw new Error('Choose a local model.')
+    if (CLOUD_IDS.includes(id) && !this.config().connected?.[id]) throw new Error(`Connect your ${AGENTS[id].vendor} account first.`)
     // PockPock itself can work through OpenClaw, which lets it run commands (build, test, automate).
     const openclaw = id === 'local' && choice.openclaw === true
     if (openclaw && !paths.openclawEntry()) throw new Error('OpenClaw is not installed. Run Setup and include OpenClaw.')
@@ -309,11 +374,16 @@ class Maintenance {
   async status() {
     const config = this.config()
     const repoOk = config.repo?.dir ? await this.isClone(config.repo.dir) : false
+    const { agent, fallback } = await this.effectiveAgent(config)
     return {
-      agent: config.agent ?? null,
+      // The AI that fixes reports now (PockPock itself when no account is connected), the one the
+      // user chose, and why they differ.
+      agent,
+      chosen: config.agent ?? null,
+      fallback,
       repo: config.repo ? { ...config.repo, present: repoOk } : null,
       defaultFolder: this.defaultFolder(),
-      ready: Boolean(config.agent && config.repo && repoOk),
+      ready: Boolean(agent && config.repo && repoOk),
       auto: config.auto === true,
     }
   }
@@ -330,4 +400,4 @@ class Maintenance {
   }
 }
 
-module.exports = { Maintenance, parseDeviceCode, suggestLocalModel, UPSTREAM, AGENT_IDS }
+module.exports = { Maintenance, parseDeviceCode, suggestLocalModel, UPSTREAM, AGENT_IDS, CLOUD_IDS }

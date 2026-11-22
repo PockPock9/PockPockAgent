@@ -61,7 +61,8 @@ def create_router(bridge: OpenClawBridge, require_local: Callable[[Request], Non
     @router.post("/chat")
     async def openclaw_chat(payload: OpenClawChatPayload):
         try:
-            turn = bridge.start_turn(payload.session_id, payload.message, payload.permission_mode, payload.model)
+            selection = await asyncio.to_thread(bridge.select_tools, payload.session_id, payload.message)
+            turn = bridge.start_turn(payload.session_id, payload.message, payload.permission_mode, payload.model, selection)
         except OpenClawError as err:
             raise HTTPException(status_code=err.status_code, detail=str(err)) from err
 
@@ -76,6 +77,16 @@ def create_router(bridge: OpenClawBridge, require_local: Callable[[Request], Non
                     "source": "openclaw",
                     "reason": "Sent to the OpenClaw agent running on this PC",
                 })
+                if selection and selection.get("toolOverrides"):
+                    yield _sse({
+                        "type": "tool_selection",
+                        "skills_offered": selection.get("skills_offered"),
+                        "skills_total": selection.get("skills_total"),
+                        "servers_offered": selection.get("servers_offered"),
+                        "servers_total": selection.get("servers_total"),
+                        "tokens_saved": selection.get("tokens_saved", 0),
+                        "method": selection.get("method", ""),
+                    })
                 while True:
                     event = await asyncio.to_thread(turn.next_event, HEARTBEAT_SECONDS)
                     if event is False:

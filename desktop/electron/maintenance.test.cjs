@@ -24,6 +24,8 @@ test('agent choice is validated and saved; forget removes the setup', () => {
   assert.throws(() => manager.setAgent({ id: 'gpt-everything' }), /Unknown AI/)
   assert.throws(() => manager.setAgent({ id: 'local' }), /Choose a local model/)
   assert.equal(manager.setAgent({ id: 'local', model: 'qwen3.5:27b' }).agent.model, 'qwen3.5:27b')
+  assert.throws(() => manager.setAgent({ id: 'claude' }), /Connect your Anthropic account first/, 'a signed-in tool is not used until connected here')
+  manager.save({ connected: { claude: '2026-11-22T00:00:00.000Z' } })
   assert.equal(manager.setAgent({ id: 'claude', model: 'ignored' }).agent.model, '')
   assert.equal(manager.setAgent({ id: 'claude', openclaw: true }).agent.openclaw, false, 'only PockPock itself can use OpenClaw')
   assert.equal(manager.config().agent.id, 'claude')
@@ -41,7 +43,7 @@ test('clone refuses relative folders and non-empty folders that are not a PockPo
   fs.rmSync(dir, { recursive: true, force: true })
 })
 
-const { installPlan, parseUrl, plain } = require('./maintenance-connect.cjs')
+const { installPlan, parseAccount, parseUrl, plain } = require('./maintenance-connect.cjs')
 
 test('install plan: winget or Homebrew first, npm as the fallback, constants only', () => {
   const win = installPlan('claude', { platform: 'win32', tools: { winget: 'C:\\w\\winget.exe', npm: 'C:\\Program Files\\nodejs\\npm.cmd' } })
@@ -53,7 +55,10 @@ test('install plan: winget or Homebrew first, npm as the fallback, constants onl
   assert.deepEqual(mac.map((step) => step.label), ['Homebrew', 'npm'])
   assert.equal(mac[1].shell, false)
   assert.deepEqual(installPlan('copilot', { platform: 'win32', tools: {} }), [])
-  assert.deepEqual(installPlan('codex', { platform: 'win32', tools: { npm: 'npm.cmd' } }), [], 'only Claude Code and Copilot connect from the app')
+  const codex = installPlan('codex', { platform: 'win32', tools: { winget: 'C:\\w\\winget.exe', npm: 'npm.cmd' } })
+  assert.deepEqual(codex.map((step) => step.label), ['npm'], 'Codex has no winget package: npm only on Windows')
+  assert.deepEqual(codex[0].args, ['install', '-g', '@openai/codex'])
+  assert.deepEqual(installPlan('codex', { platform: 'darwin', tools: { brew: '/opt/homebrew/bin/brew' } })[0].args, ['install', '--cask', 'codex'])
 })
 
 test('sign-in links and plain text are read from CLI output', () => {
@@ -65,10 +70,63 @@ test('sign-in links and plain text are read from CLI output', () => {
 test('connect refuses unknown AIs and a second run at the same time', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'maint-'))
   const manager = new Maintenance({ userData: dir, emit: () => {} })
-  await assert.rejects(() => manager.connectAgent('codex'), /cannot be connected/)
   await assert.rejects(() => manager.connectAgent('local'), /cannot be connected/)
+  await assert.rejects(() => manager.connectAgent('gpt-everything'), /cannot be connected/)
   manager.connecting = { id: 'claude', child: null }
   await assert.rejects(() => manager.connectAgent('copilot'), /still running/)
   assert.equal(manager.cancelConnect(), true)
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('the account a signed-in tool uses is read from its status output', () => {
+  const claude = parseAccount('claude', '{\n  "loggedIn": true,\n  "authMethod": "claude.ai",\n  "email": "someone@example.com",\n  "subscriptionType": "pro"\n}')
+  assert.deepEqual(claude, { email: 'someone@example.com', plan: 'Claude Pro' })
+  assert.deepEqual(parseAccount('claude', 'not json'), { email: '', plan: '' })
+  assert.deepEqual(parseAccount('codex', 'Logged in using ChatGPT\n'), { email: '', plan: 'Logged in using ChatGPT' })
+})
+
+test('PockPock itself fixes reports unless a chosen account is connected here and still signed in', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'maint-'))
+  const manager = new Maintenance({ userData: dir, emit: () => {} })
+  const local = { id: 'local', model: 'qwen3.5:9b', openclaw: false, chosenAt: '' }
+  manager.localAgent = async () => local
+  let signedIn = true
+  manager.cliStatus = async () => ({ signedIn, account: null })
+  manager.agentPath = () => 'C:\\claude.exe'
+  // Nothing chosen: PockPock itself, with no note.
+  assert.deepEqual(await manager.effectiveAgent(), { agent: local, fallback: '' })
+  // Chosen but never connected here (the tool is only signed in on this PC): PockPock itself, and why.
+  manager.save({ agent: { id: 'claude', model: '', openclaw: false, chosenAt: 'x' } })
+  let result = await manager.effectiveAgent()
+  assert.equal(result.agent, local)
+  assert.match(result.fallback, /never connected here, so PockPock itself fixes reports with qwen3.5:9b/)
+  // Connected: the account is used.
+  manager.save({ connected: { claude: '2026-11-22T00:00:00.000Z' } })
+  assert.equal((await manager.effectiveAgent()).agent.id, 'claude')
+  // Signed out since: back to PockPock itself.
+  signedIn = false
+  result = await manager.effectiveAgent()
+  assert.equal(result.agent, local)
+  assert.match(result.fallback, /no longer signed in/)
+  // No local model either: nothing can fix reports, and the note says what to do.
+  manager.localAgent = async () => null
+  result = await manager.effectiveAgent()
+  assert.equal(result.agent, null)
+  assert.match(result.fallback, /start Ollama/)
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('disconnecting forgets the account here and goes back to PockPock itself', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'maint-'))
+  const manager = new Maintenance({ userData: dir, emit: () => {} })
+  manager.agents = async () => []
+  manager.save({ agent: { id: 'codex', model: '', openclaw: false, chosenAt: 'x' }, connected: { codex: 'a', claude: 'b' } })
+  await manager.disconnectAgent('codex')
+  assert.deepEqual(manager.config().connected, { claude: 'b' })
+  assert.equal(manager.config().agent, null, 'the chosen account is cleared, so PockPock itself is used')
+  manager.save({ agent: { id: 'local', model: 'qwen3.5:9b', openclaw: false, chosenAt: 'x' } })
+  await manager.disconnectAgent('claude')
+  assert.equal(manager.config().agent.id, 'local', 'another choice is kept')
+  assert.throws(() => manager.disconnectAgent('local'), /Unknown AI/)
   fs.rmSync(dir, { recursive: true, force: true })
 })

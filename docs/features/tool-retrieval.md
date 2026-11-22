@@ -248,3 +248,7 @@ model menu and automatic chat fallback skip embedding models).
 - Fine-tuning a model on tool traces is deliberately deferred until
   retrieval and evals are measured — fine-tuning on top of bad retrieval
   bakes in bad habits.
+
+## OpenClaw engine
+
+The PockPock Agent loop above controls its own tool list. The OpenClaw engine builds its prompt inside the OpenClaw gateway, so PockPock retrieves at a coarser level there: before each turn it ranks the usable skills and MCP servers against the message with the same BM25 and embedding scoring, and hides the rest for that conversation through OpenClaw's per-session `toolOverrides`. OpenClaw's built-in tools cannot be filtered per turn. See [OpenClaw: tool retrieval](openclaw-agent.md#tool-retrieval-skills-and-mcp-servers-per-turn).

@@ -460,6 +460,14 @@ function handleAgentEvent(event: StreamEvent, patch: TurnOptions['patch'], pushT
     case 'sequence_retry':
       patch((message) => addStep(message, { label: text(event.message) || `Trying step ${Number(event.step)} again`, status: 'running' }))
       break
+    case 'tool_selection': {
+      // OpenClaw tool retrieval: how many skills (and MCP servers) this message was offered.
+      const offered = Number(event.skills_offered)
+      const total = Number(event.skills_total)
+      const servers = Number(event.servers_total) > 1 ? ` and ${Number(event.servers_offered)} of ${Number(event.servers_total)} MCP servers` : ''
+      if (Number.isFinite(offered) && Number.isFinite(total)) patch((message) => addStep(message, { label: `Offered OpenClaw ${offered} of ${total} skills${servers} that fit this request`, status: 'done' }, false))
+      break
+    }
     case 'approval_auto': patch((message) => addStep(message, { label: text(event.message) || 'Allowed for this task', status: 'done' }, false)); break
     case 'verifying': patch((message) => ({ ...addStep(message, { label: text(event.message) || 'Checking the success checks', status: 'running' }), verifying: true })); break
     case 'status': patch((message) => addStep(message, { label: text(event.message) || 'Working', status: 'running' })); break

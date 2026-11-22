@@ -1,4 +1,4 @@
-// Connecting a cloud coding agent (Claude Code, GitHub Copilot) for the Maintenance Manager: install
+// Connecting a cloud coding agent (Claude Code, OpenAI Codex, GitHub Copilot) for the Maintenance Manager: install
 // its command-line tool when it is missing, then sign in with the tool's own browser flow. Both steps
 // start only when the user presses Connect. No token passes through PockPock: each tool keeps its own
 // credentials in the system credential store.
@@ -12,6 +12,10 @@ const INSTALLERS = {
     brew: ['install', '--cask', 'claude-code'],
     npm: '@anthropic-ai/claude-code',
   },
+  codex: {
+    brew: ['install', '--cask', 'codex'],
+    npm: '@openai/codex',
+  },
   copilot: {
     winget: 'GitHub.Copilot',
     brew: ['install', 'copilot-cli'],
@@ -22,7 +26,32 @@ const INSTALLERS = {
 /** Sign-in commands. Each opens the vendor's page in the browser and waits for the user there. */
 const LOGIN = {
   claude: ['auth', 'login'],
+  codex: ['login'],
   copilot: ['login'],
+}
+
+/** Sign-in status commands: exit code 0 when the tool is signed in. Copilot has none. */
+const STATUS = {
+  claude: ['auth', 'status'],
+  codex: ['login', 'status'],
+}
+
+/**
+ * Which account a signed-in tool uses, from its status output, so the user sees it before connecting.
+ * Claude Code prints JSON (email, plan); Codex prints a line such as "Logged in using ChatGPT".
+ */
+function parseAccount(id, output) {
+  const text = plain(output).trim()
+  if (id === 'claude') {
+    try {
+      const json = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1))
+      const tier = typeof json.subscriptionType === 'string' ? json.subscriptionType : ''
+      const plan = tier ? `Claude ${tier[0].toUpperCase()}${tier.slice(1)}` : json.authMethod === 'apiKey' ? 'API key' : ''
+      return { email: typeof json.email === 'string' ? json.email.slice(0, 120) : '', plan }
+    } catch { return { email: '', plan: '' } }
+  }
+  const line = text.split('\n').map((item) => item.trim()).find((item) => /logged in|signed in/i.test(item)) || ''
+  return { email: '', plan: line.slice(0, 120) }
 }
 
 /**
@@ -33,8 +62,8 @@ function installPlan(id, { platform = process.platform, tools = {} } = {}) {
   const spec = INSTALLERS[id]
   if (!spec) return []
   const plan = []
-  if (platform === 'win32' && tools.winget) plan.push({ label: 'winget', file: tools.winget, args: ['install', '-e', '--id', spec.winget, '--silent', '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity'], shell: false })
-  if (platform === 'darwin' && tools.brew) plan.push({ label: 'Homebrew', file: tools.brew, args: spec.brew, shell: false })
+  if (platform === 'win32' && tools.winget && spec.winget) plan.push({ label: 'winget', file: tools.winget, args: ['install', '-e', '--id', spec.winget, '--silent', '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity'], shell: false })
+  if (platform === 'darwin' && tools.brew && spec.brew) plan.push({ label: 'Homebrew', file: tools.brew, args: spec.brew, shell: false })
   if (tools.npm) {
     const shell = /\.(cmd|bat)$/i.test(tools.npm)
     plan.push({ label: 'npm', file: shell ? `"${tools.npm}"` : tools.npm, args: ['install', '-g', spec.npm], shell })
@@ -74,4 +103,4 @@ function stream(file, args, { onLine, onSpawn, shell = false, timeout = 15 * 60 
   })
 }
 
-module.exports = { INSTALLERS, LOGIN, installPlan, parseUrl, plain, stream }
+module.exports = { INSTALLERS, LOGIN, STATUS, installPlan, parseAccount, parseUrl, plain, stream }

@@ -101,6 +101,8 @@ Skills and MCP servers can be added to this engine by pasting a link; see [Skill
 
 With the OpenClaw engine selected, the model picker lists **Default** (OpenClaw's configured model) and the other tool-capable Ollama models in OpenClaw's config. The choice is saved in the app's settings (`clawModel`) and sent with each message; PockPock sets it on the conversation's OpenClaw session before the turn. Choosing **Default** resets the session to OpenClaw's default. A name that is not in OpenClaw's list is refused.
 
+**The list follows Ollama** (`desktop/electron/openclaw-models.cjs`, since 2026-11-22). OpenClaw writes its Ollama model list once, when it is set up, so a model pulled later (for example `qwen3.6:35b-a3b`) never appeared in the picker and removed models stayed in it. The app now compares the list with Ollama's installed models when OpenClaw comes up and then at most once a minute, and calls `openclaw config set models.providers.ollama.models` only when the installed models changed. A new model's entry comes from Ollama's `/api/show`: tools, thinking (with the thinking levels), image input, and the context length, with `contextTokens` set to 64K or the model's maximum if smaller. Existing entries keep their settings; entries for uninstalled models are removed (with `--replace`, which OpenClaw requires to drop entries), except the default model's. Models without tool support are listed but, as before, not shown in the picker. Tests: `openclaw-models.test.cjs`.
+
 Cloud models chosen on the **Cloud models** page are listed below the local ones, under **Cloud models · sent to the provider**. They belong to the `pockpock-cloud` provider that PockPock writes into OpenClaw's configuration; its address is the PockPock gateway's local endpoint and its key is a local token, so no cloud API key is stored by OpenClaw. A chosen cloud model is set on the session as `pockpock-cloud/<provider>/<model>`. See [Cloud models](cloud-models.md).
 
 A model is loaded by Ollama when a turn first uses it and unloaded after Ollama's idle period (five minutes unless `OLLAMA_KEEP_ALIVE` is set). Status checks do not load a model. Switching to a model that does not fit beside the loaded one makes Ollama unload the other first.
@@ -118,6 +120,23 @@ PockPock's own per-turn limit (`POCKPOCK_OPENCLAW_TIMEOUT_SECONDS`) defaults to 
 Switching model in the middle of a long conversation makes the new model read the whole history first. Start a new chat for a task meant for the large model.
 
 Each PockPock conversation maps to one OpenClaw session (`pockpock-<conversation id>`), so the agent remembers earlier turns in the thread. Turns sent in Chat, Agent, or NemoClaw mode are not copied into it. The model picker is hidden because OpenClaw uses its own configured model. Images are not accepted; text and document attachments are.
+
+## Tool retrieval: skills and MCP servers per turn
+
+OpenClaw puts every usable skill (name, description, location) and every MCP server's tools into its prompt on every turn; its whole prompt is about 21,000 tokens, which a model that does not fit the graphics card reads at a few hundred tokens a second whenever it is not cached (Ollama's log showed 21,089 tokens at 469 tokens/s, about 45 s, with `qwen3.6:35b-a3b` on a 12 GB card). PockPock cannot change OpenClaw's built-in tools (commands, files, browser, computer control) per turn: OpenClaw's `chat.send` and `agent` requests take no tool list. It can change skills and MCP servers per session, through `sessions.patch {toolOverrides: {skills: {<key>: false}, mcpServers: {<name>: false}}}`.
+
+Before each turn (`backend/projects/openclaw_bridge/tool_selection.py`):
+
+1. The catalog: the usable, switched-on skills (added from links and built in) and MCP servers, from the same list as the Skills and MCP servers pages; read again after 5 minutes. PockPock's own connector server (`pockpock-connectors`) is never hidden.
+2. Skills are ranked against the message with BM25 over each skill's name and description (common words such as "the" and "and" are ignored), plus embeddings when an Ollama embedding model is installed (`nomic-embed-text-v2-moe`, the same as PockPock Agent's tool retrieval). Up to 6 are offered: those that share a word with the message, then those whose embedding is clearly closer to the message than the average (0.08 above the mean similarity).
+3. Skills and servers offered in the conversation's last 3 turns stay offered, so a follow-up keeps them.
+4. Every other skill or server is hidden for this session. Only hiding is possible: the overlay carries `false` entries only (`sanitizeToolOverrides` in `turn_helpers.mjs` drops anything else), so a skill or server the user switched off is never switched on. The overlay goes into the `sessions.patch` that already sets the permission and model before `chat.send`; when nothing is hidden it is `null`, which clears an earlier overlay.
+
+Not filtered: fewer than 8 skills, or a single MCP server (little to save). On any failure (OpenClaw not reachable for the list, an embedding error) the turn is sent with no overlay, so OpenClaw offers everything as before. Subtask turns (Plan-and-Sequence) are not filtered. `POCKPOCK_OPENCLAW_TOOL_RETRIEVAL=0` turns it off.
+
+The task shows a step such as "Offered OpenClaw 4 of 22 skills that fit this request" (the `tool_selection` event).
+
+**What it saves.** On this PC, the 22 usable skills take about 1,100 tokens of the roughly 21,000; offering 6 saves about 800 tokens (about 4%) per uncached turn. The saving grows with MCP servers: each tool definition is a few hundred tokens, so a server with dozens of tools adds thousands. Most of OpenClaw's prompt (its built-in tools and instructions) is unchanged; OpenClaw's global tool profile (`tools.profile`, set to `full` by Setup) is the only control over that part.
 
 ## Subtask mode (Plan-and-Sequence P4)
 
@@ -230,6 +249,7 @@ Validation failures return a JSON error before any stream opens: `400` (`invalid
 | `approval` | `id`, `title`, `description`, `severity`, `tool_name` |
 | `approval_resolved` | `id`, `decision` |
 | `approval_error` | `id`, `message` (the gateway rejected a decision) |
+| `tool_selection` | Sent after `decision` when skills or MCP servers were hidden for this turn: `skills_offered`, `skills_total`, `servers_offered`, `servers_total`, `tokens_saved` (estimate), `method` (`keyword` or `hybrid`) |
 | `done` | `duration_ms` |
 | `error` | `code` (`plugin_missing`, `timeout`, `stalled`, `turn_failed`, `gateway_closed`, `aborted`, `bridge_failed`), `message` |
 
@@ -249,6 +269,7 @@ Set these for the gateway process before `backend/scripts/pockpock.py start`:
 | `POCKPOCK_OPENCLAW_AGENT` | `main` | OpenClaw agent id |
 | `POCKPOCK_OPENCLAW_TIMEOUT_SECONDS` | `1800` | Per-turn limit, clamped to 30–3600; the run is aborted when it expires |
 | `POCKPOCK_OPENCLAW_NODE` | `node` | Node.js executable used for the helper |
+| `POCKPOCK_OPENCLAW_TOOL_RETRIEVAL` | `1` | `0`/`false`/`off` offers every skill and MCP server on every turn (see Tool retrieval) |
 | `OPENCLAW_STATE_DIR` | `~/.openclaw` | OpenClaw state directory, if you moved it |
 
 An invalid agent name disables the integration at startup and logs a warning.
