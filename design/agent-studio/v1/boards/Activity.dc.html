@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Activity live</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.app{font-family:Inter,"Segoe UI Variable","Segoe UI",system-ui,sans-serif;font-size:13.5px;line-height:1.45;color:var(--text);background:var(--bg);display:flex;flex-direction:column;box-sizing:border-box;overflow:hidden}
+.app *{box-sizing:border-box}
+:where(.app) :where(button){font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+.mono{font-family:"JetBrains Mono","Cascadia Code",ui-monospace,monospace}
+.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.i.s{width:14px;height:14px}
+.mark .toe{fill:var(--toe)}
+.mark .bolt{fill:var(--bolt);stroke:var(--gap);stroke-width:12;paint-order:stroke;stroke-linejoin:round;transform-box:fill-box;transform-origin:center}
+.working .bolt{animation:pulse 1.1s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.55;transform:scale(.86)}}
+@keyframes sweep{0%{transform:translateX(-100%)}100%{transform:translateX(320%)}}
+@keyframes blink{50%{opacity:0}}
+@keyframes spin{to{transform:rotate(360deg)}}
+.sweep{position:relative;height:2px;background:var(--border);overflow:hidden}
+.sweep::after{content:"";position:absolute;inset:0 auto 0 0;width:30%;background:var(--accs);animation:sweep 1.6s ease-in-out infinite}
+.spin{animation:spin 1s linear infinite}
+@media (prefers-reduced-motion:reduce){.working .bolt,.sweep::after,.spin,.caret{animation:none}.sweep::after{width:100%}}
+.title{height:38px;flex:none;display:flex;align-items:center;gap:12px;padding:0 0 0 14px;background:var(--side);border-bottom:1px solid var(--border)}
+.cmd{margin:0 auto;width:min(420px,40%);height:26px;display:flex;align-items:center;gap:8px;padding:0 10px;border:1px solid var(--border2);border-radius:8px;color:var(--t3);background:var(--bg)}
+.cmd kbd{margin-left:auto;font:500 11px "JetBrains Mono",monospace;color:var(--t3)}
+.body{flex:1;min-height:0;display:flex}
+.rail{width:56px;flex:none;background:var(--side);border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 0}
+.rail button{width:40px;height:40px;border-radius:10px;display:grid;place-items:center;color:var(--t2);position:relative}
+.rail button:hover{background:var(--hover)}
+.rail button.on{background:var(--active);color:var(--accs)}
+.rail .dot{position:absolute;top:8px;right:8px;width:7px;height:7px;border-radius:50%;background:var(--warn)}
+.rail .sp{flex:1}
+.tasks{width:252px;flex:none;background:var(--side);border-right:1px solid var(--border);display:flex;flex-direction:column;min-height:0}
+.newtask{margin:12px 12px 8px;height:36px;border-radius:8px;background:var(--accfill);color:var(--onacc)!important;display:flex;align-items:center;justify-content:center;gap:8px;font-weight:600}
+.newtask:hover{filter:brightness(1.08)}
+.search{margin:0 12px 6px;height:32px;display:flex;align-items:center;gap:8px;padding:0 10px;border:1px solid var(--border2);border-radius:8px;color:var(--t3)}
+.group{padding:10px 16px 4px;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--t3)}
+.task{margin:1px 8px;padding:8px 10px;border-radius:8px;display:flex;gap:10px;align-items:flex-start;text-align:left;width:calc(100% - 16px)}
+.task:hover{background:var(--hover)}
+.task.on{background:var(--active)}
+.task .ic{width:16px;height:16px;margin-top:2px;flex:none;display:grid;place-items:center}
+.task b{display:block;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:168px}
+.task small{display:block;color:var(--t3);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:168px}
+.sdot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:none}
+.main{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bg)}
+.head{height:56px;flex:none;display:flex;align-items:center;gap:16px;padding:0 20px;border-bottom:1px solid var(--border)}
+.head h1{margin:0;font-size:15px;font-weight:600;line-height:1.2}
+.head p{margin:0;color:var(--t3);font-size:12px}
+.seg{margin-left:auto;display:flex;padding:3px;gap:2px;background:var(--raise);border:1px solid var(--border);border-radius:10px}
+.seg button{padding:5px 11px;border-radius:7px;color:var(--t2);font-size:12.5px;font-weight:500}
+.seg button.on{background:var(--active);color:var(--text)}
+.runbar{flex:none;display:flex;align-items:center;gap:18px;padding:0 20px;height:46px;background:var(--panel)}
+.phases{display:flex;align-items:center;gap:8px;flex:1;min-width:0}
+.ph{display:flex;align-items:center;gap:7px;color:var(--t3);font-size:12.5px;font-weight:500;white-space:nowrap}
+.ph.done{color:var(--oktext)}
+.ph.now{color:var(--text)}
+.ph .n{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;border:1.5px solid var(--ctl);font-size:11px}
+.ph.done .n{background:var(--ok);border-color:var(--ok);color:#06150f}
+.ph.now .n{border-color:var(--accs);color:var(--accs)}
+.ph+.ph::before{content:"";width:28px;height:1.5px;background:var(--border2);margin-right:1px}
+.ph.done+.ph::before,.ph.now::before{background:var(--ok)}
+.beat{display:flex;align-items:center;gap:8px;color:var(--t2);font-size:12.5px;white-space:nowrap}
+.beat .sdot{background:var(--ok)}
+.btn{height:30px;padding:0 12px;border-radius:8px;border:1px solid var(--border2)!important;display:inline-flex;align-items:center;gap:7px;font-weight:500;font-size:12.5px}
+.btn:hover{background:var(--hover)}
+.btn.fill{background:var(--accfill);border-color:var(--accfill)!important;color:var(--onacc)!important}
+.thread{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;align-items:center;padding:20px 20px 4px}
+.col{width:min(760px,100%);display:flex;flex-direction:column;gap:14px;margin-top:auto}
+.who{font-size:12px;font-weight:600;color:var(--t3);margin-bottom:4px;display:flex;align-items:center;gap:8px}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:10px}
+.card .ch{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--border)}
+.chip{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 9px;border-radius:999px;font-size:12px;font-weight:500;background:var(--raise);border:1px solid var(--border2);color:var(--t2);white-space:nowrap}
+.chip.ok{background:var(--okbg);border-color:transparent;color:var(--oktext)}
+.chip.acc{background:var(--accbg);border-color:transparent;color:var(--accs)}
+.step{display:flex;align-items:center;gap:10px;padding:8px 14px;min-height:36px}
+.step .t{flex:1;min-width:0}
+.step .m{color:var(--t3);font-size:12px;font-variant-numeric:tabular-nums}
+.step.run{background:var(--accbg)}
+.step.pend{color:var(--t3)}
+.sub{margin:0 14px 8px 38px;padding:0;display:flex;flex-direction:column;gap:2px;color:var(--t2);font-size:12.5px}
+.sub div{display:flex;gap:8px;align-items:center;min-height:24px}
+.sub .m{margin-left:auto;color:var(--t3);font-size:12px}
+.log{margin:6px 14px 12px 38px;padding:9px 12px;border-radius:8px;background:var(--code);border:1px solid var(--border);font-size:12px;line-height:1.55;color:var(--log)}
+.caret{display:inline-block;width:7px;height:14px;background:var(--accs);vertical-align:-2px;margin-left:2px;animation:blink 1s steps(1) infinite}
+.composer{flex:none;display:flex;justify-content:center;padding:6px 20px 16px}
+.cbox{width:min(760px,100%)}
+.ctx{display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap}
+.input{background:var(--raise);border:1px solid var(--ctl);border-radius:12px;overflow:hidden}
+.input .txt{padding:12px 14px 6px;color:var(--t3);min-height:44px}
+.input .bar{display:flex;align-items:center;gap:6px;padding:6px 8px 8px}
+.pick{height:28px;padding:0 9px;border-radius:8px;display:inline-flex;align-items:center;gap:6px;color:var(--t2);font-size:12.5px;font-weight:500}
+.pick:hover{background:var(--hover)}
+.send{margin-left:auto;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:var(--text);color:var(--bg)}
+.insp{width:320px;flex:none;background:var(--side);border-left:1px solid var(--border);display:flex;flex-direction:column;min-height:0}
+.tabs{display:flex;gap:2px;padding:0 10px;border-bottom:1px solid var(--border);height:46px;align-items:flex-end}
+.tabs button{padding:0 10px 12px;color:var(--t3);font-weight:500;border-bottom:2px solid transparent}
+.tabs button.on{color:var(--text);border-bottom-color:var(--accs)}
+.sec{padding:14px 16px;border-bottom:1px solid var(--border)}
+.sec h3{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--t3)}
+.kv{display:flex;align-items:center;gap:10px;min-height:30px}
+.kv span:first-child{color:var(--t3);width:78px;flex:none}
+.meter{height:6px;border-radius:99px;background:var(--active);overflow:hidden;margin:8px 0 6px}
+.meter i{display:block;height:100%;background:var(--accs);border-radius:99px}
+.file{display:flex;align-items:center;gap:8px;height:30px;color:var(--t2)}
+.file em{margin-left:auto;font-style:normal;color:var(--t3);font-size:12px}
+.status{height:24px;flex:none;display:flex;align-items:center;gap:18px;padding:0 14px;background:var(--side);border-top:1px solid var(--border);font-size:12px;color:var(--t3)}
+.status span{display:flex;align-items:center;gap:6px}
+
+.sub-nav{width:252px;flex:none;background:var(--side);border-right:1px solid var(--border);padding:14px 8px;overflow:auto}
+.sub-nav h2{margin:0 8px 10px;font-size:15px;font-weight:600}
+.nav{width:100%;display:flex;align-items:center;gap:10px;height:34px;padding:0 10px;border-radius:8px;color:var(--t2);text-align:left}
+.nav:hover{background:var(--hover)}
+.nav.on{background:var(--active);color:var(--text)}
+.nav small{margin-left:auto;color:var(--t3);font-size:12px}
+.nav small.warn{color:var(--warntext);font-weight:600}
+.page{flex:1;min-width:0;overflow:auto;padding:26px 32px 24px}
+.page h1{margin:0;font-size:22px;font-weight:600;line-height:1.25}
+.page .lead{margin:4px 0 0;color:var(--t2);max-width:560px}
+.toolbar{display:flex;align-items:center;gap:12px;margin:22px 0 16px;flex-wrap:wrap}
+.filters{display:flex;gap:6px}
+.filters button{height:30px;padding:0 12px;border-radius:999px;border:1px solid var(--border2);color:var(--t2);font-weight:500;font-size:12.5px}
+.filters button.on{background:var(--active);color:var(--text);border-color:var(--active)}
+.filters b{font-weight:500;color:var(--t3);margin-left:5px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(280px,100%),1fr));gap:12px}
+.sk{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px;text-align:left}
+.sk:hover{border-color:var(--border2);background:var(--raise)}
+.sk.sel{border-color:var(--accs);box-shadow:0 0 0 3px var(--accbg)}
+.sk .top{display:flex;gap:12px;align-items:flex-start}
+.tile{width:36px;height:36px;border-radius:9px;background:var(--active);display:grid;place-items:center;color:var(--t2);flex:none}
+.sk b{font-weight:600;display:block}
+.sk p{margin:0;color:var(--t2);font-size:12.5px}
+.sk .foot{display:flex;align-items:center;gap:8px;color:var(--t3);font-size:12px;margin-top:auto}
+.sw{margin-left:auto;width:36px;height:20px;border-radius:99px;background:var(--active);border:1.5px solid var(--ctl)!important;position:relative;flex:none}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:var(--t2)}
+.sw[aria-checked=true]{background:var(--accfill);border-color:var(--accfill)!important}
+.sw[aria-checked=true]::after{left:19px;background:#fff}
+.chip.warn{background:rgba(229,168,59,.14);border-color:transparent;color:var(--warntext)}
+.detail{width:340px;flex:none;border-left:1px solid var(--border);background:var(--side);overflow:auto}
+.detail .sec{padding:16px 20px}
+.perm{display:flex;gap:10px;align-items:flex-start;padding:6px 0;color:var(--t2);font-size:12.5px}
+.pg{max-width:880px}
+.page>.pg{margin:0 auto}
+.eyebrow{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--t3);margin-bottom:6px}
+.rows{list-style:none;margin:0;padding:0;border:1px solid var(--border);border-radius:10px;background:var(--panel);overflow:hidden}
+.rw{display:flex;align-items:center;gap:14px;padding:12px 16px;border-bottom:1px solid var(--border);min-height:60px}
+.rw:last-child{border-bottom:0}
+.rw .rt{flex:1;min-width:0}
+.rw .rt b{display:block;font-weight:600}
+.rw .rt span{display:block;color:var(--t3);font-size:12.5px}
+.rw .rt p{margin:4px 0 0;color:var(--t2);font-size:12.5px}
+.rw .act{display:flex;align-items:center;gap:8px;flex:none}
+.h2{font-size:13px;font-weight:600;margin:26px 0 10px;display:flex;align-items:center;gap:8px}
+.h2 small{color:var(--t3);font-weight:500}
+.banner{display:flex;gap:10px;align-items:flex-start;padding:11px 14px;border-radius:10px;border:1px solid var(--border2);background:var(--raise);color:var(--t2);font-size:12.5px;margin:14px 0}
+.banner.warn{background:var(--warnbg);border-color:transparent;color:var(--warntext)}
+.banner.err{background:var(--errbg);border-color:transparent;color:var(--errtext)}
+.banner.acc{background:var(--accbg);border-color:transparent;color:var(--text)}
+.field{display:flex;flex-direction:column;gap:6px;margin:12px 0}
+.field label{font-weight:500;font-size:12.5px}
+.field small{color:var(--t3);font-size:12px}
+.in{min-height:36px;border:1px solid var(--ctl);border-radius:8px;background:var(--raise);padding:7px 12px;display:flex;align-items:center;gap:8px;color:var(--text)}
+.in.ph{color:var(--t3)}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.stat{padding:14px 16px;border:1px solid var(--border);border-radius:10px;background:var(--panel);display:flex;flex-direction:column;gap:2px}
+.stat span{color:var(--t3);font-size:12.5px;display:flex;gap:6px;align-items:center}
+.stat strong{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums}
+.tb{width:100%;border-collapse:separate;border-spacing:0;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--panel)}
+.tb th,.tb td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--border);font-size:12.5px}
+.tb tr:last-child td{border-bottom:0}
+.tb th{color:var(--t3);font-weight:600;background:var(--side)}
+.pop{background:var(--pop);border:1px solid var(--border2);border-radius:10px;box-shadow:0 12px 32px var(--shadow);padding:6px}
+.pop .pt{padding:8px 10px 4px;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--t3)}
+.mi{display:flex;gap:10px;padding:8px 10px;border-radius:8px;text-align:left;width:100%;align-items:flex-start;color:var(--text)}
+.mi:hover{background:var(--hover)}
+.mi.sel{background:var(--accbg)}
+.mi b{display:block;font-weight:600}
+.mi small{display:block;color:var(--t3);font-size:12.5px}
+.mi .ck{margin-left:auto;color:var(--accs);flex:none}
+.cb{width:16px;height:16px;border-radius:4px;border:1.5px solid var(--ctl);flex:none;display:grid;place-items:center}
+.cb.on{background:var(--accfill);border-color:var(--accfill);color:var(--onacc)}
+.cb .i{width:12px;height:12px;stroke-width:3}
+.scrim{background:rgba(0,0,0,.5);position:absolute;inset:0}
+.dlg{background:var(--pop);border:1px solid var(--border2);border-radius:14px;box-shadow:0 20px 48px var(--shadow);display:flex;flex-direction:column}
+.dlg .dh{padding:16px 20px 4px}
+.dlg .dh h2{margin:0;font-size:16px;font-weight:600}
+.dlg .db{padding:8px 20px 16px}
+.dlg .df{display:flex;gap:8px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--border)}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));gap:20px}
+.cap{font-size:12px;font-weight:600;color:var(--t3);margin:0 0 8px;display:flex;gap:8px;align-items:center}
+.hint{color:var(--t3);font-size:12.5px}
+.tree .file{height:28px;padding:0 6px;border-radius:6px}
+.tree .file:hover{background:var(--hover)}
+.tree .file.m em{color:var(--warntext)}
+.xterm{background:var(--code);border-top:1px solid var(--border);font-size:12.5px;line-height:1.6;color:var(--log);padding:10px 16px;overflow:hidden}
+.pgcard{border:1px solid var(--border);border-radius:10px;background:var(--panel);padding:16px}
+.th{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.th .tc{border:1px solid var(--border);border-radius:10px;padding:10px;background:var(--panel);display:flex;flex-direction:column;gap:8px;text-align:left}
+.th .tc.on{border-color:var(--accs);box-shadow:0 0 0 3px var(--accbg)}
+.sw .i{display:none}
+.stepper{display:flex;gap:10px;align-items:center;color:var(--t3);font-size:12.5px;font-weight:500}
+.stepper .ph{font-size:12.5px}
+
+.live{flex:1;min-width:0;position:relative;overflow:hidden;background:var(--bg);--gl:color-mix(in srgb,var(--accs) 26%,transparent);--glow:color-mix(in srgb,var(--accs) 50%,transparent)}
+.live .bg{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.live .grid3d{position:absolute;left:-60%;right:-60%;bottom:-8%;height:62%;background-image:linear-gradient(var(--gl) 1px,transparent 1px),linear-gradient(90deg,var(--gl) 1px,transparent 1px);background-size:56px 56px;transform:perspective(520px) rotateX(64deg);transform-origin:50% 100%;animation:gridmove 3.2s linear infinite;-webkit-mask-image:linear-gradient(to top,#000 8%,transparent 88%);mask-image:linear-gradient(to top,#000 8%,transparent 88%)}
+@keyframes gridmove{to{background-position:0 56px}}
+.live .orb{position:absolute;border-radius:50%;filter:blur(80px)}
+.live .o1{width:560px;height:560px;left:-120px;top:-180px;background:var(--accs);opacity:.28;animation:drift1 19s ease-in-out infinite alternate}
+.live .o2{width:420px;height:420px;right:-100px;top:340px;background:var(--bolt);opacity:.12;animation:drift2 23s ease-in-out infinite alternate}
+@keyframes drift1{to{transform:translate(220px,120px) scale(1.15)}}
+@keyframes drift2{to{transform:translate(-260px,-140px) scale(.9)}}
+.live .scan{position:absolute;left:0;right:0;top:-160px;height:160px;background:linear-gradient(transparent,color-mix(in srgb,var(--accs) 12%,transparent),transparent);animation:scanmove 8s linear infinite}
+@keyframes scanmove{to{transform:translateY(1400px)}}
+.live .pt{position:absolute;width:3px;height:3px;border-radius:50%;background:var(--accs);box-shadow:0 0 8px var(--accs);opacity:0;animation:rise 9s linear infinite}
+@keyframes rise{0%{opacity:0;transform:translateY(0)}15%{opacity:.9}100%{opacity:0;transform:translateY(-420px)}}
+.live .page{position:relative;background:transparent;z-index:1}
+.gl{position:relative;background:color-mix(in srgb,var(--panel) 74%,transparent);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border:1px solid color-mix(in srgb,var(--accs) 24%,var(--border));border-radius:14px;padding:16px 18px}
+.gl::before{content:"";position:absolute;left:14px;right:14px;top:-1px;height:1px;background:linear-gradient(90deg,transparent,var(--accs),transparent);opacity:.7}
+.gl .lab{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--t2);display:flex;align-items:center;gap:8px}
+.big{font-size:38px;font-weight:600;line-height:1.1;font-variant-numeric:tabular-nums;letter-spacing:-.02em;text-shadow:0 0 28px var(--glow)}
+.livepill{display:inline-flex;align-items:center;gap:7px;height:22px;padding:0 10px;border-radius:99px;font-size:11px;font-weight:700;letter-spacing:.1em;background:var(--okbg);color:var(--oktext)}
+.livepill i{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 0 var(--ok);animation:ping 1.6s ease-out infinite}
+@keyframes ping{70%{box-shadow:0 0 0 8px transparent}100%{box-shadow:0 0 0 0 transparent}}
+.chart{position:relative;height:150px;margin-top:10px;overflow:hidden}
+.chart svg{position:absolute;inset:0;width:100%;height:100%}
+.flow{stroke-dasharray:5 11;animation:flow 1.4s linear infinite}
+@keyframes flow{to{stroke-dashoffset:-16}}
+.chart .sweepbar{position:absolute;top:0;bottom:0;width:90px;background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--accs) 28%,transparent),transparent);animation:sweepx 4.5s ease-in-out infinite}
+@keyframes sweepx{0%{left:-90px}100%{left:100%}}
+.ringwrap{position:relative;width:176px;height:176px;margin:8px auto 0}
+.ringwrap .radar{position:absolute;inset:14px;border-radius:50%;background:conic-gradient(from 0deg,transparent 0 290deg,color-mix(in srgb,var(--accs) 42%,transparent) 360deg);animation:spin 5s linear infinite;-webkit-mask-image:radial-gradient(circle,#000 0 70%,transparent 71%);mask-image:radial-gradient(circle,#000 0 70%,transparent 71%)}
+.ringwrap svg{position:absolute;inset:0;transform:rotate(-90deg)}
+.ringwrap .mid{position:absolute;inset:0;display:grid;place-items:center;text-align:center}
+.legend{display:flex;flex-direction:column;gap:6px;margin-top:12px;font-size:12.5px;color:var(--t2)}
+.legend div{display:flex;align-items:center;gap:8px}
+.legend b{margin-left:auto;font-weight:600;color:var(--text);font-variant-numeric:tabular-nums}
+.spark{width:100%;height:30px;margin-top:8px}
+.spark path{stroke-dasharray:140;stroke-dashoffset:140;animation:draw 3.5s ease-in-out infinite}
+@keyframes draw{0%{stroke-dashoffset:140}45%,85%{stroke-dashoffset:0}100%{stroke-dashoffset:-140}}
+.mbar{height:8px;border-radius:99px;background:var(--active);overflow:hidden;position:relative;min-width:140px}
+.mbar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--acc),var(--accs))}
+.mbar::after{content:"";position:absolute;top:0;bottom:0;width:40px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.35),transparent);animation:sweepx 2.6s linear infinite}
+.mrow{display:grid;grid-template-columns:minmax(150px,1.2fr) minmax(140px,2fr) 70px 80px;gap:16px;align-items:center;min-height:40px;font-size:12.5px;border-bottom:1px solid var(--border)}
+.mrow:last-child{border-bottom:0}
+.stream{position:relative;height:250px;overflow:hidden;-webkit-mask-image:linear-gradient(transparent,#000 12%,#000 88%,transparent);mask-image:linear-gradient(transparent,#000 12%,#000 88%,transparent)}
+.roll{animation:roll 30s linear infinite}
+.stream:hover .roll{animation-play-state:paused}
+@keyframes roll{to{transform:translateY(-50%)}}
+.ev{display:grid;grid-template-columns:78px 92px 1fr auto;gap:14px;align-items:center;min-height:42px;font-size:12.5px;border-bottom:1px solid color-mix(in srgb,var(--border) 70%,transparent)}
+.tag{display:inline-flex;justify-content:center;height:20px;align-items:center;border-radius:6px;font-size:10.5px;font-weight:700;letter-spacing:.08em;background:var(--accbg);color:var(--accs)}
+.tag.ok{background:var(--okbg);color:var(--oktext)}
+.tag.err{background:var(--errbg);color:var(--errtext)}
+.tag.dim{background:var(--active);color:var(--t2)}
+.paused *,.paused *::before,.paused *::after{animation-play-state:paused!important}
+@media (prefers-reduced-motion:reduce){.live *,.live *::before,.live *::after{animation:none!important}.spark path{stroke-dashoffset:0}}
+</style>
+</helmet>
+<div class="app" style="{{vars}} width:100%; height:1260px"><header class="title"><svg class="mark " viewBox="0 0 256 256" width="20" height="20" aria-hidden="true"><path class="toe" d="M116 73 L51 119 L26 216 L73 137 L132 95 Z"/><path class="toe" d="M140 73 L205 119 L230 216 L183 137 L124 95 Z"/><path class="bolt" d="M138 28 L92 130 L122 130 L108 230 L172 108 L140 108 L168 28 Z"/></svg><strong style="font-weight:600">PockPock</strong><span style="color:var(--t3)">Agent Studio</span><button class="cmd" aria-label="Search or jump to anything"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span>Search tasks, skills, files, settings</span><kbd>Ctrl K</kbd></button><div style="width:150px;flex:none"></div></header><div class="body"><nav class="rail" aria-label="Studio sections"><button aria-label="Tasks"><svg class="i " viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg></button><button aria-label="Workshop: skills, tools, models, memory"><svg class="i " viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4a2 2 0 1 1 4 0v1h4v4h1a2 2 0 1 1 0 4h-1v4h-4v-1a2 2 0 1 0-4 0v1H6v-4H5a2 2 0 1 1 0-4h1V5h4z"/></svg></button><button class="on" aria-current="page" aria-label="Activity"><svg class="i " viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg></button><div class="sp"></div><button aria-label="Services: one needs attention"><svg class="i " viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span class="dot"></span></button><button aria-label="Settings"><svg class="i " viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg></button></nav><nav class="sub-nav" aria-label="Workshop"><h2>Workshop</h2><div class="group" style="padding-left:10px">Capabilities</div><button class="nav"><svg class="i " viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4a2 2 0 1 1 4 0v1h4v4h1a2 2 0 1 1 0 4h-1v4h-4v-1a2 2 0 1 0-4 0v1H6v-4H5a2 2 0 1 1 0-4h1V5h4z"/></svg>Skills<small>12</small></button><button class="nav"><svg class="i " viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3v5M15 3v5M7 8h10v4a5 5 0 0 1-10 0zM12 17v4"/></svg>MCP servers<small>3</small></button><button class="nav"><svg class="i " viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>Connectors<small>5</small></button><button class="nav"><svg class="i " viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>Browser recipes<small>4</small></button><button class="nav"><svg class="i " viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Research</button><div class="group" style="padding-left:10px">Models</div><button class="nav"><svg class="i " viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="6" rx="1.5"/><rect x="4" y="14" width="16" height="6" rx="1.5"/><path d="M8 7h.01M8 17h.01"/></svg>Local models<small>6</small></button><button class="nav"><svg class="i " viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18a5 5 0 1 1 1-9.9A6 6 0 0 1 19.5 10 4 4 0 0 1 18 18z"/></svg>Cloud models<small>2</small></button><div class="group" style="padding-left:10px">Knowledge</div><button class="nav"><svg class="i " viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 6 1V4a3 3 0 0 0-3 0zM15 4a3 3 0 0 1 3 3 3 3 0 0 1 2 5 3 3 0 0 1-2 5 3 3 0 0 1-6 1"/></svg>Memory</button><div class="group" style="padding-left:10px">System</div><button class="nav"><svg class="i " viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>Services<small class="warn">5 of 6</small></button><button class="nav"><svg class="i " viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5 5L3 18l3 3 6.7-6.7a4 4 0 0 0 5-5l-2.4 2.4-2.6-.6-.6-2.6z"/></svg>Maintenance<small>1</small></button><button class="nav on" aria-current="page"><svg class="i " viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>Activity</button></nav><div class="live {{liveCls}}"><div class="bg" aria-hidden="true"><div class="orb o1"></div><div class="orb o2"></div><div class="grid3d"></div><div class="scan"></div><i class="pt" style="left:12%;top:78%;animation-delay:0s"></i><i class="pt" style="left:28%;top:90%;animation-delay:2.2s"></i><i class="pt" style="left:46%;top:84%;animation-delay:4.1s"></i><i class="pt" style="left:63%;top:92%;animation-delay:1.3s"></i><i class="pt" style="left:79%;top:80%;animation-delay:5.4s"></i><i class="pt" style="left:90%;top:88%;animation-delay:3.3s"></i><i class="pt" style="left:36%;top:70%;animation-delay:6.6s"></i></div><main class="page"><div class="pg" style="max-width:1080px">
+<div style="display:flex;align-items:flex-start;gap:16px"><div><div class="eyebrow">Workspace · Router</div><div style="display:flex;align-items:center;gap:12px"><h1>Activity</h1><span class="livepill"><i></i>{{liveLabel}}</span></div><p class="lead">What the Smart Router is doing right now. Only routing details are kept, never your prompts or the replies.</p></div>
+<div style="margin-left:auto;display:flex;gap:8px;flex:none;align-items:center"><div class="seg" role="tablist" aria-label="Time range" style="margin:0"><button class="on" role="tab" aria-selected="true">Live</button><button role="tab" aria-selected="false">1 h</button><button role="tab" aria-selected="false">24 h</button><button role="tab" aria-selected="false">7 d</button></div><button class="btn" aria-pressed="{{pressed}}" onClick="{{toggle}}"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>{{pauseLabel}}</button></div></div>
+<div style="display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:16px;margin-top:22px">
+ <section class="gl" aria-label="Request rate"><div class="lab"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>Requests per minute<span style="margin-left:auto;text-transform:none;letter-spacing:0;font-weight:500;color:var(--t3)">last 60 min</span></div><div style="display:flex;align-items:flex-end;gap:14px;margin-top:10px"><div class="big">64</div><div class="hint" style="padding-bottom:6px">requests today · peak 14 / min at 13:40</div></div><div class="chart" role="img" aria-label="Requests per minute over the last hour, rising from about 4 to about 14"><svg viewBox="0 0 560 150" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="ag" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--accs);stop-opacity:.45"/><stop offset="1" style="stop-color:var(--accs);stop-opacity:0"/></linearGradient></defs>
+<g stroke="var(--border)" stroke-width="1" opacity=".7"><path d="M0 37.5H560M0 75H560M0 112.5H560" vector-effect="non-scaling-stroke"/></g><path d="M0,118 L24,104 L48,112 L72,88 L96,96 L120,70 L144,84 L168,58 L192,72 L216,46 L240,62 L264,40 L288,64 L312,52 L336,78 L360,44 L384,60 L408,34 L432,50 L456,30 L480,52 L504,38 L528,56 L560,36 L560,150 L0,150Z" fill="url(#ag)"/><path d="M0,118 L24,104 L48,112 L72,88 L96,96 L120,70 L144,84 L168,58 L192,72 L216,46 L240,62 L264,40 L288,64 L312,52 L336,78 L360,44 L384,60 L408,34 L432,50 L456,30 L480,52 L504,38 L528,56 L560,36" fill="none" stroke="var(--accs)" stroke-width="2.4" stroke-linejoin="round" vector-effect="non-scaling-stroke" style="filter:drop-shadow(0 0 6px var(--accs))"/><path class="flow" d="M0,118 L24,104 L48,112 L72,88 L96,96 L120,70 L144,84 L168,58 L192,72 L216,46 L240,62 L264,40 L288,64 L312,52 L336,78 L360,44 L384,60 L408,34 L432,50 L456,30 L480,52 L504,38 L528,56 L560,36" fill="none" stroke="var(--bolt)" stroke-width="1.4" vector-effect="non-scaling-stroke" opacity=".85"/></svg><div class="sweepbar"></div></div></section>
+ <section class="gl" aria-label="Model share"><div class="lab"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5zM3 13l9 5 9-5"/></svg>Model share</div><div class="ringwrap" role="img" aria-label="Share of calls: qwen3.5:9b 54 percent, qwen3-coder 30 percent, other 16 percent"><div class="radar"></div><svg viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="48" fill="none" stroke="var(--active)" stroke-width="9"/><circle cx="60" cy="60" r="48" fill="none" stroke="var(--accs)" stroke-width="9" stroke-linecap="round" stroke-dasharray="162 301.6" style="filter:drop-shadow(0 0 5px var(--accs))"/><circle cx="60" cy="60" r="48" fill="none" stroke="var(--bolt)" stroke-width="9" stroke-linecap="round" stroke-dasharray="86 301.6" stroke-dashoffset="-170"/><circle cx="60" cy="60" r="48" fill="none" stroke="var(--ok)" stroke-width="9" stroke-linecap="round" stroke-dasharray="36 301.6" stroke-dashoffset="-264"/></svg><div class="mid"><div><div class="big" style="font-size:30px">71</div><div class="hint">model calls</div></div></div></div>
+<div class="legend"><div><i class="sdot" style="background:var(--accs)"></i>qwen3.5:9b<b>54%</b></div><div><i class="sdot" style="background:var(--bolt)"></i>qwen3-coder:30b<b>30%</b></div><div><i class="sdot" style="background:var(--ok)"></i>Others<b>16%</b></div></div></section></div>
+<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-top:16px">
+ <div class="gl"><div class="lab"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>Requests</div><div class="big" style="margin-top:8px;font-size:30px">64</div><div class="hint" style="margin-top:2px">+12 vs yesterday</div><svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true"><path d="M0,24 L14,20 L28,22 L42,14 L56,17 L70,9 L84,12 L100,4" fill="none" stroke="var(--accs)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg></div>
+ <div class="gl"><div class="lab"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3 5 14h6l-1 7 8-11h-6z"/></svg>Average time</div><div class="big" style="margin-top:8px;font-size:30px">2.6 s</div><div class="hint" style="margin-top:2px">1.9 s planner · 4.2 s coding</div><svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true"><path d="M0,8 L14,12 L28,9 L42,16 L56,13 L70,20 L84,17 L100,22" fill="none" stroke="var(--bolt)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg></div>
+ <div class="gl"><div class="lab"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg>Success rate</div><div class="big" style="margin-top:8px;font-size:30px">98%</div><div class="hint" style="margin-top:2px">1 timeout in 71 calls</div><svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true"><path d="M0,6 L20,6 L40,7 L60,6 L80,10 L100,5" fill="none" stroke="var(--ok)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg></div>
+ <div class="gl"><div class="lab"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="6" rx="1.5"/><rect x="4" y="14" width="16" height="6" rx="1.5"/><path d="M8 7h.01M8 17h.01"/></svg>Loaded now</div><div class="big" style="margin-top:8px;font-size:30px">1</div><div class="hint" style="margin-top:2px">qwen3-coder:30b · 19 GB</div><svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true"><path d="M0,16 L25,16 L50,12 L75,12 L100,12" fill="none" stroke="var(--accs)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg></div></div>
+<section class="gl" style="margin-top:16px" aria-label="By model"><div class="lab"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="6" rx="1.5"/><rect x="4" y="14" width="16" height="6" rx="1.5"/><path d="M8 7h.01M8 17h.01"/></svg>By model</div><div class="mrow" style="min-height:30px;color:var(--t3);font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase"><span>Model</span><span>Calls</span><span>Success</span><span>Average</span></div>
+<div class="mrow"><span style="display:flex;gap:10px;align-items:center"><i class="sdot" style="background:var(--ctl)"></i><span class="mono" style="font-size:12px">qwen3.5:9b</span></span><div style="display:flex;align-items:center;gap:10px"><div class="mbar" role="img" aria-label="38 calls"><i style="width:100%"></i></div><span style="font-variant-numeric:tabular-nums;color:var(--t2);width:28px;text-align:right">38</span></div><span style="color:var(--oktext);font-variant-numeric:tabular-nums">100%</span><span style="color:var(--t2);font-variant-numeric:tabular-nums">1.9 s</span></div><div class="mrow"><span style="display:flex;gap:10px;align-items:center"><i class="sdot" style="background:var(--ok);box-shadow:0 0 0 3px var(--okbg)"></i><span class="mono" style="font-size:12px">qwen3-coder:30b</span></span><div style="display:flex;align-items:center;gap:10px"><div class="mbar" role="img" aria-label="21 calls"><i style="width:55%"></i></div><span style="font-variant-numeric:tabular-nums;color:var(--t2);width:28px;text-align:right">21</span></div><span style="color:var(--oktext);font-variant-numeric:tabular-nums">96%</span><span style="color:var(--t2);font-variant-numeric:tabular-nums">4.2 s</span></div><div class="mrow"><span style="display:flex;gap:10px;align-items:center"><i class="sdot" style="background:var(--ctl)"></i><span class="mono" style="font-size:12px">llama3.2:3b</span></span><div style="display:flex;align-items:center;gap:10px"><div class="mbar" role="img" aria-label="12 calls"><i style="width:32%"></i></div><span style="font-variant-numeric:tabular-nums;color:var(--t2);width:28px;text-align:right">12</span></div><span style="color:var(--oktext);font-variant-numeric:tabular-nums">100%</span><span style="color:var(--t2);font-variant-numeric:tabular-nums">0.7 s</span></div></section>
+<section class="gl" style="margin-top:16px" aria-label="Live events"><div class="lab"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6l6 6-6 6M12 19h8"/></svg>Live events<span style="margin-left:auto;text-transform:none;letter-spacing:0;font-weight:500;color:var(--t3);display:flex;gap:6px;align-items:center"><svg class="i s" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Prompts and replies are never stored</span></div><div class="stream" style="margin-top:8px"><div class="roll"><div class="ev"><span class="mono" style="color:var(--t3);font-size:12px">14:02:11</span><span class="tag ok">ANSWERED</span><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">qwen3-coder:30b answered a coding request</span><span class="mono" style="color:var(--t3);font-size:12px">4.1 s</span></div><div class="ev"><span class="mono" style="color:var(--t3);font-size:12px">14:02:07</span><span class="tag ">ROUTED</span><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Routed to qwen3-coder:30b · coding · score 0.82</span><span class="mono" style="color:var(--t3);font-size:12px">12 ms</span></div><div class="ev"><span class="mono" style="color:var(--t3);font-size:12px">14:01:58</span><span class="tag dim">RECEIVED</span><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Request received · PockPock Agent</span><span class="mono" style="color:var(--t3);font-size:12px"></span></div><div class="ev"><span class="mono" style="color:var(--t3);font-size:12px">13:58:40</span><span class="tag ok">ANSWERED</span><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">qwen3.5:9b made a plan · 6 steps</span><span class="mono" style="color:var(--t3);font-size:12px">1.9 s</span></div><div class="ev"><span class="mono" style="color:var(--t3);font-size:12px">13:41:20</span><span class="tag err">FAILED</span><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">qwen3.5:9b timed out after 60 s · retried on llama3.2:3b</span><span class="mono" style="color:var(--t3);font-size:12px">60 s</span></div><div class="ev"><span class="mono" style="color:var(--t3);font-size:12px">13:41:02</span><span class="tag ">ROUTED</span><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Routed to qwen3.5:9b · planner</span><span class="mono" style="color:var(--t3);font-size:12px">9 ms</span></div><div class="ev"><span class="mono" style="color:var(--t3);font-size:12px">13:12:33</span><span class="tag ok">ANSWERED</span><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">llama3.2:3b answered a chat message</span><span class="mono" style="color:var(--t3);font-size:12px">0.7 s</span></div><div class="ev"><span class="mono" style="color:var(--t3);font-size:12px">12:55:09</span><span class="tag ">ROUTED</span><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Routed to gemma3:12b · image attached</span><span class="mono" style="color:var(--t3);font-size:12px">11 ms</span></div><div class="ev"><span class="mono" style="color:var(--t3);font-size:12px">14:02:11</span><span class="tag ok">ANSWERED</span><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">qwen3-coder:30b answered a coding request</span><span class="mono" style="color:var(--t3);font-size:12px">4.1 s</span></div><div class="ev"><span class="mono" style="color:var(--t3);font-size:12px">14:02:07</span><span class="tag ">ROUTED</span><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Routed to qwen3-coder:30b · coding · score 0.82</span><span class="mono" style="color:var(--t3);font-size:12px">12 ms</span></div><div class="ev"><span class="mono" style="color:var(--t3);font-size:12px">14:01:58</span><span class="tag dim">RECEIVED</span><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Request received · PockPock Agent</span><span class="mono" style="color:var(--t3);font-size:12px"></span></div><div class="ev"><span class="mono" style="color:var(--t3);font-size:12px">13:58:40</span><span class="tag ok">ANSWERED</span><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">qwen3.5:9b made a plan · 6 steps</span><span class="mono" style="color:var(--t3);font-size:12px">1.9 s</span></div><div class="ev"><span class="mono" style="color:var(--t3);font-size:12px">13:41:20</span><span class="tag err">FAILED</span><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">qwen3.5:9b timed out after 60 s · retried on llama3.2:3b</span><span class="mono" style="color:var(--t3);font-size:12px">60 s</span></div><div class="ev"><span class="mono" style="color:var(--t3);font-size:12px">13:41:02</span><span class="tag ">ROUTED</span><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Routed to qwen3.5:9b · planner</span><span class="mono" style="color:var(--t3);font-size:12px">9 ms</span></div><div class="ev"><span class="mono" style="color:var(--t3);font-size:12px">13:12:33</span><span class="tag ok">ANSWERED</span><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">llama3.2:3b answered a chat message</span><span class="mono" style="color:var(--t3);font-size:12px">0.7 s</span></div><div class="ev"><span class="mono" style="color:var(--t3);font-size:12px">12:55:09</span><span class="tag ">ROUTED</span><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Routed to gemma3:12b · image attached</span><span class="mono" style="color:var(--t3);font-size:12px">11 ms</span></div></div></div></section>
+</div></main></div></div><footer class="status"><span><i class="sdot" style="background:var(--ok)"></i>Gateway ready</span><span><i class="sdot" style="background:var(--ok)"></i>Ollama · 1 model loaded</span><span><i class="sdot" style="background:var(--ok)"></i>Smart router on</span><span style="margin-left:auto">v0.2.5</span></footer></div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","default":"dark","options":["dark","volt","feather"],"section":"Theme"}}'>
+class Component extends DCLogic {
+renderVals() {
+const base = {"--bg": "#0d1014", "--side": "#111419", "--panel": "#10141a", "--raise": "#171c24", "--hover": "#1c222b", "--active": "#232a35", "--pop": "#161b22", "--code": "#0a0d11", "--border": "#222933", "--border2": "#2e3744", "--ctl": "#5c6878", "--text": "#e6ebf1", "--t2": "#aeb8c6", "--t3": "#8892a1", "--acc": "#8b6cff", "--accs": "#a78bfa", "--accbg": "rgba(139,108,255,.14)", "--accfill": "#6f52f0", "--onacc": "#ffffff", "--ok": "#3fb68b", "--oktext": "#7fdcb8", "--okbg": "rgba(63,182,139,.14)", "--warn": "#e5a83b", "--warntext": "#f2cd8a", "--warnbg": "rgba(229,168,59,.14)", "--err": "#f07470", "--errtext": "#ffb4b1", "--errbg": "rgba(240,116,112,.12)", "--log": "#c9d2de", "--shadow": "rgba(0,0,0,.5)", "--toe": "#fff4d6", "--bolt": "#ffd60a", "--gap": "#10141a"};
+const themes = {"dark": {}, "volt": {"--bg": "#14111c", "--side": "#1a1626", "--panel": "#1c1829", "--raise": "#251f37", "--hover": "#2b2440", "--active": "#352d4d", "--pop": "#221c33", "--code": "#0e0b15", "--border": "#2f2843", "--border2": "#40375a", "--ctl": "#8a80a6", "--text": "#fff4d6", "--t2": "#d4cbb4", "--t3": "#a69fb8", "--acc": "#ffd60a", "--accs": "#ffd60a", "--accbg": "rgba(255,214,10,.12)", "--accfill": "#ffd60a", "--onacc": "#14111c", "--log": "#d4cbb4", "--gap": "#1c1829"}, "feather": {"--bg": "#fffaf0", "--side": "#f7efdf", "--panel": "#fffdf7", "--raise": "#ffffff", "--hover": "#f1e8d4", "--active": "#eadfc6", "--pop": "#ffffff", "--code": "#f3ead7", "--border": "#e6dcc6", "--border2": "#d3c6a9", "--ctl": "#7d7488", "--text": "#14111c", "--t2": "#4a4458", "--t3": "#6b6478", "--acc": "#5b4bf0", "--accs": "#4a3bd6", "--accbg": "rgba(91,75,240,.1)", "--accfill": "#5b4bf0", "--onacc": "#ffffff", "--ok": "#1f8f68", "--oktext": "#176b4e", "--okbg": "rgba(31,143,104,.12)", "--warn": "#b97a0a", "--warntext": "#7a4f05", "--warnbg": "rgba(185,122,10,.12)", "--err": "#c0302c", "--errtext": "#8f1f1b", "--errbg": "rgba(192,48,44,.1)", "--log": "#3a3548", "--shadow": "rgba(20,17,28,.18)", "--toe": "#14111c", "--bolt": "#5b4bf0", "--gap": "#fffdf7"}};
+const t = Object.assign({}, base, themes[this.props.theme ?? 'dark'] || {});
+const paused = !!(this.state && this.state.paused);
+return { vars: Object.keys(t).map((k) => k + ':' + t[k] + ';').join(''), liveCls: paused ? 'paused' : '', liveLabel: paused ? 'PAUSED' : 'LIVE', pauseLabel: paused ? 'Resume' : 'Pause', pressed: paused ? 'true' : 'false', toggle: () => this.setState({ paused: !paused }) };
+}
+}
+</script>
+</body>
+</html>
