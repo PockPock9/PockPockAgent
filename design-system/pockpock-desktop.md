@@ -146,4 +146,4 @@ The terminal's ANSI colours (`src/lib/theme.ts`) are at least 5.9:1 on the dark 
 2. Add the id with its window `bg` (= `--bg`) and caption `symbol` (= `--text-2`) to `THEMES` in `desktop/electron/themes.cjs`, and to the allowed list in `desktop/public/theme-boot.js`.
 3. Add a picker entry with four preview swatches (canvas, panel, accent, text) to `THEMES` in `desktop/src/lib/theme.ts`; if it is light, give it the light ANSI palette there.
 4. Run `npm run check:contrast` and adjust until every pair passes; add a pair to `check_contrast.mjs` if the theme combines tokens in a new way.
-5. Check it in the running app at 1440×900 and 820 px (chat, cards, Customize pages, Settings, terminal) and add its column to the contrast table above.
+5. Check it in the running app at 1440×900 and 820 px (chat, cards, Workshop pages, Settings, terminal) and add its column to the contrast table above.
