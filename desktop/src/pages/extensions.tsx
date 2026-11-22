@@ -47,10 +47,20 @@ export function AddLink({ kind, onPreview, busy }: { kind: 'skills' | 'mcp'; onP
 export function useProposal(kind: 'skills' | 'mcp', setError: (message: string) => void) {
   const [proposal, setProposal] = useState<Proposal | null>(null)
   const [busy, setBusy] = useState(false)
-  const preview = async (url: string, prefer: 'skills' | 'mcp' = kind) => {
+  /** Shows the preview card. `inline`: the caller shows a failure itself (search results); returns it. */
+  const preview = async (url: string, prefer: 'skills' | 'mcp' = kind, inline = false): Promise<string> => {
     setBusy(true)
     setError('')
-    try { setProposal(await inspectLink(url, prefer)) } catch (previewError) { setError(previewError instanceof Error ? previewError.message : 'Could not read that link.') } finally { setBusy(false) }
+    try {
+      setProposal(await inspectLink(url, prefer))
+      // A preview started from search results below: bring the card into view.
+      window.requestAnimationFrame(() => document.querySelector('.card--extension')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+      return ''
+    } catch (previewError) {
+      const message = previewError instanceof Error ? previewError.message : 'Could not read that link.'
+      if (!inline) setError(message)
+      return message
+    } finally { setBusy(false) }
   }
   return { proposal, setProposal, busy, preview }
 }
