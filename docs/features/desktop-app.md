@@ -24,7 +24,7 @@ PockPock Agent is the PockPock interface: a desktop app (Electron) for Windows a
 | Attachments | Upload documents or images, drag them onto the chat, or attach a text file from the Files panel. OpenClaw and NemoClaw accept text and documents only. |
 | Files | The inspector's **Files** tab: browse the open folder, attach files to the next message, open files or show folders in Explorer or Finder. |
 | Reports | **Report** under a reply saves that exchange and your description, redacted, on this PC; **Maintenance** lists them. See [Problem reports and Maintenance](maintenance.md). |
-| Themes | **Settings → Theme**: PockPock Dark (default), Volt, Storm, Feather (light) or System. Applied before the first paint. The title bar shows the PockPock mark; in the run bar its bolt pulses while a turn works. See [Themes and the brand mark](themes.md). |
+| Themes | **Settings → Theme**: a grid of PockPock Dark (default), Volt, Storm, Feather (light) and System, each with a colour preview; click one or move with the arrow keys. Also in the command palette. Applied before the first paint. The title bar shows the PockPock mark; in the run bar its bolt pulses while a turn works. See [Themes and the brand mark](themes.md). |
 | Terminal | PowerShell (or PowerShell 7 when installed) on Windows; the user's login shell (zsh by default) on a Mac. Opens in the open folder. **Ctrl+J** / **⌘J**. |
 | Browser recipes | Saved, versioned browser workflows: the list beside the editor (allowed sites, inputs, steps and stop conditions); version history; switch on/off; run with per-step approval and screenshots. |
 | Activity | Request totals, model calls, average time and chat models loaded now; per-model call counts, success rate and average time; recent routing events. No prompt text. |
@@ -35,7 +35,10 @@ PockPock Agent is the PockPock interface: a desktop app (Electron) for Windows a
 | Local models | A **Smart route** card (on or paused; local models only), then every model Ollama has: size, calls, success rate and average time (from routing telemetry), **Loaded**, **Idle** or **Switched off**, tags from Ollama's details (parameter size, quantization, Images, Embeddings) and a switch. **Refresh**; with no model installed, the install command and **Open terminal**. Models are never unloaded from this page. |
 | Memory / Research | Memory: **Remember preferences** switch, saved preferences with **Remove**, **Forget all**. Research: one switch, **Allow reading public websites** (named public sites only; off makes no network requests). Saved sources stay with each task's sources card. |
 | Services | Every service with its state, **Start all** / **Stop all**, start/stop/restart each one, its log, and startup options. |
-| Setup | Installs every prerequisite and the backend, Ollama and models, OpenClaw (with a skills choice) and NemoClaw, then starts and checks every service. Opens automatically on first launch. |
+| Setup | Installs every prerequisite and the backend, Ollama and models, OpenClaw (with a skills choice) and NemoClaw, then starts and checks every service. Opens automatically on first launch. A stepper shows where it is: **Welcome**, **Choose**, **Install**, **Check** (the final service checks). |
+| Settings | Sections **Theme**, **Smart Router** (switch), **Ollama and services**, **OpenClaw** (check, browser, slow local models), **NemoClaw** (sandbox check), **Updates** (a highlighted **Restart to update** row when a version is ready, automatic download) and **Setup**. |
+| Toasts | Bottom right, above the status bar: **PockPock *version* is ready** with **Restart to update** and **Later**; and problems that block every task, each with **Open Services**: the gateway stopped or could not start, or Ollama is not running. A toast hides with its close button (or **Later**) until its situation changes, and an error toast goes away by itself once the problem is fixed. |
+| Dialogs | The report dialog and the Maintenance Manager setup dialog dim the window, keep focus inside until they close (Tab wraps), close with Escape, and return focus to the button that opened them. |
 | Status bar | Gateway, Ollama (with how many chat models are loaded), Smart router, OpenClaw and NemoClaw state, and the names of the loaded models. Click it to open Services. |
 
 ## Installing
@@ -152,7 +155,7 @@ Renderer (desktop/src/, React + Vite)
                                CommandPalette, chat and composer, messages and cards, files, terminal
   components/page.tsx          page frame, switches, tabs with counts, stat tiles, side drawer, loading and error rows
   pages/                       one file per Workshop page (Skills, MCP servers, Connectors, Browser recipes, Research,
-                               Local models, Cloud models, Memory, Services, Maintenance, Activity), Setup, Settings (Pages.tsx)
+                               Local models, Cloud models, Memory, Services, Maintenance, Activity), Setup, Settings (SettingsPage.tsx)
 ```
 
 The window loads the interface from the app's own loopback server, which also forwards `/api` to the gateway. The page therefore has a single `http://127.0.0.1` origin: the gateway's same-PC check accepts it and no cross-origin rules are needed. Streaming responses are piped through unbuffered, and closing a request (Stop, or closing the window) aborts the gateway request too. The forwarder drops `X-Forwarded-*` and `Forwarded` headers.
@@ -260,6 +263,8 @@ npm run typecheck
 npm run build
 npm run dist:win  # optional: Windows installer (dist:mac on a Mac)
 ```
+
+Agent Studio settings, setup, dialogs and toasts, checked on 2026-11-21 (`feat/studio-settings`): typecheck, build, 49 Electron tests, `check:contrast` 96/96 in every theme; the real app (the gateway first absent, then started from source on :8866): **46 of 46 checks**. A stopped gateway showed its toast, which went away once the gateway ran; an "Ollama not running" toast (the state reply changed by the test, Ollama untouched) could be dismissed; an update-ready toast (the main process's update event sent by the test) with **Later**, and the matching Settings row; the theme grid by click and arrow keys, all five themes including System applied, at 1440 and 820 px; the report dialog kept focus inside and returned it on Escape; the Maintenance Manager setup dialog; the Setup stepper on **Choose** (nothing installed); axe-core with no violations; no console errors. Not verified: **Restart to update** with a real update, the Setup stepper through a real install.
 
 Agent Studio Workshop pages, checked on 2026-11-21 (`feat/studio-workshop`): typecheck, build, 49 Electron tests, `check:contrast` 91/91 in every theme; the real app with a test gateway and the extension, skill-inbox, recipe and research calls answered by the test: **119 of 119 checks**. Covered: the skills tabs and their counts, arrow keys between tabs, search, the details drawer (Escape closes it and returns focus), **Check it** and **Review and add** in the inbox, a skill switch; the Smart route card and model rows; the research switch; the recipe editor beside its list; the connector drawer; every Workshop page in all four themes at 1440 px and six of them at 820 px with no horizontal overflow; axe-core on every page in PockPock Dark and Feather with no violations; no console errors.
 

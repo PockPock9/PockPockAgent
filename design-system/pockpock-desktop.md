@@ -86,6 +86,10 @@ The mark is a chicken foot whose centre toe is a lightning bolt. Files and gener
 - **Setting card**: an accent icon, a title and one line, an optional badge, and a switch (Smart route, Remember preferences, Allow reading public websites).
 - **Drawer**: details beside a list, 420 px from the right edge between the title and status bars, over a backdrop; a header with the title and Close, a scrolling body, an optional footer for destructive actions. Escape closes it and focus returns to what opened it.
 - **Toolbar**: tabs with counts on the left, a search field on the right, sharing one bottom border.
+- **Theme picker** (Settings): a radio group of cards, each a 44 px strip of four swatches (canvas, panel, accent, text), the name and one line; the selected card has the accent border and ring. Arrow keys move and choose.
+- **Dialog** (`components/Modal.tsx`): a centred card on `--bg-popover` over `--backdrop`, header with an icon, the title and Close; 640 px, 760 px wide variant. Focus stays inside, Escape closes, focus returns to the opener.
+- **Toasts** (`components/Toasts.tsx`): bottom right above the status bar, 380 px, on `--bg-popover` with a shadow; an icon (`--accent-strong` for news, `--err` with an `--err-border` for blocking problems), a title, one line, a primary action and **Later** or a close button. Errors use `role="alert"`, news `role="status"`.
+- **Stepper** (Setup): numbered 22 px markers joined by a line, done in `--ok`, current in `--accent-strong`, the same pattern as the run bar's phases.
 
 ## States and accessibility
 
@@ -109,7 +113,7 @@ Five themes, chosen in **Settings → Theme**. The choice is saved in `settings.
 
 The full per-theme token values are the `:root[data-theme="…"]` blocks at the top of `desktop/src/styles.css`.
 
-**Contrast (WCAG 2.2 AA).** Measured with `npm run check:contrast` (`desktop/scripts/check_contrast.mjs`), which reads the theme blocks, blends translucent tokens over the surface they sit on, and checks 80 pairs per theme (68 before the Agent Studio shell; the run bar, rail, palette and inspector added 12). All four themes pass all 80. Lowest ratio per group:
+**Contrast (WCAG 2.2 AA).** Measured with `npm run check:contrast` (`desktop/scripts/check_contrast.mjs`), which reads the theme blocks, blends translucent tokens over the surface they sit on, and checks 96 pairs per theme (68 before Agent Studio; the shell added 12, the thread 11, settings and toasts 5). All four themes pass all 96. Lowest ratio per group:
 
 | Check (minimum) | PockPock Dark | Volt | Storm | Feather |
 |---|---|---|---|---|

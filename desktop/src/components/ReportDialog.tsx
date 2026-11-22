@@ -32,12 +32,19 @@ export function ReportDialog({ session, message, onClose, onOpenMaintenance }: {
     }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'The reply could not be captured.'))
   }, [desktop, session, message])
 
-  // Modal behaviour: focus inside on open, Escape closes, Tab stays inside the dialog.
+  // Modal behaviour: focus inside on open, Escape closes, Tab stays inside the dialog, and focus goes
+  // back to what opened it (the Report button) when it closes.
+  const closeRef = useRef(onClose)
+  closeRef.current = onClose
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null
+    return () => { opener?.focus?.() }
+  }, [])
   useEffect(() => {
     const dialog = dialogRef.current
     dialog?.querySelector<HTMLElement>('input, textarea, button')?.focus()
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') { event.preventDefault(); onClose(); return }
+      if (event.key === 'Escape') { event.preventDefault(); closeRef.current(); return }
       if (event.key !== 'Tab' || !dialog) return
       const focusable = [...dialog.querySelectorAll<HTMLElement>('input, textarea, button, summary, [tabindex]:not([tabindex="-1"])')].filter((el) => !el.hasAttribute('disabled'))
       if (!focusable.length) return
@@ -47,7 +54,7 @@ export function ReportDialog({ session, message, onClose, onOpenMaintenance }: {
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [onClose, phase])
+  }, [phase])
 
   const save = async () => {
     if (!desktop || !capture || !category) return

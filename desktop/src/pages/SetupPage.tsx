@@ -9,6 +9,25 @@ import type { SetupComponent, SetupEvent, SetupStatus } from '../lib/types'
 
 type Step = Extract<SetupEvent, { type: 'step' }>
 
+const STAGES = ['Welcome', 'Choose', 'Install', 'Check'] as const
+
+/** Where setup is: Welcome, Choose, Install, Check. Finished stages are ticked; the current one is marked. */
+function Stepper({ current, done = false }: { current: number; done?: boolean }) {
+  return (
+    <ol className="stepper" aria-label="Setup steps">
+      {STAGES.map((stage, index) => {
+        const state = done || index < current ? 'done' : index === current ? 'now' : 'todo'
+        return (
+          <li key={stage} className={`stepper__step is-${state}`} aria-current={state === 'now' ? 'step' : undefined}>
+            <span className="stepper__marker" aria-hidden="true">{state === 'done' ? <Check size={12} strokeWidth={3} /> : index + 1}</span>
+            <span>{stage}</span><span className="visually-hidden">{state === 'done' ? ' (done)' : state === 'now' ? ' (current)' : ''}</span>
+          </li>
+        )
+      })}
+    </ol>
+  )
+}
+
 type ComponentInfo = { id: SetupComponent; title: string; icon: React.ReactNode; detail: string; size: string; locked?: boolean; warning?: string }
 
 const COMPONENTS: ComponentInfo[] = isMac
@@ -81,6 +100,8 @@ export function SetupPage({ onDone }: { onDone: () => void }) {
   const unsupported = (id: SetupComponent) => id === 'nemoclaw' && status !== null && !status.nemoclaw.supported
   const installed = (id: SetupComponent) => Boolean(status?.[id].installed) && !(id === 'ollama' && status && Object.values(status.ollama.models).some((ok) => !ok))
 
+  const checking = steps.some((step) => step.component === 'verify' || /check/i.test(step.id))
+  const stage = phase === 'choose' ? 1 : phase === 'running' ? (checking ? 3 : 2) : 3
   if (!desktop) return <div className="page"><div className="page__inner"><p className="note">Setup runs in the desktop app.</p></div></div>
   if (status && phase === 'choose' && status.needsSetup && !status.pending && !customize) return <Welcome status={status} onStart={() => start({ components: status.recommended.components })} onCustomize={() => setCustomize(true)} onRecheck={() => void load()} />
   return (
@@ -88,6 +109,7 @@ export function SetupPage({ onDone }: { onDone: () => void }) {
       <div className="page__inner">
         <header className="page__head">
           <div><span className="eyebrow">Setup</span><h1>{status?.needsSetup ? 'Set up PockPock' : 'Install or repair components'}</h1>
+            <Stepper current={stage} done={outcome?.outcome === 'done'} />
             <p>{phase === 'running' ? `PockPock is installing everything it needs. Keep the ${computer} connected to the internet; it stays awake while setup runs, and you can keep using it.` : 'Choose what to install, then PockPock installs and configures everything in one go.'} Anything already on this {computer} is kept and skipped. At the end every service is started and checked.</p></div>
         </header>
         {!status && <p className="note"><LoaderCircle size={13} className="spin" /> Checking this PC…</p>}
@@ -202,6 +224,7 @@ function Welcome({ status, onStart, onCustomize, onRecheck }: { status: SetupSta
       <div className="page__inner">
         <header className="page__head">
           <div><span className="eyebrow">Welcome</span><h1>Set up PockPock</h1>
+            <Stepper current={0} />
             <p>PockPock runs AI on this {computer}, so your chats and files stay on it. Setup downloads everything PockPock needs and checks that it works. You do not need to install anything else.</p></div>
         </header>
         <section className="card setup-welcome" aria-labelledby="setup-welcome-title">

@@ -114,6 +114,12 @@ export const PAIRS = [
   ['text-2', 'off-bg@bg-popover', TEXT, 'menu: status badge'],
   ['warn-text', 'warn-bg-strong@bg-popover', TEXT, 'menu: risky badge'],
   ['err', 'err-bg@bg-panel', UI, 'failed card icon'],
+  // Agent Studio settings, setup and toasts.
+  ['text', 'accent-bg@bg-panel', TEXT, 'settings: update ready row'],
+  ['text-2', 'accent-bg@bg-panel', TEXT, 'settings: update ready row detail'],
+  ['err', 'bg-popover', UI, 'toast: error icon'],
+  ['accent-strong', 'bg-popover', UI, 'toast: update icon'],
+  ['accent-border@bg', 'bg-panel', UI, 'theme picker: selected card border'],
 ]
 
 const all = themes()
