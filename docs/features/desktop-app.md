@@ -256,6 +256,25 @@ The backend data folder was called `FrogAI` before 2026-11-15. On start, the app
 | Terminal: "The terminal component could not be loaded" | `@lydell/node-pty` is missing | Reinstall the app, or `npm install` in `desktop/` |
 | The window does not open when started from a VS Code terminal | VS Code sets `ELECTRON_RUN_AS_NODE` | Use `npm run app`, `npm run dev`, or the shortcut |
 
+## Agent Studio design coverage
+
+The redesign follows the Agent Studio design boards (21 boards: the shell, run states, plan review, thread cards, pickers, dialogs, files and terminal, every Workshop page, Settings and Setup). Every screen uses real app state; the boards' sample data (task names, model names, numbers) is not reproduced. Checked against the boards on 2026-11-22:
+
+**Implemented, including the elements that first had no data behind them:** the rail, task list with Needs you and Running, run bar with phases, Signal, slow and failed states and **Step N of M**; the inspector with context used and files touched; the command palette; the plan card with pre-check, answer choices, editable steps and the task folder; approvals with **Allow for this task**; the skill and MCP install card in the thread; sources with **Save**, **Check for changes** and **Watch for changes**; notes while a run works; **Retry from step N**; message actions; the pickers; the report and Maintenance Manager dialogs; toasts; every Workshop page in the new frame; Settings with the theme grid; the Setup stepper.
+
+**Not built yet** (tracked as UI-01G to UI-01M in `docs/TASKS.md`):
+
+| Design element | Why it is missing |
+|---|---|
+| Activity: requests-per-minute chart, model-share chart, 24 h / 7 d range | The page lists calls by model and recent events; the charts are not drawn yet |
+| Terminal tabs (**Terminal 1**, **Terminal 2**, **New terminal**) | The app has one terminal |
+| Services: **Restart all** and each service's port | Services start, stop and restart one by one or all at start-up |
+| Models: **Unload**, purpose tags (Coding, Reasoning), "slow to start" | Models are never unloaded from the app; tags come only from Ollama's details |
+| Skills: use counts and **Recent use** | Skill use is not recorded |
+| The last lines of a running command's output under its step | Tool events carry no streamed output |
+| Research: **View changes** for a watched page, and a per-site list (**Add website**, read counts) | Snapshots are stored but no comparison is shown; research allows the sites named in each task, not a saved list |
+| Browser recipes: **Running · step 3 of 4** in the list | The run shows Running, not which step |
+
 ## Verification
 
 ```powershell
