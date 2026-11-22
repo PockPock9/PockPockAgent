@@ -144,3 +144,15 @@ export function subtaskTimeoutSeconds(subtask, fallbackSeconds) {
 export function grantKey(approval) {
   return approval.kind === 'exec' ? `exec:${approval.description}` : `plugin:${approval.toolName || approval.title}`
 }
+
+/** The session tool overlay from the bridge, reduced to {skills, mcpServers} maps of `false`; null when empty. */
+export function sanitizeToolOverrides(value) {
+  if (!value || typeof value !== 'object') return null
+  const result = {}
+  for (const section of ['skills', 'mcpServers']) {
+    const entries = value[section] && typeof value[section] === 'object' ? Object.entries(value[section]) : []
+    const hidden = entries.filter(([name, enabled]) => typeof name === 'string' && name.length > 0 && name.length <= 200 && enabled === false).slice(0, 500)
+    if (hidden.length) result[section] = Object.fromEntries(hidden.map(([name]) => [name, false]))
+  }
+  return Object.keys(result).length ? result : null
+}

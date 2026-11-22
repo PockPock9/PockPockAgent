@@ -10,7 +10,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import readline from 'node:readline'
-import { buildSubtaskMessage, cleanToolError, DEFAULT_STALL_SECONDS, explainTurnError, grantKey, isStalled, subtaskTimeoutSeconds, validateSubtask } from './turn_helpers.mjs'
+import { buildSubtaskMessage, cleanToolError, DEFAULT_STALL_SECONDS, explainTurnError, grantKey, isStalled, sanitizeToolOverrides, subtaskTimeoutSeconds, validateSubtask } from './turn_helpers.mjs'
 
 const DEBUG = process.env.POCKPOCK_OPENCLAW_DEBUG === '1'
 const STATE_DIR = process.env.OPENCLAW_STATE_DIR || path.join(os.homedir(), '.openclaw')
@@ -320,7 +320,11 @@ async function run(start) {
   const isCloud = available.cloud.includes(requested)
   if (requested && !isCloud && !available.models.includes(requested)) return fail('unknown_model', `OpenClaw has no model named "${requested}".`)
   const sessionModel = requested ? `${isCloud ? CLOUD_PROVIDER : 'ollama'}/${requested}` : available.model
-  await gateway.call('sessions.patch', { key: sessionKey, permissionMode: 'full', ...(sessionModel ? { model: sessionModel } : {}) })
+  // Tool retrieval (tool_selection.py): skills and MCP servers that do not fit this message are hidden
+  // for the session; null clears an earlier overlay. Only false entries are accepted, so nothing the
+  // user switched off can be switched on here.
+  const overlay = 'toolOverrides' in start && !subtask ? { toolOverrides: sanitizeToolOverrides(start.toolOverrides) } : {}
+  await gateway.call('sessions.patch', { key: sessionKey, permissionMode: 'full', ...(sessionModel ? { model: sessionModel } : {}), ...overlay })
   const sent = await gateway.call('chat.send', { sessionKey, message, idempotencyKey: crypto.randomUUID() })
   runId = String(sent?.runId ?? '')
   emit({ type: 'started', runId, ...(subtask ? { subtaskId: subtask.id } : {}) })

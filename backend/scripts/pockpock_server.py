@@ -152,6 +152,8 @@ from projects.nemoclaw_bridge.api import create_router as create_nemoclaw_router
 from projects.nemoclaw_bridge.bridge import NemoClawBridge, NemoClawConfig
 from projects.openclaw_bridge.api import create_router as create_openclaw_router
 from projects.openclaw_bridge.bridge import OpenClawBridge, OpenClawConfig
+from projects.openclaw_bridge.tool_selection import OpenClawToolSelector
+from projects.agent_tools.tool_retriever import OllamaEmbedder
 
 from smart_router import Pipe
 
@@ -895,7 +897,24 @@ except ValueError as err:
     OPENCLAW_CONFIG = OpenClawConfig(enabled=False)
 OPENCLAW_BRIDGE = OpenClawBridge(OPENCLAW_CONFIG)
 api.include_router(create_openclaw_router(OPENCLAW_BRIDGE, require_local_agent_request))
-api.include_router(create_extensions_router(ExtensionService(), require_local_agent_request))
+EXTENSIONS = ExtensionService()
+api.include_router(create_extensions_router(EXTENSIONS, require_local_agent_request))
+
+
+def _openclaw_tool_catalog() -> dict[str, Any]:
+    """Usable, switched-on skills and MCP servers, for OpenClaw tool selection."""
+    listed = EXTENSIONS.list()
+    if not listed.get("openclaw_ready"):
+        raise RuntimeError(listed.get("detail") or "OpenClaw is not reachable")
+    skills = [{"key": item.get("key") or item["slug"], "name": item["name"], "description": item["description"]}
+              for item in listed["skills"] if item.get("enabled") and not item.get("missing")]
+    skills += [{"key": item["key"], "name": item["name"], "description": item["description"]}
+               for item in listed["builtin_skills"] if item.get("enabled") and item.get("ready") and item.get("key")]
+    servers = [{"name": item["name"], "target": item.get("target") or ""} for item in listed["mcp"] if item.get("enabled")]
+    return {"skills": skills, "mcp": servers}
+
+
+OPENCLAW_BRIDGE.tool_selector = OpenClawToolSelector(_openclaw_tool_catalog, embedder=OllamaEmbedder(OLLAMA_URL))
 api.include_router(create_cloud_router(CLOUD_REGISTRY))
 
 # Connected apps (GitHub, email, Telegram, ...). Credentials are pushed by the desktop app and kept
