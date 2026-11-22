@@ -2,7 +2,8 @@
 // be reviewed, corrected or deleted here. (The Maintenance Manager that works through open reports
 // and proposes fixes is LRN-04 in docs/TASKS.md.)
 import { useCallback, useEffect, useState } from 'react'
-import { ArrowLeft, Flag, LoaderCircle, Trash2, Wrench } from 'lucide-react'
+import { ArrowLeft, Flag, LoaderCircle, Sparkles, Trash2, Wrench } from 'lucide-react'
+import { Modal } from '../components/Modal'
 import { Empty } from '../components/ui'
 import { MaintenanceSetup } from '../components/MaintenanceSetup'
 import { FixPanel } from '../components/FixPanel'
@@ -20,6 +21,7 @@ export function MaintenancePage() {
   const [error, setError] = useState('')
   const [open, setOpen] = useState<string | null>(null)
   const [setup, setSetup] = useState<MaintenanceStatus | null>(null)
+  const [setupOpen, setSetupOpen] = useState(false)
 
   const load = useCallback(() => {
     if (!desktop) return
@@ -35,7 +37,19 @@ export function MaintenancePage() {
   return (
     <PageFrame eyebrow="Workshop · System" title="Maintenance" intro="Problems you reported with the Report button under a reply. Each report keeps that exchange so it can be reproduced and fixed. Reports stay on this PC.">
       {error && <div className="banner banner--error" role="alert"><span>{error}</span></div>}
-      {setup && <MaintenanceSetup status={setup} onChange={load} />}
+      {setup?.ready && <MaintenanceSetup status={setup} onChange={load} />}
+      {setup && !setup.ready && (
+        <section className="card setting-card" aria-labelledby="maint-start">
+          <Sparkles size={16} aria-hidden="true" />
+          <div className="row__text"><strong id="maint-start">Maintenance Manager</strong><span>Lets PockPock fix reports itself and open a draft pull request for your review. Choose an AI, connect GitHub and get a copy of PockPock first.</span></div>
+          <button type="button" className="button button--primary" onClick={() => setSetupOpen(true)}>Set up</button>
+        </section>
+      )}
+      {setup && setupOpen && !setup.ready && (
+        <Modal title="Set up the Maintenance Manager" icon={<Sparkles size={15} aria-hidden="true" />} onClose={() => setSetupOpen(false)} wide>
+          <MaintenanceSetup status={setup} onChange={load} />
+        </Modal>
+      )}
       <h2 className="section-title">Reports</h2>
       {!reports && !error && <p className="note"><LoaderCircle size={13} className="spin" /> Loading reports…</p>}
       {reports && reports.length === 0 && (

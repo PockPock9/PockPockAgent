@@ -98,7 +98,7 @@ agent_extensions/service.py
 | `backend/projects/agent_extensions/gateway_config.mjs` | Reads and edits `mcp.servers` and `skills.entries.<name>.enabled`, and lists OpenClaw's skills, through the gateway |
 | `backend/projects/agent_extensions/api.py` | `/api/extensions` routes |
 | `desktop/src/components/ExtensionCard.tsx` | Link detection in the composer and the approval card |
-| `desktop/src/pages/Pages.tsx` (`SkillsPage`, `McpPage`) | The Skills and MCP servers pages: add from a link, switches, remove |
+| `desktop/src/pages/SkillsPage.tsx`, `McpPage.tsx`, `extensions.tsx` | The Skills and MCP servers pages and what they share: add from a link, switches, remove, the skills drawer and inbox |
 | `desktop/src/components/ChatPane.tsx` | Mode picker; routes a pasted link to the approval card |
 | `desktop/electron/setup.cjs`, `desktop/electron/openclaw-skills.json` | The setup skills choice: skills left out are installed but switched off |
 | `backend/projects/openclaw_bridge/plugin/pockpock-permissions.ts` | Names the server and tool on MCP approval cards |

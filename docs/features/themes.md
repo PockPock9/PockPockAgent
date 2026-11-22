@@ -23,7 +23,7 @@ The desktop app has five themes and shows the PockPock mark in its title bar and
 | `desktop/electron/themes.cjs` | Allowed theme ids, window background and caption-button colour per theme, resolving "system", setting `nativeTheme.themeSource`. |
 | `desktop/electron/main.cjs` | Applies the saved theme to the new window and its URL; the `theme:set` handler; follows OS changes for System. |
 | `desktop/src/components/Mark.tsx` | The mark as inline SVG with themed colours; `working` makes the bolt pulse. |
-| `desktop/src/pages/Pages.tsx` | The Theme row and picker on the Settings page. |
+| `desktop/src/pages/SettingsPage.tsx` | The theme grid on the Settings page (radio group, arrow keys). The command palette also switches themes. |
 | `desktop/src/components/TerminalPanel.tsx` | Re-colours xterm when the theme changes. |
 | `desktop/scripts/check_contrast.mjs` | `npm run check:contrast`: WCAG AA checks for every theme. |
 

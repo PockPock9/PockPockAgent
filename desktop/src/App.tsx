@@ -11,7 +11,8 @@ import { Rail, sectionOf, StatusBar, TitleBar, WorkshopNav } from './components/
 import type { Page, Section } from './components/Shell'
 import { TaskPanel } from './components/TaskPanel'
 import { TerminalPanel } from './components/TerminalPanel'
-import { SettingsPage } from './pages/Pages'
+import { Toasts } from './components/Toasts'
+import { SettingsPage } from './pages/SettingsPage'
 import { SkillsPage } from './pages/SkillsPage'
 import { McpPage } from './pages/McpPage'
 import { ModelsPage } from './pages/ModelsPage'
@@ -287,11 +288,12 @@ export default function App() {
       {navOverlay && <div className="nav-overlay">{rail}{panel}</div>}
       {(navOverlay || inspectorOverlay) && <button type="button" className="overlay-backdrop" aria-label="Close panel" onClick={() => setOverlay(null)} />}
       <main className="main" id="main">
-        {page === 'chat' && (status.backend.phase === 'starting' || status.backend.phase === 'checking' || status.backend.phase === 'stopped' || status.backend.phase === 'failed') && (
-          <div className={`banner${status.backend.phase === 'starting' || status.backend.phase === 'checking' ? '' : ' banner--error'}`} role="status">
+        {/* Starting is shown here; a stopped or failed gateway is a toast (components/Toasts.tsx). */}
+        {page === 'chat' && (status.backend.phase === 'starting' || status.backend.phase === 'checking') && (
+          <div className="banner" role="status">
             <span>{status.backend.phase === 'starting'
               ? `Starting the gateway… ${status.services.filter((item) => item.status === 'running').length} of ${status.services.filter((item) => item.available).length} services running`
-              : status.backend.phase === 'checking' ? 'Checking the gateway and Ollama…' : status.backend.detail}</span>
+              : 'Checking the gateway and Ollama…'}</span>
             <button type="button" className="link-button" onClick={() => openPage('services')}>Services</button>
           </div>
         )}
@@ -324,6 +326,7 @@ export default function App() {
           terminalOpen={showTerminal} onToggleTerminal={() => toggle('terminal')} onChooseFolder={() => void chooseFolder()} onClose={() => toggle('inspector')}
           onAttach={(file) => setAttachments((previous) => [...previous, { name: file.name, kind: 'document', text: file.text, size: file.size }])} />
       )}
+      <Toasts status={status} updates={updates} onOpenServices={() => openPage('services')} />
       <StatusBar status={status} version={info?.version ?? '0.1.0'} onOpenServices={() => openPage('services')} updates={updates} onOpenSettings={() => openPage('settings')} />
       {palette && (
         <CommandPalette sessions={sessions.sessions} theme={validTheme(settings.theme)} onClose={() => setPalette(false)} onNew={newChat}
