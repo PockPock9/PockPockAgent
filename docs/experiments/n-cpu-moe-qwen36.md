@@ -1,5 +1,7 @@
 # Experiment: `--n-cpu-moe` / `--moe-cache-mib` llama-server recipe for Qwen3.6-35B-A3B
 
+> **Update 2026-11-21:** the Ollama baseline is measured (Qwen3.6-35B-A3B Q4_K_M, 61% CPU / 39% GPU, 66.5 tok/s with MTP, 48.3 without): see [the README](README.md#measured-on-the-reference-pc-2026-11-21-through-ollama). This llama-server `--n-cpu-moe` recipe is still unmeasured.
+
 **Status: unmeasured.** Nothing here has been run on Kan's PC. This is a
 copy-ready tuning experiment, not an integration — the app keeps Ollama
 as its backend; this recipe is for measuring the llama-server lane that

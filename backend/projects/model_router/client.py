@@ -25,7 +25,10 @@ class ModelProviderError(RuntimeError):
 # to callers that only forward ``content`` (GitHub issue #86). The gateway
 # therefore sends ``think: false`` for these models unless a turn explicitly
 # needs reasoning.
-THINKING_MODEL_PREFIXES = ("qwen3.5", "qwen3:")
+# "qwen3." covers Qwen 3.5, 3.6 and later point releases: qwen3.6 was missing,
+# so its chat replies were empty (R&D validation 2026-11-21). "qwen3:" is Qwen 3;
+# qwen3-coder and similar do not think and match neither.
+THINKING_MODEL_PREFIXES = ("qwen3.", "qwen3:")
 
 
 def model_thinks_by_default(model: str | None) -> bool:
@@ -232,6 +235,12 @@ class OllamaChatCompletionAdapter:
         # reasoning trace and returns no tool calls (issue #86).
         if request.think is not None:
             payload["think"] = request.think
+        # ...but Ollama's /v1 endpoint ignores ``think: false`` (checked on Ollama
+        # 0.40.15): a qwen3.5:9b tool turn still thought for ~170 tokens (4.6 s vs
+        # 1.5 s), and a plain prompt for 11,727. ``reasoning_effort: "none"`` is the
+        # OpenAI-compatible switch it honours; models that do not think ignore it.
+        if request.think is False:
+            payload["reasoning_effort"] = "none"
         # Tool-call turns previously sent neither keep-alive nor a context
         # window, so they ran on Ollama's 4K default and the model unloaded
         # after 5 idle minutes. Send both here, as on the native endpoint.

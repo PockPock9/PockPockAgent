@@ -129,6 +129,8 @@ class OllamaChatCompletionAdapterTests(unittest.IsolatedAsyncioTestCase):
 
         _, payload, _ = FakeSession.calls[0]
         self.assertIs(payload["think"], False)
+        # Ollama's /v1 endpoint ignores think:false; reasoning_effort "none" is what it honours.
+        self.assertEqual(payload["reasoning_effort"], "none")
 
     async def test_openai_compatible_request_omits_think_when_unset(self):
         FakeSession.response = FakeResponse(result={"choices": [{"message": {"content": "ok"}}]})
@@ -144,6 +146,7 @@ class OllamaChatCompletionAdapterTests(unittest.IsolatedAsyncioTestCase):
 
         _, payload, _ = FakeSession.calls[0]
         self.assertNotIn("think", payload)
+        self.assertNotIn("reasoning_effort", payload)
 
 
     async def test_streaming_uses_shared_adapter_and_preserves_extra_local_options(self):
@@ -293,11 +296,12 @@ class OllamaChatCompletionAdapterTests(unittest.IsolatedAsyncioTestCase):
 
 class ResolveThinkTests(unittest.TestCase):
     def test_qwen35_models_disable_thinking(self):
-        for model in ("qwen3.5:2b", "qwen3.5:9b", "qwen3.5-9b-text:latest", "qwen3:8b"):
+        for model in ("qwen3.5:2b", "qwen3.5:9b", "qwen3.5-9b-text:latest", "qwen3:8b",
+                      "qwen3.6:35b-a3b", "qwen3.6-mtp-off:35b-a3b"):
             self.assertIs(resolve_think(model), False, model)
 
     def test_other_models_keep_their_default(self):
-        for model in ("qwen2.5:14b", "llama3.1:8b", "mistral-nemo:12b", None):
+        for model in ("qwen2.5:14b", "llama3.1:8b", "mistral-nemo:12b", "qwen3-coder:30b", None):
             self.assertIsNone(resolve_think(model), model)
 
     def test_tool_and_json_turns_disable_thinking_for_any_model(self):

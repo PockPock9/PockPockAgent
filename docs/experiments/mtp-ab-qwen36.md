@@ -1,5 +1,7 @@
 # Experiment: native MTP speculative decoding A/B for Qwen3.6-35B-A3B
 
+> **Update 2026-11-21:** measured through Ollama instead, no WSL2 needed: Ollama's `qwen3.6:35b-a3b` runs MTP itself. MTP on 66.5 tok/s vs off 48.3 tok/s (+38%), tool calls 9/9 both ways, output not bit-exact between the two. See [the README](README.md#measured-on-the-reference-pc-2026-11-21-through-ollama). The llama-server run below is still unmeasured.
+
 **Status: unmeasured.** Nothing here has been run on Kan's PC. This is a
 copy-ready A/B experiment, not an integration — no MTP code or flag is
 set in the app.
