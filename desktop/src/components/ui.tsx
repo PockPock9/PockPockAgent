@@ -63,7 +63,7 @@ export function IconButton({ label, onClick, children, active, disabled, classNa
   )
 }
 
-export function Dot({ tone }: { tone: 'ok' | 'warn' | 'off' | 'busy' }) {
+export function Dot({ tone }: { tone: 'ok' | 'warn' | 'off' | 'busy' | 'err' }) {
   return <span className={`dot dot--${tone}`} aria-hidden="true" />
 }
 

@@ -1290,6 +1290,9 @@ async def state():
         "active": stats.get("active", []),
         "totals": stats.get("totals", {}),
         "override": telemetry.current_override(),
+        # Where agent runs save their files: each run's task folder is <output_directory>/<run id>.
+        # The desktop plan card shows it before the run starts.
+        "output_directory": str(task_output_root()),
         "updated_at": time.time(),
     }
 

@@ -1,124 +1,119 @@
-// Window chrome: title bar, sidebar (chats and customizations), and status bar.
-import { useMemo, useState } from 'react'
-import { Activity, Brain, Cable, Cloud, Download, Folder, Wrench, Globe, Globe2, MessageSquarePlus, PanelBottom, PanelLeft, PanelRight, Plug, Puzzle, Search, Server, ServerCog, Settings as SettingsIcon, Trash2 } from 'lucide-react'
-import { relativeTime } from '../lib/api'
+// Window chrome: title bar (with the command palette search), the icon rail, the Workshop
+// sub-navigation, and the status bar. The task list is in TaskPanel.tsx.
+import { Activity, Blocks, Brain, Cable, Cloud, Download, Globe, Globe2, ListTodo, Menu, Plug, Puzzle, Search, Server, ServerCog, Settings as SettingsIcon, Wrench } from 'lucide-react'
+import type { ReactNode } from 'react'
 import type { Status } from '../lib/status'
-import type { Session, Settings } from '../lib/types'
 import type { Updates } from '../lib/updates'
-import { Dot, IconButton } from './ui'
+import { Dot } from './ui'
 import { Mark } from './Mark'
 import { mod } from '../lib/platform'
 
 export type Page = 'chat' | 'skills' | 'mcp' | 'connectors' | 'models' | 'cloud' | 'memory' | 'research' | 'recipes' | 'activity' | 'maintenance' | 'services' | 'settings'
 
-export function TitleBar({ settings, onToggle, onChooseFolder }: {
-  settings: Settings
-  onToggle: (panel: 'sidebar' | 'files' | 'terminal') => void
-  onChooseFolder: () => void
-}) {
-  const folder = settings.workspace?.split(/[\\/]/).filter(Boolean).at(-1)
+/** The rail's sections. Workshop holds every page except the conversation and Settings. */
+export type Section = 'tasks' | 'workshop' | 'activity' | 'services' | 'settings'
+
+export function sectionOf(page: Page | 'setup'): Section {
+  if (page === 'chat') return 'tasks'
+  if (page === 'settings' || page === 'setup') return 'settings'
+  if (page === 'activity') return 'activity'
+  if (page === 'services') return 'services'
+  return 'workshop'
+}
+
+type WorkshopItem = { page: Page; label: string; icon: ReactNode }
+/** The Workshop sub-navigation: every page id stays the same; only where it is listed changed. */
+export const WORKSHOP_GROUPS: Array<{ label: string; items: WorkshopItem[] }> = [
+  { label: 'Capabilities', items: [
+    { page: 'skills', label: 'Skills', icon: <Puzzle size={15} /> },
+    { page: 'mcp', label: 'MCP servers', icon: <Plug size={15} /> },
+    { page: 'connectors', label: 'Connectors', icon: <Cable size={15} /> },
+    { page: 'recipes', label: 'Browser recipes', icon: <Globe size={15} /> },
+    { page: 'research', label: 'Research', icon: <Globe2 size={15} /> },
+  ] },
+  { label: 'Models', items: [
+    { page: 'models', label: 'Local models', icon: <Server size={15} /> },
+    { page: 'cloud', label: 'Cloud models', icon: <Cloud size={15} /> },
+  ] },
+  { label: 'Knowledge', items: [
+    { page: 'memory', label: 'Memory', icon: <Brain size={15} /> },
+  ] },
+  { label: 'System', items: [
+    { page: 'services', label: 'Services', icon: <ServerCog size={15} /> },
+    { page: 'maintenance', label: 'Maintenance', icon: <Wrench size={15} /> },
+    { page: 'activity', label: 'Activity', icon: <Activity size={15} /> },
+  ] },
+]
+
+export const PAGE_LABEL: Record<Page, string> = {
+  chat: 'Tasks', settings: 'Settings',
+  ...Object.fromEntries(WORKSHOP_GROUPS.flatMap((group) => group.items.map((item) => [item.page, item.label]))),
+} as Record<Page, string>
+
+export function TitleBar({ onPalette, onMenu, showMenu }: { onPalette: () => void; onMenu: () => void; showMenu: boolean }) {
   return (
     <header className="titlebar">
       <div className="titlebar__left">
-        <IconButton label={`Toggle sidebar (${mod}B)`} active={settings.sidebar !== false} onClick={() => onToggle('sidebar')}><PanelLeft size={16} /></IconButton>
-        <span className="brand"><Mark size={20} className="brand__mark" />PockPock <b>Agent</b></span>
+        {showMenu && <button type="button" className="icon-button" aria-label="Open tasks and Workshop" title="Open tasks and Workshop" onClick={onMenu}><Menu size={16} /></button>}
+        <span className="brand"><Mark size={20} className="brand__mark" /><b>PockPock</b> Agent Studio</span>
       </div>
-      <button type="button" className="titlebar__folder" onClick={onChooseFolder} title={settings.workspace || 'Open a folder'}>
-        <Folder size={13} /><span>{folder || 'Open a folder'}</span>
+      <button type="button" className="titlebar__search" onClick={onPalette} aria-label={`Search tasks, pages and settings (${mod}K)`}>
+        <Search size={13} /><span>Search tasks, pages and settings</span><kbd>{mod}K</kbd>
       </button>
-      <div className="titlebar__right">
-        <IconButton label={`Toggle terminal (${mod}J)`} active={Boolean(settings.terminal)} onClick={() => onToggle('terminal')}><PanelBottom size={16} /></IconButton>
-        <IconButton label={`Toggle files (${mod}Shift+E)`} active={settings.files !== false} onClick={() => onToggle('files')}><PanelRight size={16} /></IconButton>
-      </div>
+      <div className="titlebar__right" />
     </header>
   )
 }
 
-function groupOf(timestamp: number) {
-  const age = Date.now() - timestamp
-  if (age < 86_400_000 && new Date(timestamp).getDate() === new Date().getDate()) return 'Today'
-  if (age < 7 * 86_400_000) return 'This week'
-  return 'Older'
+export function Rail({ section, needsYou, servicesTone, onSection }: {
+  section: Section
+  needsYou: boolean
+  servicesTone: 'ok' | 'warn' | 'off'
+  onSection: (section: Section) => void
+}) {
+  const item = (id: Section, label: string, icon: ReactNode, badge?: ReactNode) => (
+    <button type="button" className={`rail__item${section === id ? ' is-active' : ''}`} aria-current={section === id ? 'page' : undefined}
+      aria-label={label} title={label} onClick={() => onSection(id)}>
+      {icon}{badge}
+    </button>
+  )
+  return (
+    <nav className="rail" aria-label="Sections">
+      {item('tasks', needsYou ? 'Tasks: one needs you' : 'Tasks', <ListTodo size={18} />, needsYou ? <span className="rail__badge" aria-hidden="true" /> : undefined)}
+      {item('workshop', 'Workshop', <Blocks size={18} />)}
+      {item('activity', 'Activity', <Activity size={18} />)}
+      <span className="rail__spacer" />
+      {item('services', servicesTone === 'warn' ? 'Services: not all running' : 'Services', <ServerCog size={18} />, servicesTone === 'warn' ? <span className="rail__badge rail__badge--warn" aria-hidden="true" /> : undefined)}
+      {item('settings', 'Settings', <SettingsIcon size={18} />)}
+    </nav>
+  )
 }
 
-export function Sidebar({ overlay, sessions, activeId, page, running, status, onSelect, onNew, onDelete, onPage }: {
-  overlay?: boolean
-  sessions: Session[]
-  activeId: string
-  page: Page
-  running: { sessionId: string } | null
-  status: Status
-  onSelect: (id: string) => void
-  onNew: () => void
-  onDelete: (id: string) => void
-  onPage: (page: Page) => void
-}) {
-  const [query, setQuery] = useState('')
-  const groups = useMemo(() => {
-    const needle = query.trim().toLowerCase()
-    const sorted = [...sessions]
-      .filter((session) => !needle || session.title.toLowerCase().includes(needle) || session.messages.some((message) => message.content.toLowerCase().includes(needle)))
-      .sort((a, b) => b.updatedAt - a.updatedAt)
-    const result: Array<[string, Session[]]> = []
-    for (const session of sorted) {
-      const label = groupOf(session.updatedAt)
-      const group = result.find(([name]) => name === label)
-      if (group) group[1].push(session)
-      else result.push([label, [session]])
-    }
-    return result
-  }, [sessions, query])
-  const enabledModels = status.state?.models.filter((model) => model.enabled).length
+export function WorkshopNav({ page, status, overlay, onPage }: { page: Page; status: Status; overlay?: boolean; onPage: (page: Page) => void }) {
+  const enabledModels = status.state?.models.filter((model) => model.enabled && !model.embedding).length
   const servicesUp = status.services.filter((service) => service.status === 'running').length
   const installed = status.services.filter((service) => service.available).length
-  const nav: Array<{ page: Page; icon: React.ReactNode; label: string; count?: number | string; tone?: string }> = [
-    { page: 'recipes', icon: <Globe size={15} />, label: 'Browser recipes' },
-    { page: 'activity', icon: <Activity size={15} />, label: 'Activity' },
-    { page: 'skills', icon: <Puzzle size={15} />, label: 'Skills', count: status.counts?.skills },
-    { page: 'mcp', icon: <Plug size={15} />, label: 'MCP servers', count: status.counts?.mcp },
-    { page: 'connectors', icon: <Cable size={15} />, label: 'Connectors' },
-    { page: 'models', icon: <Server size={15} />, label: 'Models', count: enabledModels },
-    { page: 'cloud', icon: <Cloud size={15} />, label: 'Cloud models', count: status.state?.cloud_models?.length || undefined },
-    { page: 'memory', icon: <Brain size={15} />, label: 'Memory' },
-    { page: 'research', icon: <Globe2 size={15} />, label: 'Research' },
-    { page: 'maintenance', icon: <Wrench size={15} />, label: 'Maintenance' },
-    { page: 'services', icon: <ServerCog size={15} />, label: 'Services', count: installed ? `${servicesUp}/${installed}` : undefined, tone: installed && servicesUp < installed ? 'warn' : undefined },
-    { page: 'settings', icon: <SettingsIcon size={15} />, label: 'Settings' },
-  ]
+  const counts: Partial<Record<Page, { value: string | number; tone?: 'warn' }>> = {
+    ...(status.counts?.skills !== undefined ? { skills: { value: status.counts.skills } } : {}),
+    ...(status.counts?.mcp !== undefined ? { mcp: { value: status.counts.mcp } } : {}),
+    ...(enabledModels !== undefined ? { models: { value: enabledModels } } : {}),
+    ...(status.state?.cloud_models?.length ? { cloud: { value: status.state.cloud_models.length } } : {}),
+    ...(installed ? { services: { value: `${servicesUp}/${installed}`, tone: servicesUp < installed ? 'warn' as const : undefined } } : {}),
+  }
   return (
-    <aside className={`sidebar${overlay ? ' is-overlay' : ''}`} aria-label="Chats and settings">
-      <div className="sidebar__top">
-        <button type="button" className="new-chat" onClick={onNew}><MessageSquarePlus size={15} /> New chat <kbd>{mod}N</kbd></button>
-        <label className="search">
-          <Search size={13} />
-          <input type="search" placeholder="Search chats" value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Search chats" />
-        </label>
-      </div>
-      <nav className="sessions" aria-label="Chats">
-        {!sessions.length && <p className="sessions__empty">No chats yet. Start one with New chat.</p>}
-        {sessions.length > 0 && !groups.length && <p className="sessions__empty">No chats match “{query}”.</p>}
-        {groups.map(([label, items]) => (
-          <div key={label} className="sessions__group">
-            <div className="section-label">{label}</div>
-            {items.map((session) => (
-              <div key={session.id} className={`session${page === 'chat' && session.id === activeId ? ' is-active' : ''}`}>
-                <button type="button" className="session__open" onClick={() => onSelect(session.id)} aria-current={page === 'chat' && session.id === activeId ? 'page' : undefined}>
-                  {running?.sessionId === session.id ? <Dot tone="busy" /> : <span className="session__bullet" aria-hidden="true" />}
-                  <span className="session__title">{session.title}</span>
-                  <small>{relativeTime(session.updatedAt)}</small>
-                </button>
-                <button type="button" className="session__delete" onClick={() => onDelete(session.id)} aria-label={`Delete chat ${session.title}`} title="Delete chat" disabled={running?.sessionId === session.id}><Trash2 size={13} /></button>
-              </div>
+    <aside className={`panel${overlay ? ' is-overlay' : ''}`} aria-label="Workshop">
+      <div className="panel__head"><h2>Workshop</h2></div>
+      <nav className="workshop-nav" aria-label="Workshop pages">
+        {WORKSHOP_GROUPS.map((group) => (
+          <div key={group.label} className="workshop-nav__group">
+            <div className="section-label">{group.label}</div>
+            {group.items.map((item) => (
+              <button type="button" key={item.page} className={`nav-item${page === item.page ? ' is-active' : ''}`} aria-current={page === item.page ? 'page' : undefined} onClick={() => onPage(item.page)}>
+                {item.icon}<span>{item.label}</span>
+                {counts[item.page] && <small className={counts[item.page]?.tone ? `nav-item__count--${counts[item.page]?.tone}` : ''}>{counts[item.page]?.value}</small>}
+              </button>
             ))}
           </div>
-        ))}
-      </nav>
-      <nav className="customize" aria-label="Customize">
-        <div className="section-label">Customize</div>
-        {nav.map((item) => (
-          <button type="button" key={item.page} className={`nav-item${page === item.page ? ' is-active' : ''}`} aria-current={page === item.page ? 'page' : undefined} onClick={() => onPage(item.page)}>
-            {item.icon}<span>{item.label}</span>{item.count !== undefined && <small className={item.tone ? `nav-item__count--${item.tone}` : ''}>{item.count}</small>}
-          </button>
         ))}
       </nav>
     </aside>
@@ -128,18 +123,18 @@ export function Sidebar({ overlay, sessions, activeId, page, running, status, on
 export function StatusBar({ status, version, onOpenServices, updates, onOpenSettings }: { status: Status; version: string; onOpenServices: () => void; updates: Updates; onOpenSettings: () => void }) {
   const update = updates.state
   const backendTone = status.backend.phase === 'ready' ? 'ok' : status.backend.phase === 'checking' || status.backend.phase === 'starting' ? 'busy' : 'off'
-  const running = status.state?.models.filter((model) => model.running).map((model) => model.name) ?? []
+  const running = status.state?.models.filter((model) => model.running && !model.embedding).map((model) => model.name) ?? []
   return (
     <footer className="statusbar">
       <button type="button" className="statusbar__services" onClick={onOpenServices} title="Open Services">
-      <span title={status.backend.detail}><Dot tone={backendTone} /> {status.backend.phase === 'ready' ? 'Backend ready' : status.backend.detail}</span>
-      <span title={status.state?.error || ''}><Dot tone={status.state?.connected ? 'ok' : 'off'} /> Ollama</span>
-      <span><Dot tone={status.state?.router_enabled ? 'ok' : 'warn'} /> Router {status.state?.router_enabled === false ? 'paused' : ''}</span>
-      <span title={status.claw?.detail}><Dot tone={status.claw?.ready ? 'ok' : 'off'} /> OpenClaw</span>
-      <span title={status.nemo?.detail}><Dot tone={status.nemoChecking ? 'busy' : status.nemo?.ready ? 'ok' : status.nemo?.checked === false ? 'warn' : 'off'} /> NemoClaw{status.nemo?.checked === false ? ' · not checked' : ''}</span>
+        <span title={status.backend.detail}><Dot tone={backendTone} /> {status.backend.phase === 'ready' ? 'Gateway ready' : status.backend.detail}</span>
+        <span title={status.state?.error || ''}><Dot tone={status.state?.connected ? 'ok' : 'off'} /> Ollama{status.state?.connected ? ` · ${running.length ? `${running.length} ${running.length === 1 ? 'model' : 'models'} loaded` : 'no model loaded'}` : ' · not running'}</span>
+        <span><Dot tone={status.state?.router_enabled ? 'ok' : 'warn'} /> Smart router {status.state?.router_enabled === false ? 'paused' : 'on'}</span>
+        <span title={status.claw?.detail}><Dot tone={status.claw?.ready ? 'ok' : 'off'} /> OpenClaw</span>
+        <span title={status.nemo?.detail}><Dot tone={status.nemoChecking ? 'busy' : status.nemo?.ready ? 'ok' : status.nemo?.checked === false ? 'warn' : 'off'} /> NemoClaw{status.nemo?.checked === false ? ' · not checked' : ''}</span>
       </button>
       <span className="statusbar__spacer" />
-      <span title="Models loaded in memory">{running.length ? `Loaded: ${running.join(', ')}` : 'No model loaded'}</span>
+      {running.length > 0 && <span className="statusbar__models" title="Models loaded in memory">{running.join(', ')}</span>}
       {update?.status === 'ready' && (
         <button type="button" className="statusbar__update" onClick={() => void updates.install()} title={`Restart PockPock to install version ${update.version}`}>
           <Download size={12} /> Restart to update to {update.version}

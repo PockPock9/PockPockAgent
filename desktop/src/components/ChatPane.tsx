@@ -2,7 +2,7 @@
 // workspace context, and the skill/MCP link approval flow.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { ArrowDown, ArrowUp, Box, Bot, ChevronDown, Cloud, FileText, Folder, Image as ImageIcon, LoaderCircle, MessageSquare, Monitor, Paperclip, Plug, Plus, Puzzle, Shield, Sparkles, Square, Terminal, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, Box, Bot, ChevronDown, Cloud, FileText, Folder, Image as ImageIcon, LoaderCircle, MessageSquare, Monitor, PanelRight, Paperclip, Plug, Plus, Puzzle, Shield, Sparkles, Square, Terminal, X } from 'lucide-react'
 import type { Status } from '../lib/status'
 import { ENGINE_LABEL } from '../lib/types'
 import type { AgentPermission, AppState, Attachment, ClawPermission, Engine, Message, NemoRoute, Session, Settings } from '../lib/types'
@@ -11,19 +11,11 @@ import { ExtensionCard, inspectLink, linkFromMessage } from './ExtensionCard'
 import type { Proposal } from './ExtensionCard'
 import { EngineIcon, MessageView } from './MessageView'
 import { ReportDialog } from './ReportDialog'
+import { RunBar } from './RunBar'
 import { Dot, MenuItem, Popover } from './ui'
 import { computer, isMac } from '../lib/platform'
+import { AGENT_PERMISSION, CLAW_PERMISSION } from '../lib/permissions'
 
-const CLAW_PERMISSION: Record<ClawPermission, { title: string; detail: string }> = {
-  ask: { title: 'Ask first', detail: 'Every action waits for you to allow or deny it.' },
-  auto: { title: 'Auto-approve safe', detail: 'Reading files and read-only commands run on their own. Everything else asks.' },
-  full: { title: 'Full access', detail: 'Nothing asks. The agent can run any command and change any file on this PC.' },
-}
-const AGENT_PERMISSION: Record<AgentPermission, { title: string; detail: string }> = {
-  default: { title: 'Default', detail: 'Read-only tools. File changes are not allowed.' },
-  'auto-review': { title: 'Auto-review', detail: 'Changes inside the task folder; risky actions ask first.' },
-  'full-access': { title: 'Full access', detail: 'Reads and edits inside the task folder without asking; no arbitrary shell.' },
-}
 const MAX_CLAW_CHARS = 16_000
 
 export type SendRequest = { prompt: string; attachments: Attachment[] }
@@ -42,6 +34,13 @@ type Props = {
   pendingAttachments: Attachment[]
   setPendingAttachments: (change: (previous: Attachment[]) => Attachment[]) => void
   focusSignal: number
+  /** Sends the request behind an assistant turn again, optionally with another model. */
+  onRetry: (message: Message, model?: string) => void
+  /** The smallest enabled local model smaller than the one a turn used, for the slow run bar. */
+  smallerModel: (message: Message) => string | undefined
+  onOpenServices: () => void
+  inspectorOpen: boolean
+  onToggleInspector: () => void
 }
 
 function readinessError(engine: Engine, status: Status, settings: Settings, state: AppState | null): string {
@@ -62,7 +61,7 @@ function readinessError(engine: Engine, status: Status, settings: Settings, stat
 }
 
 export function ChatPane(props: Props) {
-  const { session, running, status, settings, patchSettings, onSend, onStop, onChangeMessage, onChooseFolder, onOpenPage, pendingAttachments, setPendingAttachments, focusSignal } = props
+  const { session, running, status, settings, patchSettings, onSend, onStop, onChangeMessage, onChooseFolder, onOpenPage, pendingAttachments, setPendingAttachments, focusSignal, onRetry, smallerModel, onOpenServices, inspectorOpen, onToggleInspector } = props
   const engine: Engine = settings.engine ?? 'agent'
   const clawPermission = settings.clawPermission ?? 'ask'
   const agentPermission = settings.agentPermission ?? 'auto-review'
@@ -207,8 +206,32 @@ export function ChatPane(props: Props) {
   const folderName = settings.workspace?.split(/[\\/]/).filter(Boolean).at(-1)
   const engineTone = engine === 'openclaw' ? (status.claw?.ready ? 'ok' : 'off') : engine === 'nemoclaw' ? (status.nemoChecking ? 'busy' : status.nemo?.ready ? 'ok' : 'off') : (status.state?.connected ? 'ok' : 'off')
 
+  const lastReply = [...messages].reverse().find((message) => message.role === 'assistant')
+  const lastLive = Boolean(runningHere && lastReply && running?.messageId === lastReply.id)
+  const smaller = lastReply && lastLive && (lastReply.engine === 'chat' || lastReply.engine === 'agent') ? smallerModel(lastReply) : undefined
+  const ENGINES: Engine[] = ['chat', 'agent', 'openclaw', 'nemoclaw']
+  const engineUnavailable = (item: Engine) => (item === 'openclaw' && status.claw ? !status.claw.available : item === 'nemoclaw' && status.nemo ? !status.nemo.available : false)
+
   return (
     <div className="chat">
+      <header className="chat__head">
+        <div className="chat__title">
+          <h1 title={session?.title}>{session?.messages.length ? session.title : 'New task'}</h1>
+          <p>{ENGINE_LABEL[engine]} · {settings.workspace ? <span className="mono" title={settings.workspace}>{settings.workspace}</span> : `This ${computer}`}</p>
+        </div>
+        <div className="segmented" role="radiogroup" aria-label="Engine">
+          {ENGINES.map((item) => (
+            <button key={item} type="button" role="radio" aria-checked={engine === item} className={engine === item ? 'is-active' : ''} disabled={busy || engineUnavailable(item)}
+              title={engineUnavailable(item) ? (item === 'openclaw' ? status.claw?.detail : status.nemo?.detail) : undefined} onClick={() => chooseEngine(item)}>{ENGINE_LABEL[item]}</button>
+          ))}
+        </div>
+        <button type="button" className={`button button--small${inspectorOpen ? ' is-pressed' : ''}`} aria-pressed={inspectorOpen} onClick={onToggleInspector} aria-label="Inspector" title="Context, files and terminal"><PanelRight size={14} /> <span className="chat__inspector-label">Inspector</span></button>
+      </header>
+      {lastReply && (
+        <RunBar message={lastReply} live={lastLive} onStop={onStop} onOpenServices={onOpenServices}
+          onRetry={!busy ? () => onRetry(lastReply) : undefined} onReport={() => setReporting(lastReply)}
+          smallerModel={smaller} onSmaller={smaller ? () => onRetry(lastReply, smaller) : undefined} />
+      )}
       <div ref={listRef} className="chat__scroll" onScroll={(event) => { const el = event.currentTarget; setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 80) }}
         onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); void upload(event.dataTransfer.files) }}>
         <div className="chat__thread">
