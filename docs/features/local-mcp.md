@@ -13,6 +13,8 @@ It is step 1 of the local MCP plan:
 
 ## What the user sees
 
+![The MCP servers page with two servers running in Local MCP](../images/mcp-servers.png)
+
 - **Services** lists **Local MCP** (group Backend, port 8776). It starts with the other backend services, and **Stop**, **Restart** and the log work as for any service. Stopping it stops every server it runs.
 - **Workshop → MCP servers** marks each server added in PockPock as *Runs on this PC in Local MCP* (or *Remote server, reached through Local MCP*) and shows its state:
 

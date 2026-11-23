@@ -67,7 +67,7 @@ PockPock is a local AI workspace for Windows and macOS. Its desktop app, **PockP
 |---|---|
 | ![The Cloud models page with a provider connected](docs/images/cloud-models.png) | ![The model menu with local and cloud models](docs/images/model-menu-cloud.png) |
 
-*The Cloud models screenshots show sample models and a sample key ending; no real account is connected in them. They date from 0.2.8, when OpenRouter was still offered.*
+*The Cloud models screenshots show sample models and sample key endings; no real account is connected in them.*
 
 More screenshots, a guide to every feature, and [example prompts for OpenClaw](https://github.com/PockPock9/PockPockAgent/wiki/OpenClaw-Examples) are in the [wiki](https://github.com/PockPock9/PockPockAgent/wiki).
 
