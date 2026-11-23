@@ -43,7 +43,7 @@ PockPock is a local AI workspace for Windows and macOS. Its desktop app, **PockP
 
 | Skills | Services |
 |---|---|
-| ![The Skills page](docs/images/skills.png) | ![The Services page with all eight services running](docs/images/services.png) |
+| ![The Skills page](docs/images/skills.png) | ![The Services page](docs/images/services.png) |
 
 **Setup installs everything, then proves it works.** One setup screen installs Python, Ollama and the models, OpenClaw and NemoClaw. It then starts every service, checks each one, and asks a model for a test reply.
 

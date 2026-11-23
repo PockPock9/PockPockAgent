@@ -95,7 +95,7 @@ The gateway starts at sign-in from a Startup-folder item created by onboarding. 
 6. When an action needs approval, an **Approval required · OpenClaw** card appears with the action and its target (the command line, file path, or URL). Choose **Allow once** or **Deny**. The agent waits, then continues with the result.
 7. **Stop** cancels the request, denies anything still waiting, and aborts the agent run in OpenClaw.
 
-Skills and MCP servers can be added to this engine by pasting a link; see [Skills and MCP servers](agent-extensions.md#skills-and-mcp-servers). Tools from a connected MCP server ask for approval in Ask first and Auto-approve safe, on a card titled `Use MCP tool: <server> › <tool>`.
+Skills and MCP servers can be added to this engine by pasting a link; see [Skills and MCP servers](agent-extensions.md#skills-and-mcp-servers). MCP servers added in PockPock run in [Local MCP](local-mcp.md); OpenClaw's configuration holds only each server's local address on it and the hub token. Tools from a connected MCP server ask for approval in Ask first and Auto-approve safe, on a card titled `Use MCP tool: <server> › <tool>`.
 
 ### Choosing the model
 
@@ -103,7 +103,7 @@ With the OpenClaw engine selected, the model picker lists **Default** (OpenClaw'
 
 **The list follows Ollama** (`desktop/electron/openclaw-models.cjs`, since 2026-11-22). OpenClaw writes its Ollama model list once, when it is set up, so a model pulled later (for example `qwen3.6:35b-a3b`) never appeared in the picker and removed models stayed in it. The app now compares the list with Ollama's installed models when OpenClaw comes up and then at most once a minute, and calls `openclaw config set models.providers.ollama.models` only when the installed models changed. A new model's entry comes from Ollama's `/api/show`: tools, thinking (with the thinking levels), image input, and the context length, with `contextTokens` set to 64K or the model's maximum if smaller. Existing entries keep their settings; entries for uninstalled models are removed (with `--replace`, which OpenClaw requires to drop entries), except the default model's. Models without tool support are listed but, as before, not shown in the picker. Tests: `openclaw-models.test.cjs`.
 
-Cloud models chosen on the **Cloud models** page are listed below the local ones, under **Cloud models · sent to the provider**. They belong to the `pockpock-cloud` provider that PockPock writes into OpenClaw's configuration; its address is the PockPock gateway's local endpoint and its key is a local token, so no cloud API key is stored by OpenClaw. A chosen cloud model is set on the session as `pockpock-cloud/<provider>/<model>`. See [Cloud models](cloud-models.md).
+Cloud models chosen on the **Cloud models** page are listed below the local ones, under **Cloud · sends data to the provider**. They belong to the `pockpock-cloud` provider that PockPock writes into OpenClaw's configuration; its address is the PockPock gateway's local endpoint and its key is a local token, so no cloud API key is stored by OpenClaw. A chosen cloud model is set on the session as `pockpock-cloud/<provider>/<model>`. See [Cloud models](cloud-models.md).
 
 A model is loaded by Ollama when a turn first uses it and unloaded after Ollama's idle period (five minutes unless `OLLAMA_KEEP_ALIVE` is set). Status checks do not load a model. Switching to a model that does not fit beside the loaded one makes Ollama unload the other first.
 

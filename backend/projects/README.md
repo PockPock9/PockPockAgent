@@ -14,8 +14,9 @@ These directories own workflow services and in-process packages. Services commun
 | [validator](./validator/README.md) | Workspace validation | 8772 | `app:app` |
 | [run_store](./run_store/README.md) | Durable run and event persistence | 8773 | `app:app` |
 | [browser_automation](./browser_automation/README.md) | Isolated run-scoped Chromium and read-only navigation | 8774 | `app:app` |
+| [mcp_hub](./mcp_hub/README.md) | Local MCP: runs the MCP servers added in PockPock once and serves each to the agents | 8776 | `app:app` |
 | [nemoclaw_bridge](../../docs/features/nemoclaw-agent.md) | Sends Conversations turns to a NemoClaw sandbox in WSL | Gateway process | `create_router`, `NemoClawBridge` |
-| [agent_extensions](../../docs/features/agent-extensions.md) | Previews a pasted GitHub or MCP link, then installs skills into OpenClaw or tests and saves an MCP server after approval | Gateway process, plus a short-lived Node helper and one test start of the MCP server | `create_router`, `ExtensionService` |
+| [agent_extensions](../../docs/features/agent-extensions.md) | Previews a pasted GitHub or MCP link, then installs skills into OpenClaw or tests an MCP server and saves it in Local MCP after approval | Gateway process, plus a short-lived Node helper and one test start of the MCP server | `create_router`, `ExtensionService` |
 | [openclaw_bridge](../../docs/features/openclaw-agent.md) | Sends Conversations turns to a native OpenClaw gateway on this PC, relays approvals, and ships the permission plugin | Gateway process, plus one Node helper per turn | `create_router`, `OpenClawBridge` |
 
 `internal_auth.py` is a shared internal HTTP contract helper. These projects are separated by service ownership and runtime process, while remaining in one monorepo and using the root Python environment. They are not separately versioned distributions yet.

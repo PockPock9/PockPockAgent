@@ -141,7 +141,7 @@ transcripts contain no planner reasoning — the harness never runs the
 planner — so the data teaches format and tool use only, which is the
 right scope for distilling the small executor. No training happens
 here; the recipe is in
-[`docs/features/lora-distillation-recipe.md`](../../docs/features/lora-distillation-recipe.md)
+[`docs/features/lora-distillation-recipe.md`](../../../docs/features/lora-distillation-recipe.md)
 (Unsloth/TRL, executor-only).
 
 ## Layout
