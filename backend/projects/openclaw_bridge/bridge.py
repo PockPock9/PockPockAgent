@@ -112,6 +112,19 @@ def validate_model(model: str | None) -> str:
     return value
 
 
+def validate_workspace(workspace_path: str | None) -> str | None:
+    """The folder OpenClaw works in for this turn: an existing absolute folder, or None for its own workspace."""
+    value = (workspace_path or "").strip()
+    if not value:
+        return None
+    folder = Path(value).expanduser()
+    if not folder.is_absolute():
+        raise OpenClawError("invalid_workspace", "The selected folder must be a full path.", 400)
+    if not folder.is_dir():
+        raise OpenClawError("invalid_workspace", f"The selected folder no longer exists: {value}. Choose the folder again.", 400)
+    return str(folder.resolve())
+
+
 def session_key(agent: str, session_id: str) -> str:
     return f"agent:{agent}:explicit:{session_id}"
 
@@ -361,12 +374,21 @@ class OpenClawBridge:
         finally:
             turn.close()
 
-    def start_turn(self, session_id: str, message: str, mode: str, model: str | None = None, selection: dict[str, Any] | None = None) -> OpenClawTurn:
+    def start_turn(
+        self,
+        session_id: str,
+        message: str,
+        mode: str,
+        model: str | None = None,
+        selection: dict[str, Any] | None = None,
+        workspace_path: str | None = None,
+    ) -> OpenClawTurn:
         """Start one turn. Only one runs at a time; the caller must drain or abort it."""
         session = validate_session_id(session_id)
         text = validate_message(message)
         permission = validate_mode(mode)
         chosen_model = validate_model(model)
+        folder = validate_workspace(workspace_path)
         ok, reason = self.available()
         if not ok:
             raise OpenClawError("unavailable", reason, 503)
@@ -394,6 +416,8 @@ class OpenClawBridge:
                 "model": chosen_model,
                 "agent": self.config.agent,
                 "timeoutSeconds": self.config.timeout_seconds,
+                # The session's working folder, set before every turn so a changed folder applies at once.
+                "cwd": folder,
                 # The session's tool overlay; null clears one left by an earlier turn. Absent when no
                 # selection ran, so OpenClaw's session is left as it is.
                 **({"toolOverrides": selection.get("toolOverrides")} if selection is not None else {}),

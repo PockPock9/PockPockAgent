@@ -92,7 +92,7 @@ export function Inspector({ tab, onTab, overlay, message, settings, status, term
             )}
             <section className="inspector__section">
               <h3>Folders</h3>
-              <Row label="Workspace">{settings.workspace && settings.useWorkspaceForAgent !== false ? <span className="mono" title={settings.workspace}>{settings.workspace.split(/[\\/]/).filter(Boolean).at(-1)}</span> : 'A new task folder'}</Row>
+              <Row label="Workspace">{settings.workspace && settings.useWorkspaceForAgent !== false ? <span className="mono" title={settings.workspace}>{settings.workspace.split(/[\\/]/).filter(Boolean).at(-1)}</span> : engine === 'openclaw' ? "OpenClaw's workspace" : 'A new task folder'}</Row>
               <Row label="Task folder">{taskFolder ? <button type="button" className="link-button" title={taskFolder} onClick={() => void bridge()?.openPath(taskFolder)}><FolderOpen size={12} /> Open</button> : engine === 'agent' ? 'Created when a run starts' : '—'}</Row>
             </section>
             <section className="inspector__section">

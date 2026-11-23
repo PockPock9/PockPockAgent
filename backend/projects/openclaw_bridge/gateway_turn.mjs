@@ -138,6 +138,15 @@ function approvalEvent(kind, payload) {
 /** The provider PockPock adds for cloud models: its ids are "<provider>/<model>" (see docs/features/cloud-models.md). */
 const CLOUD_PROVIDER = 'pockpock-cloud'
 
+/** OpenClaw's own workspace (agents.defaults.workspace), used when no folder is chosen. */
+function defaultWorkspace() {
+  try {
+    const configured = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'))?.agents?.defaults?.workspace
+    if (typeof configured === 'string' && configured.trim()) return configured.trim().replace(/^~(?=$|[\\/])/, os.homedir())
+  } catch { /* fall back to OpenClaw's default */ }
+  return path.join(STATE_DIR, 'workspace')
+}
+
 /** The default model, the tool-capable Ollama models and the cloud models in OpenClaw's config. */
 function localModels() {
   try {
@@ -324,6 +333,15 @@ async function run(start) {
   // for the session; null clears an earlier overlay. Only false entries are accepted, so nothing the
   // user switched off can be switched on here.
   const overlay = 'toolOverrides' in start && !subtask ? { toolOverrides: sanitizeToolOverrides(start.toolOverrides) } : {}
+  // The working folder: commands run there and relative file paths resolve there. sessions.create on an
+  // existing key keeps the conversation and updates its folder, so a folder changed between turns applies.
+  // No folder chosen: back to OpenClaw's own workspace (a reset failing is not worth stopping the turn).
+  const chosenFolder = typeof start.cwd === 'string' && start.cwd ? start.cwd : ''
+  try {
+    await gateway.call('sessions.create', { key: sessionKey, cwd: chosenFolder || defaultWorkspace() })
+  } catch (error) {
+    if (chosenFolder) return fail('workspace_failed', `OpenClaw could not work in ${chosenFolder}: ${String(error?.message ?? error).slice(0, 300)}`)
+  }
   await gateway.call('sessions.patch', { key: sessionKey, permissionMode: 'full', ...(sessionModel ? { model: sessionModel } : {}), ...overlay })
   const sent = await gateway.call('chat.send', { sessionKey, message, idempotencyKey: crypto.randomUUID() })
   runId = String(sent?.runId ?? '')

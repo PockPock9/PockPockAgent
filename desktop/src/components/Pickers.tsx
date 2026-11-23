@@ -91,15 +91,15 @@ export function PermissionPicker({ menu, onToggle, engine, settings, status, pat
             <MenuItem key={key} icon={<Shield size={14} />} title={CLAW_PERMISSION[key].title} badge={key === 'full' ? 'Risky' : undefined} detail={CLAW_PERMISSION[key].detail} danger={key === 'full'} selected={clawPermission === key}
               disabled={key !== 'full' && status.claw?.plugin === false} onSelect={() => choose({ clawPermission: key })} />
           ))
-          : <>
-            {(Object.keys(AGENT_PERMISSION) as AgentPermission[]).map((key) => (
-              <MenuItem key={key} icon={<Shield size={14} />} title={AGENT_PERMISSION[key].title} badge={key === 'full-access' ? 'Use with care' : undefined} detail={AGENT_PERMISSION[key].detail} danger={key === 'full-access'} selected={agentPermission === key} onSelect={() => choose({ agentPermission: key })} />
-            ))}
-            <div className="popover__label">Task folder</div>
-            <MenuItem icon={<Folder size={14} />} title={settings.workspace ? `Work in ${folderName}` : 'Work in the open folder'} detail={settings.workspace ? 'The agent reads and edits files in this folder.' : 'Open a folder first.'} disabled={!settings.workspace}
-              selected={Boolean(settings.workspace && settings.useWorkspaceForAgent !== false)} onSelect={() => choose({ useWorkspaceForAgent: true })} />
-            <MenuItem icon={<Folder size={14} />} title="Use a new temporary folder" detail="Each task gets an empty folder." selected={!settings.workspace || settings.useWorkspaceForAgent === false} onSelect={() => choose({ useWorkspaceForAgent: false })} />
-          </>}
+          : (Object.keys(AGENT_PERMISSION) as AgentPermission[]).map((key) => (
+            <MenuItem key={key} icon={<Shield size={14} />} title={AGENT_PERMISSION[key].title} badge={key === 'full-access' ? 'Use with care' : undefined} detail={AGENT_PERMISSION[key].detail} danger={key === 'full-access'} selected={agentPermission === key} onSelect={() => choose({ agentPermission: key })} />
+          ))}
+        <div className="popover__label">Task folder</div>
+        <MenuItem icon={<Folder size={14} />} title={settings.workspace ? `Work in ${folderName}` : 'Work in the open folder'} detail={settings.workspace ? (engine === 'openclaw' ? 'Commands run here, and files without a full path are read and saved here.' : 'The agent reads and edits files in this folder.') : 'Open a folder first.'} disabled={!settings.workspace}
+          selected={Boolean(settings.workspace && settings.useWorkspaceForAgent !== false)} onSelect={() => choose({ useWorkspaceForAgent: true })} />
+        {engine === 'openclaw'
+          ? <MenuItem icon={<Folder size={14} />} title="Use OpenClaw's workspace" detail="OpenClaw's own folder in your user profile (.openclaw\workspace)." selected={!settings.workspace || settings.useWorkspaceForAgent === false} onSelect={() => choose({ useWorkspaceForAgent: false })} />
+          : <MenuItem icon={<Folder size={14} />} title="Use a new temporary folder" detail="Each task gets an empty folder." selected={!settings.workspace || settings.useWorkspaceForAgent === false} onSelect={() => choose({ useWorkspaceForAgent: false })} />}
       </Popover>
     </div>
   )
