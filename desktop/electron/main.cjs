@@ -6,6 +6,7 @@ const path = require('node:path')
 const { ServiceManager, httpJson, internalToken } = require('./services.cjs')
 const { Setup } = require('./setup.cjs')
 const { Updater } = require('./updater.cjs')
+const { cleanAfterManualInstall } = require('./fresh-install.cjs')
 const themes = require('./themes.cjs')
 const { syncGuidance } = require('./openclaw-guidance.cjs')
 const { installedBrowsers } = require('./browsers.cjs')
@@ -36,6 +37,10 @@ const STORE_KEYS = new Set(['sessions', 'settings'])
 
 // Tests point the app at a throwaway data folder so they never touch real chats.
 if (process.env.POCKPOCK_DESKTOP_USER_DATA) app.setPath('userData', process.env.POCKPOCK_DESKTOP_USER_DATA)
+// A version installed by hand on macOS starts without the old app's caches (Windows: the installer does it).
+try {
+  cleanAfterManualInstall({ userData: app.getPath('userData'), version: app.getVersion(), platform: process.platform, isPackaged: app.isPackaged, home: paths.HOME, local: paths.LOCAL })
+} catch { /* never block startup */ }
 
 let mainWindow = null
 let appOrigin = ''
