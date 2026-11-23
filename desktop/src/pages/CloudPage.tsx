@@ -1,4 +1,4 @@
-// Cloud models: connect NVIDIA NIM, OpenRouter or Alibaba Cloud Model Studio with an API key and
+// Cloud models: connect NVIDIA NIM, OpenAI, Claude (Anthropic) or Alibaba Cloud Model Studio with an API key and
 // choose which of their models appear in the model pickers. The key goes to the main process once
 // and is never read back; this page only ever sees its last four characters.
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -63,7 +63,7 @@ function ProviderCard({ provider, onChanged }: { provider: CloudProvider; onChan
     } catch (reason) { setError(clean(reason, `${provider.name} could not be connected.`)) } finally { setBusy('') }
   }
   const disconnect = async () => {
-    if (!desktop || !window.confirm(`Disconnect ${provider.name}? Its key is deleted from this PC and its models leave the model menus.`)) return
+    if (!desktop || !window.confirm(`Disconnect ${provider.name}? Its key is deleted from this PC and its models leave the model menus. Anything set to one of its models (the chat model, OpenClaw's model, the step planner, NemoClaw's sandbox model) goes back to its default.`)) return
     setBusy('disconnect'); setError(''); setMessage('')
     try { onChanged(await desktop.cloud.disconnect(provider.id)); setOffered(null) } catch (reason) { setError(clean(reason, 'The provider could not be disconnected.')) } finally { setBusy('') }
   }

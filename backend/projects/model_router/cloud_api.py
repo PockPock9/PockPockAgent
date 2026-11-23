@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 from projects.internal_auth import require_internal_token
 
 from .client import ModelProviderError
-from .cloud import CloudRegistry
+from .cloud import CloudRegistry, adapt_body
 
 MAX_PROXY_BODY = 8 * 1024 * 1024
 PROXY_TIMEOUT = aiohttp.ClientTimeout(total=1800, sock_connect=20, sock_read=600)
@@ -87,10 +87,8 @@ def create_cloud_router(registry: CloudRegistry) -> APIRouter:
             provider, model = registry.resolve(str(body.get("model") or ""))
         except ModelProviderError as err:
             return JSONResponse(status_code=err.status_code or 409, content={"error": {"message": str(err), "type": "invalid_request_error"}})
-        body["model"] = model
+        body = adapt_body(provider.id, {**body, "model": model})
         headers = {"Authorization": f"Bearer {provider.api_key}", "Content-Type": "application/json"}
-        if provider.id == "openrouter":
-            headers.update({"HTTP-Referer": "https://github.com/PockPock9/PockPockAgent", "X-Title": "PockPock Agent"})
         url = f"{provider.base_url}/chat/completions"
 
         session = aiohttp.ClientSession(timeout=PROXY_TIMEOUT)

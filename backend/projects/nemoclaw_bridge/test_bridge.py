@@ -235,7 +235,7 @@ class CloudModelTests(unittest.TestCase):
         self.assertIn("NC_TOKEN/u", provider_env["WSLENV"])
 
         # A second cloud model does not overwrite the remembered local route.
-        bridge.set_model("openrouter/qwen/qwen3-coder", token="local-token")
+        bridge.set_model("openai/gpt-5.1", token="local-token")
         self.assertEqual(len(saved), 1)
 
         back = bridge.set_model("")

@@ -23,11 +23,42 @@ from .client import ChatCompletionProvider, ChatCompletionRequest, ModelProvider
 # so a mistaken or hostile configuration cannot make the gateway send a key somewhere else.
 PROVIDER_HOSTS: dict[str, tuple[str, ...]] = {
     "nim": ("integrate.api.nvidia.com",),
-    "openrouter": ("openrouter.ai",),
+    "openai": ("api.openai.com",),
+    "anthropic": ("api.anthropic.com",),
     "alibaba": ("dashscope-intl.aliyuncs.com", "dashscope.aliyuncs.com", "dashscope-us.aliyuncs.com"),
 }
-PROVIDER_LABELS = {"nim": "NVIDIA NIM", "openrouter": "OpenRouter", "alibaba": "Alibaba Cloud Model Studio"}
-CLOUD_MODEL = re.compile(r"^(nim|openrouter|alibaba)/([A-Za-z0-9][A-Za-z0-9._:/-]{0,87})$")
+PROVIDER_LABELS = {"nim": "NVIDIA NIM", "openai": "OpenAI", "anthropic": "Claude (Anthropic)", "alibaba": "Alibaba Cloud Model Studio"}
+CLOUD_MODEL = re.compile(r"^(nim|openai|anthropic|alibaba)/([A-Za-z0-9][A-Za-z0-9._:/-]{0,87})$")
+# OpenAI's reasoning models (o-series, GPT-5 and later) take max_completion_tokens and only the default temperature.
+_OPENAI_REASONING = re.compile(r"^(o\d|gpt-[5-9])")
+
+
+def adapt_body(provider_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    """Fit an OpenAI-style chat body to what the provider accepts. Returns a new dict.
+
+    Claude is reached through Anthropic's OpenAI-compatible endpoint
+    (https://api.anthropic.com/v1/chat/completions). Checked against its documentation on 2026-11-22:
+    current Claude models refuse ``temperature`` below 1 and any ``top_p`` (400), some refuse a forced
+    tool call (``tool_choice`` "required" or a named function), and ``response_format`` is accepted only
+    as ``json_schema`` with ``strict: true``. Those fields are dropped or relaxed so a request written
+    for any provider still works; ``n`` must be 1.
+    """
+    out = dict(body)
+    if provider_id == "anthropic":
+        out.pop("temperature", None)
+        out.pop("top_p", None)
+        if "tool_choice" in out and out["tool_choice"] not in ("auto", "none"):
+            out["tool_choice"] = "auto"
+        response_format = out.get("response_format")
+        if response_format is not None and not (isinstance(response_format, Mapping) and response_format.get("type") == "json_schema" and isinstance(response_format.get("json_schema"), Mapping) and response_format["json_schema"].get("strict") is True):
+            out.pop("response_format", None)
+        out.pop("n", None)
+    elif provider_id == "openai" and _OPENAI_REASONING.match(str(out.get("model") or "")):
+        if "max_tokens" in out:
+            out.setdefault("max_completion_tokens", out.pop("max_tokens"))
+        out.pop("temperature", None)
+        out.pop("top_p", None)
+    return out
 MAX_MODELS_PER_PROVIDER = 60
 
 
@@ -154,8 +185,9 @@ def _error_detail(status: int, body: str) -> str:
 class OpenAICompatibleAdapter:
     """Chat completions against one OpenAI-compatible endpoint."""
 
-    def __init__(self, base_url: str, api_key: str, *, headers: Mapping[str, str] | None = None):
+    def __init__(self, base_url: str, api_key: str, *, headers: Mapping[str, str] | None = None, provider_id: str = ""):
         self.base_url = base_url.rstrip("/")
+        self.provider_id = provider_id
         self._headers = {"Authorization": f"Bearer {api_key}", **(headers or {})}
 
     def _payload(self, request: ChatCompletionRequest, *, model: str | None, stream: bool) -> dict[str, Any]:
@@ -165,7 +197,7 @@ class OpenAICompatibleAdapter:
             payload["model"] = model
         if stream:
             payload["stream"] = True
-        return payload
+        return adapt_body(self.provider_id, payload)
 
     async def complete(self, request: ChatCompletionRequest, *, timeout: aiohttp.ClientTimeout, model: str | None = None) -> dict[str, Any]:
         try:
@@ -214,9 +246,7 @@ class RegistryCloudProvider:
 
     def _adapter(self, name: str) -> tuple[OpenAICompatibleAdapter, str]:
         provider, model = self.registry.resolve(name)
-        # OpenRouter asks apps to identify themselves; no user data is in these headers.
-        headers = {"HTTP-Referer": "https://github.com/PockPock9/PockPockAgent", "X-Title": "PockPock Agent"} if provider.id == "openrouter" else None
-        return OpenAICompatibleAdapter(provider.base_url, provider.api_key, headers=headers), model
+        return OpenAICompatibleAdapter(provider.base_url, provider.api_key, provider_id=provider.id), model
 
     async def complete(self, request: ChatCompletionRequest, *, timeout: aiohttp.ClientTimeout) -> dict[str, Any]:
         adapter, model = self._adapter(request.model)

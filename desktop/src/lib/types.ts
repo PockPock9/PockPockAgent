@@ -185,7 +185,7 @@ export type Connector = {
 }
 /** A cloud model as a provider lists it. `tools` is null when the provider does not say. */
 export type CloudModel = { id: string; name: string; contextWindow: number | null; tools?: boolean | null; free?: boolean }
-export type CloudProviderId = 'nim' | 'openrouter' | 'alibaba'
+export type CloudProviderId = 'nim' | 'openai' | 'anthropic' | 'alibaba'
 /** A cloud provider on the Cloud page. The API key itself never reaches the page. */
 export type CloudProvider = {
   id: CloudProviderId; name: string; about: string; keyUrl: string; keyHint: string
