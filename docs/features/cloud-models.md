@@ -27,7 +27,7 @@ OpenAI and Claude need an **API** key from the developer platform, billed per us
 2. Paste the API key (for Alibaba, choose the region the key belongs to) and press **Connect**. **Get a key** opens the service's key page in the browser.
 3. PockPock checks the key with the service. A refused key is not saved, and the reason is shown (wrong key, wrong region, no credit, rate limit, service unreachable).
 4. On the first connection the suggested models that the service currently offers are switched on (for OpenAI and Claude, when none of the suggested names is offered, the three newest GPT or Claude models are switched on instead, since model names change often). **Choose models** opens a searchable list of the service's chat models (embedding, image, speech and safety models are left out); ticked models appear in the model menus. At most 40 per service.
-5. In a chat, open the model menu. Cloud models are listed under **Cloud models · sent to the provider**, with the service name under each.
+5. In a chat, open the model menu. Cloud models are listed under **Cloud · sends data to the provider**, with the service name under each.
 6. **Replace key** stores a new key and keeps the chosen models. **Disconnect** deletes the key from the computer and removes the service's models from every menu, and everything that was set to one of them goes back to its default (see [Disconnecting and switching models off](#disconnecting-and-switching-models-off)).
 
 ## Disconnecting and switching models off

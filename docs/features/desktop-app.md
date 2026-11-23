@@ -30,7 +30,7 @@ PockPock Agent is the PockPock interface: a desktop app (Electron) for Windows a
 | Browser recipes | Saved, versioned browser workflows: the list beside the editor (allowed sites, inputs, steps and stop conditions); version history; switch on/off; run with per-step approval and screenshots. |
 | Activity | Request totals, model calls, average time and chat models loaded now; per-model call counts, success rate and average time; recent routing events. No prompt text. |
 | Skills | OpenClaw skills as cards, with tabs **All**, **On** and **Needs setup** (counts), search, a switch on each card, and a details drawer (source, what it needs, **Remove** for skills added from a link). **Learned from your tasks** lists skills PockPock Agent wrote after a task and left in the skill inbox (`/api/skills/inbox`): **Check it** runs the skill's own test, **Review and add** promotes it once the check passed, **Reject** drops it; the section is hidden when the inbox is empty. Adding from a link: see [agent extensions](agent-extensions.md). |
-| MCP servers | Add from a GitHub link, a server address or a command on this PC (inspected and approved first); each server shows on or off, where it runs and how it was added; switch, disconnect. |
+| MCP servers | Add from a GitHub link, a server address or a command on this PC (inspected and approved first); each server shows on or off, where it runs and how it was added; switch, disconnect. Servers added in PockPock run in Local MCP and also show their state (running with the number of tools, starts when used, error, Local MCP stopped), **Log** and **Restart**; see [Local MCP](local-mcp.md). |
 | Connectors | Connect GitHub, email, Telegram, Slack, Discord or Notion with a key the app checks; the connected apps give the OpenClaw agent tools. **Available** and **Connected** tabs; a connector's details (what the agent can do, connecting, replacing the key, disconnecting) open in a drawer beside the list. See [Connectors](connectors.md). |
 | Cloud models | Connect NVIDIA NIM, OpenAI, Claude (Anthropic) or Alibaba Cloud Model Studio; the chosen models join the model menus of every engine and are used only when picked. See [Cloud models](cloud-models.md). |
 | Local models | A **Smart route** card (on or paused; local models only), then every model Ollama has: size, calls, success rate and average time (from routing telemetry), **Loaded**, **Idle** or **Switched off**, tags from Ollama's details (parameter size, quantization, Images, Embeddings) and a switch. **Refresh**; with no model installed, the install command and **Open terminal**. Models are never unloaded from this page. |
@@ -112,7 +112,7 @@ macOS apps can only be built on a Mac. The **Desktop installers** GitHub Actions
 
 ## Services
 
-On start the app checks every service and, unless **Start services when the app opens** is off, starts the missing ones in order: Ollama, then the planner, validator, run store and browser automation together, then the gateway, OpenClaw, and NemoClaw (if **Include NemoClaw** is on). Services that are already running are adopted, not restarted.
+On start the app checks every service and, unless **Start services when the app opens** is off, starts the missing ones in order: Ollama, then the planner, validator, run store, browser automation and Local MCP together, then the gateway, OpenClaw, and NemoClaw (if **Include NemoClaw** is on). Services that are already running are adopted, not restarted.
 
 | Service | Started with | Stopped with | Healthy when |
 |---|---|---|---|
