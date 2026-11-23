@@ -29,6 +29,7 @@ import { uid } from './lib/api'
 import { cancelActiveRun, runTurn } from './lib/engines'
 import { useStatus } from './lib/status'
 import { titleFrom, useSessions, useSettings } from './lib/store'
+import { useCloudCleanup } from './lib/cloudCleanup'
 import { useUpdates } from './lib/updates'
 import { useTheme, validTheme } from './lib/theme'
 import { bridge } from './lib/types'
@@ -52,6 +53,7 @@ function useNarrow(query: string) {
 export default function App() {
   const { settings, patch, loaded: settingsLoaded } = useSettings()
   useTheme(settings.theme, settingsLoaded)
+  useCloudCleanup(settings, patch, settingsLoaded)
   const updates = useUpdates()
   const sessions = useSessions()
   const engine = settings.engine ?? 'agent'

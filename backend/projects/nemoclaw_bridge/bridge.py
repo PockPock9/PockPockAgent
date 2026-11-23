@@ -40,7 +40,7 @@ STATUS_SCRIPT = 'export PATH="$HOME/.local/bin:$PATH"; exec nemoclaw "$NC_SANDBO
 # cloud endpoint. The provider's credential is PockPock's local token, read from the environment so
 # it is never on a command line; the real cloud API key stays in the gateway.
 CLOUD_PROVIDER = "pockpock-cloud"
-CLOUD_MODEL = re.compile(r"^(nim|openrouter|alibaba)/[A-Za-z0-9][A-Za-z0-9._:/-]{0,87}$")
+CLOUD_MODEL = re.compile(r"^(nim|openai|anthropic|alibaba)/[A-Za-z0-9][A-Za-z0-9._:/-]{0,87}$")
 CLOUD_BASE_URL = f"http://host.openshell.internal:{os.environ.get('POCKPOCK_PORT', '8766')}/cloud/v1"
 ROUTE_TIMEOUT_SECONDS = 90
 ROUTE_GET_SCRIPT = 'export PATH="$HOME/.local/bin:$PATH"; exec openshell inference get'
