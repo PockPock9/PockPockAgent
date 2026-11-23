@@ -26,6 +26,8 @@ function fakeFetch(routes) {
     calls.push({ url, method: options.method ?? 'GET', auth: options.headers?.Authorization ?? '', token: options.headers?.['X-PockPock-Internal-Token'] ?? '', body: options.body ? JSON.parse(options.body) : null })
     const route = routes(url, options)
     if (route === 'network') throw new TypeError('fetch failed')
+    // A server that never answers: the request ends only when the caller gives up.
+    if (route === 'hang') return new Promise((resolve, reject) => options.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))))
     return { status: route.status, ok: route.status < 400, json: async () => route.json }
   }
   return { fetch, calls }
@@ -126,18 +128,45 @@ test('Alibaba uses the chosen region; NVIDIA checks the key with a one-token rep
     if (url.includes('127.0.0.1')) return { status: 200, json: {} }
     // A listed model that is not served answers 404 whatever the key is; a served one checks the key.
     if (url.endsWith('/chat/completions')) return JSON.parse(options.body).model === 'aaa/retired-mini' ? { status: 404, json: null } : options.headers.Authorization === 'Bearer nvapi-good' ? { status: 200, json: {} } : { status: 403, json: null }
-    return { status: 200, json: { data: [{ id: 'aaa/retired-mini' }, { id: 'openai/gpt-oss-20b' }, { id: 'nvidia/nv-embedqa-e5-v5' }, { id: 'nvidia/nvclip' }] } }
+    return { status: 200, json: { data: [{ id: 'aaa/retired-mini' }, { id: 'nvidia/nemotron-3-ultra-550b-a55b' }, { id: 'nvidia/nv-embedqa-e5-v5' }, { id: 'nvidia/nvclip' }] } }
   })
   await assert.rejects(() => nim.cloud.connect('nim', { key: 'nvapi-bad' }), /did not accept/)
   const result = await nim.cloud.connect('nim', { key: 'nvapi-good' })
-  assert.deepEqual(result.providers.find((item) => item.id === 'nim').models.map((model) => model.id), ['openai/gpt-oss-20b'])
-  assert.deepEqual(result.offered.map((model) => model.id), ['aaa/retired-mini', 'openai/gpt-oss-20b'])
+  assert.deepEqual(result.providers.find((item) => item.id === 'nim').models.map((model) => model.id), ['nvidia/nemotron-3-ultra-550b-a55b'])
+  assert.deepEqual(result.offered.map((model) => model.id), ['aaa/retired-mini', 'nvidia/nemotron-3-ultra-550b-a55b'])
   const checks = nim.calls.filter((call) => call.url.endsWith('/chat/completions') && call.auth === 'Bearer nvapi-good')
-  assert.deepEqual(checks.map((call) => [call.body.model, call.body.max_tokens]), [['aaa/retired-mini', 1], ['openai/gpt-oss-20b', 1]])
+  assert.deepEqual(checks.map((call) => [call.body.model, call.body.max_tokens]), [['aaa/retired-mini', 1], ['nvidia/nemotron-3-ultra-550b-a55b', 1]])
   nim.done()
   const gone = setup((url) => (url.includes('127.0.0.1') ? { status: 200, json: {} } : url.endsWith('/models') ? { status: 200, json: { data: [{ id: 'aaa/retired-mini' }] } } : { status: 410, json: null }))
   await assert.rejects(() => gone.cloud.connect('nim', { key: 'nvapi-good' }), /could not check the key right now/)
   gone.done()
+})
+
+test('NVIDIA: a model that never answers does not fail a good key; a wrong key is refused', async () => {
+  // Measured 2026-11-22: models this account cannot use answer 404 "Not found for account", one model
+  // hung, and a wrong key gets 403 from any listed model.
+  const list = { status: 200, json: { data: [{ id: 'aaa/hangs-flash' }, { id: 'bbb/not-for-you-mini' }, { id: 'ccc/broken-8b' }] } }
+  const routes = (good) => (url, options) => {
+    if (url.includes('127.0.0.1')) return { status: 200, json: {} }
+    if (!url.endsWith('/chat/completions')) return list
+    if (options.headers.Authorization !== `Bearer ${good}`) return { status: 403, json: { detail: 'Authorization failed' } }
+    const model = JSON.parse(options.body).model
+    if (model === 'aaa/hangs-flash') return 'hang'
+    if (model === 'bbb/not-for-you-mini') return { status: 404, json: { detail: "Function 'x': Not found for account 'y'" } }
+    return { status: 500, json: { error: 'inference failed' } }
+  }
+  const nim = setup(routes('nvapi-good'))
+  nim.cloud.nimCheckTimeoutMs = 300
+  const started = Date.now()
+  const result = await nim.cloud.connect('nim', { key: 'nvapi-good' })
+  assert.equal(result.providers.find((item) => item.id === 'nim').connected, true)
+  assert.ok(Date.now() - started < 300, 'decided without waiting for the model that hangs')
+  await assert.rejects(() => nim.cloud.connect('nim', { key: 'nvapi-bad' }), /did not accept/)
+  nim.done()
+  const silent = setup((url) => (url.includes('127.0.0.1') ? { status: 200, json: {} } : url.endsWith('/models') ? list : 'hang'))
+  silent.cloud.nimCheckTimeoutMs = 100
+  await assert.rejects(() => silent.cloud.connect('nim', { key: 'nvapi-good' }), /did not answer in time/)
+  silent.done()
 })
 
 test('a provider that cannot be reached, and a key that cannot be protected', async () => {
