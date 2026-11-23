@@ -38,7 +38,7 @@ This index points to detailed feature contracts. Every new feature or change to 
 - [PockPock Agent desktop app](features/desktop-app.md): interface, Windows and macOS installers, first-run setup with a final service check, services, data and security.
 - [Problem reports and Maintenance](features/maintenance.md): the Report button under replies, what a report captures and redacts, and the Maintenance page.
 - [Connectors](features/connectors.md): connecting external apps (GitHub, email, Telegram, Slack, Discord, Notion), how credentials are checked and stored, and how the agent uses them as tools.
-- [Cloud models](features/cloud-models.md): connecting NVIDIA NIM, OpenRouter or Alibaba Cloud Model Studio with an API key, how keys are stored, and how the three engines reach cloud models through the gateway's local endpoint.
+- [Cloud models](features/cloud-models.md): connecting NVIDIA NIM, OpenAI, Claude (Anthropic) or Alibaba Cloud Model Studio with an API key, how keys are stored, what a disconnect cleans up, and how the three engines reach cloud models through the gateway's local endpoint.
 - [Themes and the brand mark](features/themes.md): the five themes, the theme picker, how a theme is applied before the first paint, the title-bar mark and the working indicator.
 
 ## Other product areas

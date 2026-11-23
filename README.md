@@ -61,13 +61,13 @@ PockPock is a local AI workspace for Windows and macOS. Its desktop app, **PockP
 |---|---|
 | ![The Connectors page](docs/images/connectors.png) | ![GitHub: what the agent can do, and the steps to connect](docs/images/connector-github.png) |
 
-**Use cloud models when you want them.** Connect NVIDIA NIM, OpenRouter or Alibaba Cloud Model Studio with your own key, and their models appear in the model menus of every engine. They are used only when you pick one.
+**Use cloud models when you want them.** Connect NVIDIA NIM, OpenAI, Claude (Anthropic) or Alibaba Cloud Model Studio with your own API key, and their models appear in the model menus of every engine. They are used only when you pick one.
 
 | Cloud models | In the model menu |
 |---|---|
-| ![The Cloud models page with OpenRouter connected](docs/images/cloud-models.png) | ![The model menu with local and cloud models](docs/images/model-menu-cloud.png) |
+| ![The Cloud models page with a provider connected](docs/images/cloud-models.png) | ![The model menu with local and cloud models](docs/images/model-menu-cloud.png) |
 
-*The Cloud models screenshots show sample models and a sample key ending; no real account is connected in them.*
+*The Cloud models screenshots show sample models and a sample key ending; no real account is connected in them. They date from 0.2.8, when OpenRouter was still offered.*
 
 More screenshots, a guide to every feature, and [example prompts for OpenClaw](https://github.com/PockPock9/PockPockAgent/wiki/OpenClaw-Examples) are in the [wiki](https://github.com/PockPock9/PockPockAgent/wiki).
 
@@ -128,7 +128,7 @@ The window (**Agent Studio**) has an icon rail on the far left (Tasks, Workshop,
 - **Activity** shows which model handled each request and how long it took (no prompt text is stored).
 - **Models**, **Memory** and **Research** control which local models are used, learned preferences, and whether agents may read public websites. **Research** also lists the pages you chose to watch: turn on **Watch for changes** on a saved source and PockPock re-reads that page in the background (every 6 hours while it runs, only while reading public websites is allowed) and tells you when it changes. Watching is off unless you turn it on for a page.
 - **Connectors**: connect **GitHub**, **email**, **Telegram**, **Slack**, **Discord** or **Notion** with a key you create in that app. PockPock checks the key with the app, stores it encrypted, and gives the OpenClaw agent tools for it (read issues, search mail, read messages; sending, posting and creating ask you first). See [Connectors](docs/features/connectors.md).
-- **Cloud models**: connect **NVIDIA NIM**, **OpenRouter** or **Alibaba Cloud Model Studio** with your own API key, choose which of their models you want, and pick them in the model menu of Chat, PockPock Agent, OpenClaw or NemoClaw. A cloud model is used only when you pick it; **Smart route** keeps choosing local models. A chat that uses a cloud model sends its messages, files and tool results to that service. See [Cloud models](docs/features/cloud-models.md).
+- **Cloud models**: connect **NVIDIA NIM**, **OpenAI**, **Claude (Anthropic)** or **Alibaba Cloud Model Studio** with your own API key (for OpenAI and Claude, a developer-platform API key: a ChatGPT or Claude.ai subscription does not include API use), choose which of their models you want, and pick them in the model menu of Chat, PockPock Agent, OpenClaw or NemoClaw. Disconnecting a service, or switching one of its models off, also puts every model choice that used it back to its default. A cloud model is used only when you pick it; **Smart route** keeps choosing local models. A chat that uses a cloud model sends its messages, files and tool results to that service. See [Cloud models](docs/features/cloud-models.md).
 - **Updates** (Windows): new versions download in the background and install when you press **Restart to update** or quit PockPock; your chats and settings are kept. On a Mac, PockPock tells you when a new version is available and links to its download.
 - **Services** starts, stops and restarts everything (Ollama, the backend services, OpenClaw, NemoClaw) all at once or one by one, shows their logs, and sets startup options. All services start when the app opens; a model loads into memory only when a message uses it.
 
