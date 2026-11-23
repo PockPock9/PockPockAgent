@@ -20,7 +20,7 @@ The choice is saved in the app's settings file (`engine`, `agentPermission`, `cl
 - A **skill** is a folder with a `SKILL.md` file: instructions the agent follows for a kind of task, sometimes with scripts it can run.
 - An **MCP server** gives the agent extra tools. It is either a program started on this PC (for example with `npx`) or a remote address.
 
-Both are installed into **OpenClaw** and are used only by the OpenClaw engine. The PockPock engine and the NemoClaw sandbox do not see them.
+Skills are installed into **OpenClaw**. MCP servers added in PockPock run in **[Local MCP](local-mcp.md)**, a PockPock service that starts each server once and offers it to the agents; OpenClaw reaches them through it. Both are used only by the OpenClaw engine so far: the PockPock engine and the NemoClaw sandbox do not see them yet (Local MCP steps 2 and 4).
 
 ### User flow
 
@@ -31,7 +31,7 @@ Both are installed into **OpenClaw** and are used only by the OpenClaw engine. T
    - **Install skill**: every skill found under the link, with its description, size, and whether it includes scripts. Three or fewer are preselected; with more, tick the ones you want.
    - **Connect MCP server**: the exact command (editable arguments, one per line) or remote address, where the command came from, and a field for each setting the server asks for, such as an API key.
    - If the repository holds both, the card offers a link to show the other kind.
-3. **Install** copies the selected skills into OpenClaw. **Connect** starts the server once to list its tools, and saves it only if that works. The card then lists the tool names.
+3. **Install** copies the selected skills into OpenClaw. **Connect** starts the server once to list its tools, and saves it only if that works: in Local MCP, with OpenClaw given the server's local address on it (servers using the older SSE transport are saved in OpenClaw directly). The card then lists the tool names.
 4. The OpenClaw agent can use the new skill or tools from the next message. Start a new chat if an older thread does not pick them up.
 5. The **Skills** and **MCP servers** pages list what is installed and control it; see the next section.
 
@@ -49,7 +49,7 @@ Skills and MCP servers each have their own page in **Workshop → Capabilities**
 - **Built into OpenClaw**: the skills that ship with OpenClaw and are ready to use, each with a switch.
 - A collapsed list of built-in skills that need extra software, with what each one needs. These have no switch, because switching them on would not make them work.
 
-**MCP servers** shows every server in OpenClaw's config with a switch. Servers PockPock connected also have a disconnect button; servers added outside PockPock are labelled and can be switched off but not removed here.
+**MCP servers** shows every server in OpenClaw's config with a switch. Servers PockPock connected also have a disconnect button; servers added outside PockPock are labelled and can be switched off but not removed here. Servers in Local MCP also show their state (running with the number of tools, starts when used, error, Local MCP stopped), a **Log** and a **Restart** button; see [Local MCP](local-mcp.md).
 
 A switch turns the skill or server off for the agent without deleting it: OpenClaw stops offering the skill to the model, or stops starting the server and exposing its tools. Switching it back on restores it. The change applies from the next message.
 
@@ -96,6 +96,7 @@ pockpock_server.py (same-PC check, rate limits)
 agent_extensions/service.py
   ├─ sources.py            parse link, download zip from codeload.github.com, find skills / MCP setup
   ├─ mcp_probe.py          start the server once (stdio) or call it (HTTP) and list tools
+  ├─ hub_client.py         save, switch, remove, restart servers in Local MCP (:8776, internal token)
   ├─ gateway_config.mjs    Node helper: config.get / config.patch on the OpenClaw gateway (loopback WebSocket)
   └─ ~/.openclaw/skills/<slug>/                  installed skills
      ~/.openclaw/pockpock/extensions.json        what PockPock installed
@@ -106,7 +107,8 @@ agent_extensions/service.py
 | `backend/projects/agent_extensions/sources.py` | Link validation, GitHub download, skill discovery, MCP setup detection, safe extraction |
 | `backend/projects/agent_extensions/mcp_probe.py` | One-time test connection that lists a server's tools |
 | `backend/projects/agent_extensions/service.py` | Proposals, install, list, remove, the install manifest |
-| `backend/projects/agent_extensions/gateway_config.mjs` | Reads and edits `mcp.servers` and `skills.entries.<name>.enabled`, and lists OpenClaw's skills, through the gateway |
+| `backend/projects/agent_extensions/gateway_config.mjs` | Reads and edits `mcp.servers` and `skills.entries.<name>.enabled`, and lists OpenClaw's skills, through the gateway; `mcp_export` reads one server's full definition from the config file to move it into Local MCP |
+| `backend/projects/agent_extensions/hub_client.py`, `backend/projects/mcp_hub/` | [Local MCP](local-mcp.md): runs the servers and keeps their keys |
 | `backend/projects/agent_extensions/api.py` | `/api/extensions` routes |
 | `desktop/src/components/ExtensionCard.tsx` | Link detection in the composer and the approval card |
 | `desktop/src/pages/SkillsPage.tsx`, `McpPage.tsx`, `extensions.tsx` | The Skills and MCP servers pages and what they share: add from a link, switches, remove, the skills drawer and inbox |
@@ -122,13 +124,15 @@ All routes accept requests from this PC only (same check as agent runs) and retu
 
 | Route | Body | Result |
 |---|---|---|
-| `GET /api/extensions` | – | `{skills:[{slug,key?,name,description,source,missing,enabled}], builtin_skills:[{key,name,description,enabled,ready,needs}], mcp:[{name,transport,target,source,managed,enabled}], openclaw_ready, detail}` |
+| `GET /api/extensions` | – | `{skills:[{slug,key?,name,description,source,missing,enabled}], builtin_skills:[{key,name,description,enabled,ready,needs}], mcp:[{name,transport,target,source,managed,enabled,local,state,state_detail,tools}], openclaw_ready, detail, local_mcp:{running,detail}}`. For a server in Local MCP, `target` is what it runs (not the hub address) |
 | `POST /api/extensions/inspect` | `{url, prefer?: "skills"\|"mcp"}` | Proposal: `{id, kind, source, commit, also, expires_in, skills?: [...], mcp?: {...}}` |
 | `POST /api/extensions/install` | `{proposal_id, skills?: [slug], args?: [string], env?: {KEY: value}, authorization?: string}` | `{kind:"skills", installed:[{slug,name}]}` or `{kind:"mcp", name, verified, tools:[{name,description}]}` |
 | `GET /api/extensions/directory?kind=mcp\|skills&q=&limit=30&full=false` | – | `{results:[{name, description, owner, curated, install_url, source_url, page_url}], total, counts:{curated, index}, index_cached, note, site}`. `full=true` downloads the site index when it is not cached; `note` says when an older copy is used because mcpservers.org could not be reached. Not rate-limited: it searches the cached lists, and downloads at most daily (curated) or weekly (index). `503` when nothing is cached and the site cannot be reached |
 | `POST /api/extensions/cancel` | `{proposal_id}` | `{ok:true}` |
 | `POST /api/extensions/remove` | `{kind: "skill"\|"mcp", name}` | `{ok:true}` |
-| `POST /api/extensions/toggle` | `{kind: "skill"\|"mcp", name, enabled}` (`name` is a skill's `key` or a server's name) | `{ok:true, enabled}` |
+| `POST /api/extensions/toggle` | `{kind: "skill"\|"mcp", name, enabled}` (`name` is a skill's `key` or a server's name) | `{ok:true, enabled}`; for a server in Local MCP it is switched there too |
+| `POST /api/extensions/mcp/restart` | `{name}` | `{server}` (state after trying to start it); `404` for a server not in Local MCP |
+| `GET /api/extensions/mcp/log?name=` | – | `{lines}`: what the server printed since Local MCP started it |
 
 Rate limits per minute: list 60, inspect 10, install 10, cancel 30, remove 20, toggle 60.
 
@@ -137,9 +141,9 @@ Status codes: `400` invalid link or input, `404` not found on GitHub or not inst
 ## Persistence
 
 - Skills: `~/.openclaw/skills/<slug>/` (OpenClaw's managed skills folder).
-- MCP servers: `mcp.servers.<name>` in `~/.openclaw/openclaw.json`, including any API key or Authorization value entered on the card.
+- MCP servers: in Local MCP (`<PockPock data>/mcp-hub/servers.json`, keys sealed; see [Local MCP](local-mcp.md#persistence-and-secrets)), and in `mcp.servers.<name>` in `~/.openclaw/openclaw.json` as the hub address and hub token only. Servers using the older SSE transport are still saved in OpenClaw's config with their Authorization value.
 - Switches: `skills.entries.<name>.enabled` and `mcp.servers.<name>.enabled` in `~/.openclaw/openclaw.json`.
-- `~/.openclaw/pockpock/extensions.json`: names, source links, commit, and install time of what PockPock installed. No secrets.
+- `~/.openclaw/pockpock/extensions.json`: names, source links, commit, and install time of what PockPock installed, and `"hub": true` for a server in Local MCP. No secrets.
 - `~/.openclaw/pockpock/mcpservers-directory.json`: the mcpservers.org lists used by the search (the curated list, and the server and skill names once downloaded; under 1 MB), with the time each was downloaded.
 - A previewed repository archive is kept in the system temp folder under `pockpock-extensions/` until it is installed, cancelled, or replaced by newer previews. Proposals expire after 15 minutes and at most four are kept.
 - Nothing is written to telemetry or run tables.
@@ -152,7 +156,7 @@ Status codes: `400` invalid link or input, `404` not found on GitHub or not inst
 - **Only known launchers start MCP servers:** `npx`, `uvx`, `uv`, `node`, `python`, `python3`, `py`, `docker`, `bunx`, `bun`, `deno`, `pnpm`, `pipx`. The command itself cannot be edited; arguments can. On Windows, arguments containing `& | < > ^ % " !` are refused for `.cmd` launchers such as `npx`.
 - **A failed test connection saves nothing.**
 - **PockPock only replaces or removes what it installed.** A skill or server with the same name that it did not install is left alone and the install is refused. Switching on or off is allowed for any skill or server OpenClaw lists, because it deletes nothing and is undone with the same switch.
-- **Secrets** are sent to the helper on stdin, stored only in OpenClaw's config, and never returned by the API or logged.
+- **Secrets** go from the card to the gateway and on to Local MCP over loopback, are stored sealed there (DPAPI on Windows), and are never returned by the API or logged. OpenClaw's config holds only the hub token. For the older SSE transport they are sent to the helper on stdin and stored in OpenClaw's config, as before.
 - **Remaining risk:** an approved skill or MCP server is third-party content. A skill's instructions steer the agent; a local MCP server is a program running with your account's access; a remote one receives whatever the agent sends it. The preview shows the source, commit, and command, but PockPock does not review the code. Install only from sources you trust, and prefer **Ask first** when trying a new one.
 
 ## Failure states
@@ -169,12 +173,13 @@ Status codes: `400` invalid link or input, `404` not found on GitHub or not inst
 | "That preview has expired" | More than 15 minutes passed, or it was already used | Paste the link again |
 | "OpenClaw already has … that PockPock did not install" | Name conflict with something added outside PockPock | Remove it in OpenClaw first |
 | MCP list shows "The OpenClaw gateway is not running" | Gateway stopped | `openclaw gateway start` from PowerShell |
+| "Local MCP is not running" | The Local MCP service is stopped | Start it on **Services**; more in [Local MCP](local-mcp.md#failure-states) |
 | "OpenClaw keeps each skill's on/off switch, and it is not available right now" | A skill was switched while OpenClaw is not set up or not running (an unknown name answers 404 instead) | Set up or start OpenClaw, then switch it |
 | The agent does not use a new skill or tool | The thread started before it was added, or the small local model did not pick it up | Start a new chat and name the skill or tool in the request |
 
 ## Limits
 
-- Skills and MCP servers apply to the OpenClaw engine only.
+- Skills and MCP servers apply to the OpenClaw engine only (the PockPock engine and NemoClaw are Local MCP steps 2 and 4).
 - Skill requirements (programs a skill expects, such as Python packages) are not installed.
 - OAuth sign-in for remote MCP servers, and private GitHub repositories, are not supported.
 - Servers using the older SSE transport are saved without a test connection.
@@ -184,7 +189,7 @@ Status codes: `400` invalid link or input, `404` not found on GitHub or not inst
 
 ```powershell
 cd backend
-..\.venv\Scripts\python.exe -m unittest projects.agent_extensions.test_extensions
+..\.venv\Scripts\python.exe -m unittest projects.agent_extensions.test_extensions projects.mcp_hub.test_hub
 node projects\openclaw_bridge\plugin\test_policy.mjs
 cd ..\frontend\app; npm run build
 ```

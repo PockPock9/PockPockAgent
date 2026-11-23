@@ -3,8 +3,10 @@
 // The OpenClaw CLI refuses MCP changes while the Gateway is running, so PockPock asks the
 // Gateway itself. stdin: one JSON line {"op":"mcp_list"} | {"op":"mcp_set","name","server","replace"}
 // | {"op":"mcp_remove","name"} | {"op":"mcp_enable","name","enabled"} | {"op":"skills_list"}
-// | {"op":"skill_enable","name","enabled"}. stdout: one JSON line. Server definitions (which may hold keys)
-// arrive on stdin, and environment values and headers are never written to stdout.
+// | {"op":"skill_enable","name","enabled"} | {"op":"mcp_export","name"}. stdout: one JSON line. Server
+// definitions (which may hold keys) arrive on stdin. Environment values and headers are written to stdout
+// only by mcp_export, which the gateway calls to move a server PockPock installed into Local MCP; the
+// gateway reads that line from the pipe and sends it on to Local MCP, and never logs it.
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -88,12 +90,12 @@ async function main() {
         auth: { token },
         locale: 'en-US',
         userAgent: 'pockpock-extensions/1.0.0',
-      }).then(() => run(request, call), (error) => fail('gateway_refused', error.message))
+      }).then(() => run(request, call, config), (error) => fail('gateway_refused', error.message))
     }
   })
 }
 
-async function run(request, call) {
+async function run(request, call, fileConfig) {
   try {
     const servers = async () => {
       const snapshot = await call('config.get', {})
@@ -102,6 +104,23 @@ async function run(request, call) {
     }
     if (request.op === 'mcp_list') {
       return finish({ ok: true, servers: summarize((await servers()).servers) })
+    }
+    if (request.op === 'mcp_export') {
+      // From the config file, not config.get: the gateway's copy replaces secret values with
+      // "__OPENCLAW_REDACTED__", and the real ones are needed to move the server into Local MCP.
+      const name = String(request.name || '')
+      const server = fileConfig?.mcp?.servers?.[name]
+      if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(name) || !server || typeof server !== 'object') return fail('not_found', `OpenClaw has no MCP server named "${name}".`)
+      const text = (value) => (typeof value === 'string' ? value : '')
+      const strings = (value) => Object.fromEntries(Object.entries(value && typeof value === 'object' ? value : {}).filter(([, item]) => typeof item === 'string'))
+      return finish({
+        ok: true,
+        server: {
+          transport: server.url ? (server.transport || 'streamable-http') : 'stdio',
+          command: text(server.command), args: Array.isArray(server.args) ? server.args.map(String) : [],
+          env: strings(server.env), url: text(server.url), headers: strings(server.headers), enabled: server.enabled !== false,
+        },
+      })
     }
     if (request.op === 'skills_list') {
       const status = await call('skills.status', {})

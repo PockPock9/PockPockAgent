@@ -23,6 +23,7 @@ SERVICES = (
     ("run-store", "run_store", 8773),
     ("browser-automation", "browser_automation", 8774),
     ("agent-verifier", "agent_verifier", 8775),
+    ("mcp-hub", "mcp_hub", 8776),
 )
 STARTUP_TIMEOUT_SECONDS = 45
 MINIMUM_PYTHON = (3, 12)
@@ -141,6 +142,7 @@ def service_environment() -> dict[str, str]:
             "POCKPOCK_RUN_STORE_URL": "http://127.0.0.1:8773",
             "POCKPOCK_BROWSER_AUTOMATION_URL": "http://127.0.0.1:8774",
             "POCKPOCK_AGENT_VERIFIER_URL": "http://127.0.0.1:8775",
+            "POCKPOCK_MCP_HUB_URL": "http://127.0.0.1:8776",
             "POCKPOCK_PORT": "8766",
         }
     )

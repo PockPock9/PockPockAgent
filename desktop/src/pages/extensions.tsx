@@ -9,7 +9,12 @@ import { getJson, sendJson } from '../lib/api'
 export type ExtensionList = {
   skills: Array<{ slug: string; key?: string; name: string; description: string; source: string; missing: boolean; enabled: boolean }>
   builtin_skills: Array<{ key: string; name: string; description: string; enabled: boolean; ready: boolean; needs: string[] }>
-  mcp: Array<{ name: string; transport: string; target: string; source: string; managed: boolean; enabled: boolean }>
+  mcp: Array<{
+    name: string; transport: string; target: string; source: string; managed: boolean; enabled: boolean
+    /** Runs in Local MCP; state: running, stopped (starts on first use), error, off, or unavailable (Local MCP is not running). */
+    local?: boolean; state?: string; state_detail?: string; tools?: number | null
+  }>
+  local_mcp?: { running: boolean; detail: string }
   openclaw_ready: boolean
   detail: string
 }

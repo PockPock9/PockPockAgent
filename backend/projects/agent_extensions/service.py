@@ -3,9 +3,11 @@
 Nothing from a pasted link is installed or run by ``inspect``. It returns a proposal the user
 must approve; ``install`` then applies exactly that proposal, identified by its id.
 
-Skills are copied into OpenClaw's managed skills folder. MCP servers are saved in OpenClaw's own
-config through its gateway. PockPock records what it installed in
-``~/.openclaw/pockpock/extensions.json`` and only ever replaces or removes those entries.
+Skills are copied into OpenClaw's managed skills folder. MCP servers run in Local MCP
+(``projects/mcp_hub``), which keeps their keys; OpenClaw's config gets only the server's local address
+on the hub and the hub's token. Servers using the older SSE transport are still saved in OpenClaw's
+config directly. PockPock records what it installed in ``~/.openclaw/pockpock/extensions.json``
+(``"hub": true`` for a server in Local MCP) and only ever replaces or removes those entries.
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import mcp_probe
+from .hub_client import HubClient
 from .sources import (
     LAUNCHERS,
     README_ORIGIN,
@@ -52,6 +55,8 @@ MAX_SECRET_CHARS = 4000
 GATEWAY_TIMEOUT_SECONDS = 60
 SERVER_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
 HELPER_PATH = Path(__file__).with_name("gateway_config.mjs")
+# What OpenClaw's gateway shows instead of a secret value.
+REDACTED = "__OPENCLAW_REDACTED__"
 
 
 class ExtensionError(Exception):
@@ -132,6 +137,7 @@ class ExtensionService:
         probe_stdio: Callable[[str, list[str], dict[str, str]], list[dict[str, str]]] = mcp_probe.probe_stdio,
         probe_http: Callable[[str, dict[str, str]], list[dict[str, str]]] = mcp_probe.probe_http,
         clock: Callable[[], float] = time.monotonic,
+        hub: HubClient | None = None,
     ):
         self.state_dir = state_dir or default_state_dir()
         self.skills_dir = self.state_dir / "skills"
@@ -141,6 +147,7 @@ class ExtensionService:
         self.probe_stdio = probe_stdio
         self.probe_http = probe_http
         self.clock = clock
+        self.hub = hub or HubClient()
         self._proposals: dict[str, Proposal] = {}
         self._lock = threading.Lock()
         self._install_lock = threading.Lock()
@@ -381,6 +388,7 @@ class ExtensionService:
                 server: dict[str, Any] = {"command": mcp.command, "args": final_args}
                 if final_env:
                     server["env"] = final_env
+                hub_definition: dict[str, Any] | None = {"transport": "stdio", "command": mcp.command, "args": final_args, "env": final_env}
             else:
                 headers = {}
                 if authorization.strip():
@@ -392,15 +400,32 @@ class ExtensionService:
                 server = {"url": mcp.url, "transport": mcp.transport}
                 if headers:
                     server["headers"] = headers
+                # Local MCP speaks streamable HTTP to remote servers; the older SSE transport stays in OpenClaw.
+                hub_definition = {"transport": "streamable-http", "url": mcp.url, "headers": headers} if mcp.transport == "streamable-http" else None
         except mcp_probe.ProbeError as err:
             message = str(err)
             if re.search(r"allowed director", message, re.I):
                 message += " Add at least one folder the server may use as the last argument, one per line, then try again."
             raise ExtensionError("connect_failed", message, 502) from err
-        self.gateway.run({"op": "mcp_set", "name": mcp.name, "server": server, "replace": mcp.name in manifest["mcp"]})
-        manifest["mcp"][mcp.name] = {"source": proposal.link.url, "installed_at": int(time.time())}
+        replacing = mcp.name in manifest["mcp"]
+        if hub_definition is not None:
+            if not replacing and mcp.name in (self.gateway.run({"op": "mcp_list"}).get("servers") or {}):
+                raise ExtensionError("exists", f"OpenClaw already has an MCP server named \"{mcp.name}\".", 409)
+            server = self.hub.put(mcp.name, {**hub_definition, "source": proposal.link.url})["client"]
+            try:
+                self.gateway.run({"op": "mcp_set", "name": mcp.name, "server": server, "replace": replacing})
+            except ExtensionError:
+                if not replacing:
+                    try:
+                        self.hub.remove(mcp.name)
+                    except ExtensionError:
+                        pass
+                raise
+        else:
+            self.gateway.run({"op": "mcp_set", "name": mcp.name, "server": server, "replace": replacing})
+        manifest["mcp"][mcp.name] = {"source": proposal.link.url, "installed_at": int(time.time()), "hub": hub_definition is not None}
         self._write_manifest(manifest)
-        return {"kind": "mcp", "name": mcp.name, "verified": tools is not None, "tools": tools or []}
+        return {"kind": "mcp", "name": mcp.name, "verified": tools is not None, "tools": tools or [], "local": hub_definition is not None}
 
     # ----- list and remove -----
 
@@ -417,6 +442,11 @@ class ExtensionService:
         builtin: list[dict[str, Any]] = []
         servers: list[dict[str, Any]] = []
         detail = ""
+        hub_detail = ""
+        try:
+            in_hub = {str(item.get("name")): item for item in self.hub.servers()}
+        except ExtensionError as err:
+            in_hub, hub_detail = {}, str(err)
         try:
             # OpenClaw knows each skill by the name in its SKILL.md, which may differ from the folder.
             known = self.gateway.run({"op": "skills_list"}).get("skills") or []
@@ -444,18 +474,90 @@ class ExtensionService:
             for name, server in configured.items():
                 if name == "pockpock-connectors":
                     continue  # PockPock's own connector tools; managed on the Connectors page
+                local = bool(manifest["mcp"].get(name, {}).get("hub"))
+                hub_entry = in_hub.get(name) if local else None
                 servers.append({
                     "name": name,
-                    "transport": server.get("transport"),
-                    "target": server.get("url") or " ".join([str(server.get("command") or ""), *map(str, server.get("args") or [])]).strip(),
+                    "transport": (hub_entry or {}).get("transport") or server.get("transport"),
+                    # For a server in Local MCP, what it runs (not the hub's address): shown, and used for tool retrieval.
+                    "target": (hub_entry or {}).get("target") or server.get("url") or " ".join([str(server.get("command") or ""), *map(str, server.get("args") or [])]).strip(),
                     "source": str(manifest["mcp"].get(name, {}).get("source") or ""),
                     "managed": name in manifest["mcp"],
                     "enabled": server.get("enabled") is not False,
+                    "local": local,
+                    # running | stopped (starts on first use) | error | off | unavailable (Local MCP is not running)
+                    "state": (hub_entry or {}).get("state") or ("unavailable" if local else ""),
+                    "state_detail": (hub_entry or {}).get("detail") or (hub_detail if local else ""),
+                    "tools": (hub_entry or {}).get("tools"),
                 })
         except ExtensionError as err:
             detail = str(err)
         builtin.sort(key=lambda item: (not item["ready"], item["name"]))
-        return {"skills": skills, "builtin_skills": builtin, "mcp": servers, "openclaw_ready": not detail, "detail": detail}
+        return {"skills": skills, "builtin_skills": builtin, "mcp": servers, "openclaw_ready": not detail, "detail": detail,
+                "local_mcp": {"running": not hub_detail, "detail": hub_detail}}
+
+    # ----- Local MCP -----
+
+    def _local(self, name: str) -> None:
+        if not SERVER_NAME.fullmatch(name or "") or not self._read_manifest()["mcp"].get(name, {}).get("hub"):
+            raise ExtensionError("not_found", "There is no server with that name in Local MCP.", 404)
+
+    def restart_mcp(self, name: str) -> dict[str, Any]:
+        """Starts the server again now and says whether it started."""
+        self._local(name)
+        return self.hub.restart(name)
+
+    def mcp_log(self, name: str) -> list[str]:
+        self._local(name)
+        return self.hub.log(name)
+
+    def sync_local_mcp(self) -> dict[str, Any]:
+        """Moves servers PockPock installed into Local MCP and keeps OpenClaw pointed at it.
+
+        - A server installed before Local MCP (stdio or streamable HTTP) is read from OpenClaw's config,
+          saved in Local MCP with its keys, and OpenClaw's entry is replaced by the hub's address and token,
+          so the keys leave OpenClaw's config. Its on/off switch is kept.
+        - A server already in Local MCP whose OpenClaw entry differs from the hub's (another port or
+          token) is pointed at the hub again.
+        - A server in Local MCP that PockPock no longer lists (removed while Local MCP was stopped) is removed.
+        Raises ``ExtensionError`` when Local MCP or OpenClaw is not reachable; the caller tries again later.
+        """
+        with self._install_lock:
+            manifest = self._read_manifest()
+            in_hub = {str(item.get("name")) for item in self.hub.servers()}
+            configured = self.gateway.run({"op": "mcp_list"}).get("servers") or {}
+            moved, repointed, removed, lost = [], [], [], []
+            for name, entry in list(manifest["mcp"].items()):
+                current = configured.get(name)
+                if not SERVER_NAME.fullmatch(name) or current is None:
+                    continue
+                if entry.get("hub"):
+                    if name not in in_hub:
+                        lost.append(name)  # Local MCP's data was deleted; the server must be added again
+                        continue
+                    wanted = self.hub.client(name)
+                    exported = self.gateway.run({"op": "mcp_export", "name": name}).get("server") or {}
+                    if exported.get("url") != wanted.get("url") or (exported.get("headers") or {}) != wanted.get("headers"):
+                        self.gateway.run({"op": "mcp_set", "name": name, "server": {**wanted, **({} if current.get("enabled", True) else {"enabled": False})}, "replace": True})
+                        repointed.append(name)
+                    continue
+                if current.get("transport") not in {"stdio", "streamable-http"}:
+                    continue  # SSE servers stay in OpenClaw
+                exported = self.gateway.run({"op": "mcp_export", "name": name}).get("server") or {}
+                if REDACTED in json.dumps(exported):
+                    lost.append(name)  # only a hidden copy of its keys could be read; never save that
+                    continue
+                enabled = exported.get("enabled") is not False
+                definition = {key: exported.get(key) for key in ("transport", "command", "args", "env", "url", "headers")}
+                client = self.hub.put(name, {**definition, "enabled": enabled, "source": str(entry.get("source") or "")})["client"]
+                self.gateway.run({"op": "mcp_set", "name": name, "server": {**client, **({} if enabled else {"enabled": False})}, "replace": True})
+                manifest["mcp"][name] = {**entry, "hub": True}
+                self._write_manifest(manifest)
+                moved.append(name)
+            for name in in_hub - {name for name, entry in manifest["mcp"].items() if entry.get("hub")}:
+                self.hub.remove(name)
+                removed.append(name)
+            return {"moved": moved, "repointed": repointed, "removed": removed, "lost": lost}
 
     def set_enabled(self, kind: str, name: str, enabled: bool) -> dict[str, Any]:
         """Turn a skill or MCP server on or off in OpenClaw without removing it."""
@@ -479,6 +581,9 @@ class ExtensionService:
                 ) from err
             if not any(isinstance(item, dict) and item.get("key") == name for item in known):
                 raise ExtensionError("not_found", "OpenClaw has no skill with that name.", 404)
+        if kind == "mcp" and self._read_manifest()["mcp"].get(name, {}).get("hub"):
+            # Local MCP stops a switched-off server and refuses it to every agent, not only OpenClaw.
+            self.hub.set_enabled(name, bool(enabled))
         self.gateway.run({"op": "skill_enable" if kind == "skill" else "mcp_enable", "name": name, "enabled": bool(enabled)})
         return {"ok": True, "enabled": bool(enabled)}
 
@@ -500,6 +605,11 @@ class ExtensionService:
             if not SERVER_NAME.fullmatch(name or "") or name not in manifest["mcp"]:
                 raise ExtensionError("not_found", "PockPock did not connect an MCP server with that name.", 404)
             self.gateway.run({"op": "mcp_remove", "name": name})
+            if manifest["mcp"][name].get("hub"):
+                try:
+                    self.hub.remove(name)
+                except ExtensionError:
+                    pass  # Local MCP is stopped: sync_local_mcp removes it there when it runs again
             del manifest["mcp"][name]
         else:
             raise ExtensionError("invalid_kind", "Choose a skill or an MCP server to remove.")

@@ -123,7 +123,7 @@ The window (**Agent Studio**) has an icon rail on the far left (Tasks, Workshop,
 - **Timing**: while a reply runs, counters show the seconds spent thinking, planning or on the current step. Afterwards each step shows how long it took, and a line under the reply splits the time into **Thinking** or **Planning**, **Waiting for you** (time on plan and approval cards), **Writing** or **Working**, and **Total**.
 - **Files** (Inspector → Files) shows the open folder; attach a file to the next message or open it. **Terminal** (**Ctrl+J**) is PowerShell in that folder, under the composer.
 - **Notifications** appear bottom right: an update that is ready (**Restart to update**), the gateway stopped or Ollama not running (**Open Services**), and a watched page that changed (**Open Research**).
-- **Skills and MCP servers**: paste a GitHub link in the composer or on the **Skills** / **MCP servers** page, or search **mcpservers.org** on those pages: curated servers can be previewed and installed from the results, and every result opens on mcpservers.org. You see what would be installed and approve it first. Switch any of them off without removing it.
+- **Skills and MCP servers**: paste a GitHub link in the composer or on the **Skills** / **MCP servers** page, or search **mcpservers.org** on those pages: curated servers can be previewed and installed from the results, and every result opens on mcpservers.org. You see what would be installed and approve it first. Switch any of them off without removing it. MCP servers you add run in **Local MCP** (on the **Services** page): each starts once and is shared by the agents, its keys are kept by PockPock (encrypted on Windows), and the **MCP servers** page shows whether each is running, with its log and a restart button. See [Local MCP](docs/features/local-mcp.md).
 - **Browser recipes** saves web tasks you repeat; each step asks for approval when it runs.
 - **Activity** shows which model handled each request and how long it took (no prompt text is stored).
 - **Models**, **Memory** and **Research** control which local models are used, learned preferences, and whether agents may read public websites. **Research** also lists the pages you chose to watch: turn on **Watch for changes** on a saved source and PockPock re-reads that page in the background (every 6 hours while it runs, only while reading public websites is allowed) and tells you when it changes. Watching is off unless you turn it on for a page.
@@ -147,6 +147,7 @@ PockPock Agent is an Electron app that talks to a local API (the **gateway**, `1
 | Validator | 8772 | Checks agent workspaces before a task is reported done |
 | Run store | 8773 | Saves agent runs and their events |
 | Browser automation | 8774 | Isolated Chromium for agent web tasks and browser recipes |
+| Local MCP | 8776 | Runs the MCP servers you added, once, for the agents |
 | Ollama | 11434 | Runs the models |
 | OpenClaw gateway | 18810 | The OpenClaw engine (optional) |
 | NemoClaw sandbox | 18789 | The NemoClaw engine in WSL (optional) |
@@ -249,7 +250,8 @@ Planned work is in the [roadmap](docs/ROADMAP.md) and the [task tracker](docs/TA
 | Installed Python environment (installer only) | `%LOCALAPPDATA%\PockPock\runtime` |
 | Agent task folders | `%USERPROFILE%\PockPock AI Tasks` |
 | Models | `%USERPROFILE%\.ollama` |
-| OpenClaw config, skills and MCP servers | `%USERPROFILE%\.openclaw` |
+| OpenClaw config and skills | `%USERPROFILE%\.openclaw` |
+| MCP servers you added, with their keys (encrypted by Windows) | `%LOCALAPPDATA%\PockPock\mcp-hub` |
 | Cloud API keys (encrypted by Windows or the macOS Keychain) and chosen cloud models | `%APPDATA%\PockPock Agent\cloud.json` |
 | Connector keys (encrypted the same way) | `%APPDATA%\PockPock Agent\connectors.json` |
 

@@ -49,7 +49,13 @@ class FakeGateway:
         if self.offline:
             raise ExtensionError("gateway_offline", "The OpenClaw gateway is not running.", 503)
         if request["op"] == "mcp_list":
-            return {"ok": True, "servers": {name: {"transport": "stdio", "command": server.get("command", ""), "args": server.get("args", []), "url": server.get("url", ""), "enabled": server.get("enabled", True)} for name, server in self.servers.items()}}
+            return {"ok": True, "servers": {name: {"transport": (server.get("transport") or "streamable-http") if server.get("url") else "stdio", "command": server.get("command", ""), "args": server.get("args", []), "url": server.get("url", ""), "enabled": server.get("enabled", True)} for name, server in self.servers.items()}}
+        if request["op"] == "mcp_export":
+            server = self.servers.get(request["name"])
+            if server is None:
+                raise ExtensionError("not_found", "no such server", 404)
+            return {"ok": True, "server": {"transport": (server.get("transport") or "streamable-http") if server.get("url") else "stdio", "command": server.get("command", ""), "args": server.get("args", []),
+                                           "env": server.get("env", {}), "url": server.get("url", ""), "headers": server.get("headers", {}), "enabled": server.get("enabled", True)}}
         if request["op"] == "skills_list":
             # Like OpenClaw, a switched-off skill is reported as not eligible.
             return {"ok": True, "skills": [dict(skill, disabled=skill["key"] in self.disabled_skills, eligible=skill["eligible"] and skill["key"] not in self.disabled_skills) for skill in self.skills]}
@@ -144,12 +150,58 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual((mcp.transport, mcp.url), ("streamable-http", "https://mcp.example.com/mcp"))
 
 
+class FakeHub:
+    """Local MCP as the gateway sees it."""
+
+    def __init__(self):
+        self.hub_servers: dict[str, dict] = {}
+        self.offline = False
+        self.token = "hub-token"
+        self.port = 8776
+
+    def _check(self):
+        if self.offline:
+            raise ExtensionError("hub_unavailable", "Local MCP is not running. Start it on the Services page, then try again.", 503)
+
+    def client(self, name):
+        self._check()
+        return {"url": f"http://127.0.0.1:{self.port}/mcp/{name}", "transport": "streamable-http", "headers": {"Authorization": f"Bearer {self.token}"}}
+
+    def put(self, name, definition):
+        self._check()
+        self.hub_servers[name] = dict(definition)
+        return {"server": {"name": name}, "client": self.client(name)}
+
+    def servers(self):
+        self._check()
+        return [{"name": name, "transport": item.get("transport", "stdio"), "target": item.get("url") or " ".join([item.get("command", ""), *item.get("args", [])]),
+                 "state": "off" if item.get("enabled") is False else "running", "detail": "", "tools": 1} for name, item in self.hub_servers.items()]
+
+    def remove(self, name):
+        self._check()
+        return self.hub_servers.pop(name, None) is not None
+
+    def set_enabled(self, name, enabled):
+        self._check()
+        self.hub_servers[name]["enabled"] = enabled
+        return {}
+
+    def restart(self, name):
+        self._check()
+        return {"name": name, "state": "running"}
+
+    def log(self, name):
+        self._check()
+        return ["started"]
+
+
 class ServiceTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.state = Path(self.temp.name)
         self.gateway = FakeGateway()
+        self.hub = FakeHub()
         self.files: dict[str, str | bytes] = {"skills/pdf/SKILL.md": SKILL, "skills/pdf/ref/notes.md": "notes"}
         self.links: tuple[str, ...] = ()
         self.fetched = 0
@@ -157,7 +209,7 @@ class ServiceTests(unittest.TestCase):
         self.now = 1000.0
         self.service = ExtensionService(
             state_dir=self.state, fetch=self.fetch, gateway=self.gateway,
-            probe_stdio=self.probe_stdio, probe_http=self.probe_http, clock=lambda: self.now,
+            probe_stdio=self.probe_stdio, probe_http=self.probe_http, clock=lambda: self.now, hub=self.hub,
         )
 
     def fetch(self, link):
@@ -259,13 +311,20 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(self.gateway.requests, [])
         result = self.service.install(proposal["id"], args=["-y", "pkg", "C:/data"], env={"API_KEY": " secret "})
         self.assertEqual(self.probes, [("npx", ["-y", "pkg", "C:/data"], {"API_KEY": "secret"})])
-        self.assertEqual(self.gateway.servers["repo"], {"command": "npx", "args": ["-y", "pkg", "C:/data"], "env": {"API_KEY": "secret"}})
-        self.assertEqual(result["tools"][0]["name"], "shout")
+        # The server runs in Local MCP with its key; OpenClaw gets only the hub's address and token.
+        self.assertEqual(self.hub.hub_servers["repo"], {"transport": "stdio", "command": "npx", "args": ["-y", "pkg", "C:/data"], "env": {"API_KEY": "secret"}, "source": "https://github.com/o/repo"})
+        self.assertEqual(self.gateway.servers["repo"], {"url": "http://127.0.0.1:8776/mcp/repo", "transport": "streamable-http", "headers": {"Authorization": "Bearer hub-token"}})
+        self.assertEqual((result["tools"][0]["name"], result["local"]), ("shout", True))
         listed = self.service.list()["mcp"]
-        self.assertEqual((listed[0]["name"], listed[0]["managed"]), ("repo", True))
+        self.assertEqual((listed[0]["name"], listed[0]["managed"], listed[0]["local"], listed[0]["state"]), ("repo", True, True, "running"))
+        self.assertEqual(listed[0]["target"], "npx -y pkg C:/data", "what it runs, not the hub's address")
         self.assertNotIn("secret", json.dumps(self.service.list()))
+        self.service.set_enabled("mcp", "repo", False)
+        self.assertEqual((self.hub.hub_servers["repo"]["enabled"], self.gateway.servers["repo"]["enabled"]), (False, False))
+        self.assertEqual(self.service.restart_mcp("repo")["state"], "running")
+        self.assertEqual(self.service.mcp_log("repo"), ["started"])
         self.service.remove("mcp", "repo")
-        self.assertEqual(self.gateway.servers, {})
+        self.assertEqual((self.gateway.servers, self.hub.hub_servers), ({}, {}))
 
     def test_mcp_failed_probe_saves_nothing(self):
         self.files = {"README.md": "```json\n{\"mcpServers\": {\"x\": {\"command\": \"npx\", \"args\": [\"pkg\"]}}}\n```"}
@@ -297,6 +356,7 @@ class ServiceTests(unittest.TestCase):
             self.service.install(proposal["id"])
         self.assertEqual(caught.exception.status_code, 409)
         self.assertEqual(self.gateway.servers["repo"]["command"], "node")
+        self.assertEqual(self.hub.hub_servers, {}, "nothing is left in Local MCP")
         self.assertFalse(self.service.list()["mcp"][0]["managed"])
         with self.assertRaises(ExtensionError):
             self.service.remove("mcp", "repo")
@@ -307,12 +367,16 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual((proposal["mcp"]["transport"], proposal["mcp"]["name"]), ("streamable-http", "example"))
         self.service.install(proposal["id"], authorization="Bearer abc")
         self.assertEqual(self.probes, [("https://mcp.example.com/mcp", {"Authorization": "Bearer abc"})])
-        self.assertEqual(self.gateway.servers["example"], {"url": "https://mcp.example.com/mcp", "transport": "streamable-http", "headers": {"Authorization": "Bearer abc"}})
+        self.assertEqual(self.hub.hub_servers["example"]["headers"], {"Authorization": "Bearer abc"})
+        self.assertEqual(self.gateway.servers["example"]["headers"], {"Authorization": "Bearer hub-token"})
 
     def test_sse_server_is_saved_unverified(self):
         proposal = self.service.inspect("https://mcp.example.com/sse")
         result = self.service.install(proposal["id"])
-        self.assertEqual((result["verified"], self.probes), (False, []))
+        self.assertEqual((result["verified"], self.probes, result["local"]), (False, [], False))
+        # The older SSE transport stays in OpenClaw's config.
+        self.assertEqual(self.gateway.servers["example"]["url"], "https://mcp.example.com/sse")
+        self.assertEqual(self.hub.hub_servers, {})
 
     def test_list_reports_gateway_offline(self):
         self.gateway.offline = True
@@ -360,6 +424,66 @@ class ServiceTests(unittest.TestCase):
         names = [skill["name"] for skill in self.service.list()["builtin_skills"]]
         self.assertNotIn("pdf-tools", names)  # still reported by OpenClaw, but its folder is gone
         self.assertNotIn("pdf-tools", self.gateway.disabled_skills)
+
+    def test_install_needs_local_mcp_running(self):
+        self.files = {"README.md": "```json\n{\"mcpServers\": {\"x\": {\"command\": \"npx\", \"args\": [\"pkg\"]}}}\n```"}
+        self.hub.offline = True
+        proposal = self.service.inspect("https://github.com/o/repo")
+        with self.assertRaises(ExtensionError) as caught:
+            self.service.install(proposal["id"])
+        self.assertEqual(caught.exception.status_code, 503)
+        self.assertIn("Services page", str(caught.exception))
+        self.assertEqual(self.gateway.servers, {})
+        listed = self.service.list()
+        self.assertFalse(listed["local_mcp"]["running"])
+
+    def test_servers_installed_before_local_mcp_are_moved_into_it(self):
+        manifest = {"skills": {}, "mcp": {
+            "github": {"source": "https://github.com/o/github-mcp", "installed_at": 1},
+            "remote": {"source": "https://mcp.example.com/mcp", "installed_at": 1},
+            "old-sse": {"source": "https://mcp.example.com/sse", "installed_at": 1},
+        }}
+        (self.state / "pockpock").mkdir(parents=True, exist_ok=True)
+        (self.state / "pockpock" / "extensions.json").write_text(json.dumps(manifest), encoding="utf-8")
+        self.gateway.servers = {
+            "github": {"command": "npx", "args": ["-y", "gh-mcp"], "env": {"GITHUB_TOKEN": "ghp_x"}, "enabled": False},
+            "remote": {"url": "https://mcp.example.com/mcp", "transport": "streamable-http", "headers": {"Authorization": "Bearer r"}},
+            "old-sse": {"url": "https://mcp.example.com/sse", "transport": "sse"},
+            "mine": {"command": "node", "args": ["mine.js"], "env": {"K": "v"}},
+        }
+        self.hub.hub_servers["orphan"] = {"transport": "stdio", "command": "npx"}
+        result = self.service.sync_local_mcp()
+        self.assertEqual((sorted(result["moved"]), result["removed"]), (["github", "remote"], ["orphan"]))
+        self.assertEqual(self.hub.hub_servers["github"], {"transport": "stdio", "command": "npx", "args": ["-y", "gh-mcp"], "env": {"GITHUB_TOKEN": "ghp_x"}, "url": "", "headers": {}, "enabled": False, "source": "https://github.com/o/github-mcp"})
+        self.assertEqual(self.hub.hub_servers["remote"]["headers"], {"Authorization": "Bearer r"})
+        # The keys left OpenClaw's config; the off switch was kept.
+        self.assertEqual(self.gateway.servers["github"], {"url": "http://127.0.0.1:8776/mcp/github", "transport": "streamable-http", "headers": {"Authorization": "Bearer hub-token"}, "enabled": False})
+        self.assertNotIn("ghp_x", json.dumps(self.gateway.servers))
+        # Not PockPock's, or SSE: left alone.
+        self.assertEqual(self.gateway.servers["mine"]["env"], {"K": "v"})
+        self.assertEqual(self.gateway.servers["old-sse"]["transport"], "sse")
+        self.assertTrue(json.loads((self.state / "pockpock" / "extensions.json").read_text(encoding="utf-8"))["mcp"]["github"]["hub"])
+        # A second run changes nothing; a new hub token or port points OpenClaw at the hub again.
+        self.assertEqual(self.service.sync_local_mcp(), {"moved": [], "repointed": [], "removed": [], "lost": []})
+        self.hub.token = "new-token"
+        self.assertEqual(sorted(self.service.sync_local_mcp()["repointed"]), ["github", "remote"])
+        self.assertEqual(self.gateway.servers["github"]["headers"], {"Authorization": "Bearer new-token"})
+        self.assertFalse(self.gateway.servers["github"]["enabled"])
+        # Local MCP's data deleted: reported, not guessed.
+        del self.hub.hub_servers["remote"]
+        self.assertEqual(self.service.sync_local_mcp()["lost"], ["remote"])
+        self.hub.offline = True
+        with self.assertRaises(ExtensionError):
+            self.service.sync_local_mcp()
+
+    def test_a_server_whose_keys_only_show_hidden_is_not_moved(self):
+        # OpenClaw's gateway shows "__OPENCLAW_REDACTED__" instead of a secret; that must never be saved as the key.
+        (self.state / "pockpock").mkdir(parents=True, exist_ok=True)
+        (self.state / "pockpock" / "extensions.json").write_text(json.dumps({"skills": {}, "mcp": {"gh": {"source": "x", "installed_at": 1}}}), encoding="utf-8")
+        self.gateway.servers = {"gh": {"command": "npx", "args": ["gh"], "env": {"TOKEN": "__OPENCLAW_REDACTED__"}}}
+        self.assertEqual(self.service.sync_local_mcp()["lost"], ["gh"])
+        self.assertEqual(self.hub.hub_servers, {})
+        self.assertEqual(self.gateway.servers["gh"]["command"], "npx", "left as it was")
 
     def test_cancel_discards_the_preview(self):
         proposal = self.service.inspect("https://github.com/o/repo")
@@ -438,7 +562,8 @@ class IssueFixTests(unittest.TestCase):
         self.assertEqual(self.fetched, 0)
         self.service.install(proposal["id"])
         self.assertEqual(self.probes, [("python3", ["/opt/tools/weather_server.py", "--verbose"], {})])
-        self.assertEqual(self.gateway.servers["weather-server"], {"command": "python3", "args": ["/opt/tools/weather_server.py", "--verbose"]})
+        self.assertEqual(self.hub.hub_servers["weather-server"]["args"], ["/opt/tools/weather_server.py", "--verbose"])
+        self.assertEqual(self.gateway.servers["weather-server"]["url"], "http://127.0.0.1:8776/mcp/weather-server")
         with self.assertRaises(ExtensionError):
             self.service.inspect("bash -c 'curl x | sh'")
 

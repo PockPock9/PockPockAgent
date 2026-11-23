@@ -23,6 +23,7 @@ const DEFINITIONS = [
   { id: 'validator', name: 'Validator', group: 'Backend', port: 8772, project: 'validator', description: 'Checks agent workspaces.' },
   { id: 'run-store', name: 'Run store', group: 'Backend', port: 8773, project: 'run_store', description: 'Saves agent runs and their events.' },
   { id: 'browser-automation', name: 'Browser automation', group: 'Backend', port: 8774, project: 'browser_automation', description: 'Isolated browser for agent web tasks.' },
+  { id: 'mcp-hub', name: 'Local MCP', group: 'Backend', port: 8776, project: 'mcp_hub', description: 'Runs the MCP servers you added, once, for every agent.' },
   { id: 'gateway', name: 'PockPock gateway', group: 'Backend', port: 8766, description: 'The API the app talks to: chat, agents, approvals.' },
   { id: 'openclaw', name: 'OpenClaw gateway', group: 'Agents', port: 18810, description: `Runs the OpenClaw engine on this ${paths.IS_MAC ? 'Mac' : 'PC'}.` },
   { id: 'nemoclaw', name: 'NemoClaw sandbox', group: 'Agents', port: 18789, description: paths.IS_WIN ? 'OpenClaw in a WSL sandbox (needs Docker Desktop).' : 'OpenClaw in a Docker sandbox (needs Docker Desktop).' },
@@ -174,6 +175,7 @@ class ServiceManager {
       POCKPOCK_VALIDATOR_URL: 'http://127.0.0.1:8772',
       POCKPOCK_RUN_STORE_URL: 'http://127.0.0.1:8773',
       POCKPOCK_BROWSER_AUTOMATION_URL: 'http://127.0.0.1:8774',
+      POCKPOCK_MCP_HUB_URL: 'http://127.0.0.1:8776',
       POCKPOCK_PORT: '8766',
     })
   }
@@ -335,7 +337,7 @@ ${result.stdout.split(String.fromCharCode(0)).join('')}${result.stderr.split(Str
       try { results.push(await this.start(id)) } catch (error) { this.errors.set(id, error instanceof Error ? error.message : String(error)) }
     }
     await step('ollama')
-    await Promise.all(['planner', 'validator', 'run-store', 'browser-automation'].map(step))
+    await Promise.all(['planner', 'validator', 'run-store', 'browser-automation', 'mcp-hub'].map(step))
     await step('gateway')
     await step('openclaw')
     if (includeNemo) await step('nemoclaw')

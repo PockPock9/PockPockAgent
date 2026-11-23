@@ -34,6 +34,10 @@ class RemovePayload(BaseModel):
     name: str = Field(min_length=1, max_length=64)
 
 
+class ServerPayload(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+
+
 class TogglePayload(BaseModel):
     kind: str = Field(min_length=1, max_length=8)
     name: str = Field(min_length=1, max_length=64)
@@ -91,5 +95,14 @@ def create_router(service: ExtensionService, require_local: Callable[[Request], 
     @router.post("/toggle")
     async def toggle_extension(payload: TogglePayload):
         return await run(service.set_enabled, payload.kind, payload.name, payload.enabled)
+
+    # Local MCP (projects/mcp_hub): start a server again now, and read what it printed.
+    @router.post("/mcp/restart")
+    async def restart_server(payload: ServerPayload):
+        return {"server": await run(service.restart_mcp, payload.name)}
+
+    @router.get("/mcp/log")
+    async def server_log(name: str = Query(min_length=1, max_length=64)):
+        return {"lines": await run(service.mcp_log, name)}
 
     return router
