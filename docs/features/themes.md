@@ -9,7 +9,7 @@ The desktop app has five themes and shows the PockPock mark in its title bar and
 - The title bar shows the mark (a chicken foot whose centre toe is a lightning bolt) next to "PockPock Agent".
 - While an agent thinks, plans or runs a tool, the mark's bolt pulses next to the status text ("Thinking", "Planning and reviewing the task", the running step) and its elapsed time, and a thin bar sweeps along the top of the composer. With **reduce motion** switched on in the operating system, nothing moves: the bolt is still, the bar is solid, and the text stays.
 
-![The same plan review in PockPock Dark, Volt, Storm and Feather](../images/themes.png)
+![The same finished task in PockPock Dark, Volt, Storm and Feather](../images/themes.png)
 
 ![Settings → Theme, with a colour preview for each theme](../images/settings-theme.png)
 
