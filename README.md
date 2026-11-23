@@ -5,11 +5,11 @@
 [![CI](https://github.com/PockPock9/PockPockAgent/actions/workflows/ci.yml/badge.svg)](https://github.com/PockPock9/PockPockAgent/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-PockPock is a local AI workspace for Windows and macOS. Its desktop app, **PockPock Agent**, chats with models running on your own PC and runs agents that plan and carry out tasks: reading and writing files, researching public websites, driving a browser, and, with the OpenClaw engine, operating the PC itself. Everything runs locally through [Ollama](https://ollama.com); prompts and replies are not sent to a cloud service or written to telemetry.
+PockPock is a local AI workspace for Windows and macOS. Its desktop app, **PockPock Agent**, chats with models running on your own PC and runs agents that plan and carry out tasks: reading and writing files, researching public websites, driving a browser, and, with the OpenClaw engine, operating the PC itself. Everything runs locally through [Ollama](https://ollama.com): prompts and replies stay on your PC and are never written to telemetry. Cloud models (NVIDIA NIM, OpenAI, Claude, Alibaba) are optional and used only when you pick one.
 
 **[Download PockPock Agent](https://github.com/PockPock9/PockPockAgent/releases/latest)** for Windows or Mac, open it, and press **Set up PockPock**. Setup installs everything else. See [Install](#install).
 
-![PockPock Agent: chats on the left, the conversation in the middle, the open folder's files on the right](docs/images/home.png)
+![PockPock Agent Studio: the task list, a finished research task with its sources, and the Inspector](docs/images/home.png)
 
 ---
 
@@ -19,7 +19,9 @@ PockPock is a local AI workspace for Windows and macOS. Its desktop app, **PockP
 
 **You approve the plan before anything runs.** PockPock Agent writes a plan with steps, success checks and the files it will deliver, and a reviewer checks it. You can approve it, edit it, or decline it.
 
-![Plan card with steps, success checks and Approve and run, Edit plan, Decline](docs/images/agent-plan.png)
+![Plan card with pre-checks, a question to answer, steps and success checks](docs/images/agent-plan.png)
+
+**Plan in steps with a stronger model.** In PockPock Agent's model menu, **Planning** lets a stronger model (a connected cloud model or a large local one) write the plan; each step then runs with a short prompt and only the tools it needs, and must pass its check before the next one starts. See [Plan in steps](docs/features/plan-and-sequence.md).
 
 **Every change shows exactly what it does.** File changes come with their diff, commands with the exact command line. You allow them once or deny them, or pick a permission mode that allows them without asking.
 
@@ -29,15 +31,23 @@ PockPock is a local AI workspace for Windows and macOS. Its desktop app, **PockP
 
 **The agent checks its own work.** Before reporting a task done, the agent validates the result against the plan's success checks and lists every file it changed or produced. Under every reply you see where the time went: planning, waiting for you, and working.
 
-**You can always see it working.** While an agent thinks, plans or runs a tool, the bolt of the PockPock mark pulses next to what it is doing, with a running timer, and a thin bar sweeps across the composer. It never just sits there.
+**You can always see it working.** The run bar above the task shows the phase (Understand, Plan, Act, Verify), the step it is on, and how long it has been working; the PockPock mark's bolt pulses next to what it is doing. When nothing new arrives for a while it says so and offers **Keep waiting**, a smaller model, or **Stop**.
 
-![Finished task with validation results and the changed file](docs/images/agent-done.png)
+| Working | Done, with the file it read and the change you allowed |
+|---|---|
+| ![The run bar during a task](docs/images/working.png) | ![Finished task with its checks, the approved change and the files touched](docs/images/agent-done.png) |
 
-**Skills and MCP servers from a link.** Paste a GitHub skill link or an MCP server address. PockPock shows what it would install, adds it only after you approve, and lets you switch each one off without removing it.
+**Skills and MCP servers from a link, or from mcpservers.org.** Paste a GitHub skill link or an MCP server address, or search **mcpservers.org** right on the Skills and MCP servers pages. PockPock shows what it would install, adds it only after you approve, and lets you switch each one off without removing it. MCP servers you add run in **Local MCP**: each starts once, is shared by the agents, keeps its keys with PockPock (encrypted on Windows), and shows whether it is running, with its log and a restart button.
+
+![The MCP servers page with two servers running in Local MCP](docs/images/mcp-servers.png)
+
+**Research public pages, and watch them for changes.** PockPock Agent can read the public websites you name, lists every source it used, and lets you save a source and **Watch for changes**: PockPock re-reads it in the background and tells you when it changes.
+
+![Watched pages on the Research page](docs/images/research-watch.png)
 
 **Five themes.** **PockPock Dark** (the default), **Volt** and **Storm** in the brand's colours, **Feather** for light mode, and **System**, which follows your computer. Every theme meets WCAG AA contrast. Pick one in **Settings → Theme**.
 
-![The same plan review in PockPock Dark, Volt, Storm and Feather](docs/images/themes.png)
+![The same finished task in PockPock Dark, Volt, Storm and Feather](docs/images/themes.png)
 
 **One app runs everything.** Ollama, the backend services and the agent engines start with the app. Start, stop, restart, or read the logs of each one from the **Services** page.
 
@@ -49,11 +59,11 @@ PockPock is a local AI workspace for Windows and macOS. Its desktop app, **PockP
 
 ![Setup finished: every service running and checked](docs/images/setup-done.png)
 
-**PockPock can fix itself from your reports.** Press **Report** under a reply that hung, failed or was wrong. The **Maintenance Manager** works through the reports in its own copy of the code: it finds the cause, fixes it with a documentation update, runs the checks and shows you the change. A draft pull request is opened only after you approve it. Choose who does the fixing: PockPock itself with a local model, Claude Code or GitHub Copilot; the app installs and signs in to the last two for you.
+**PockPock can fix itself from your reports.** Press **Report** under a reply that hung, failed or was wrong. The **Maintenance Manager** works through the reports in its own copy of the code: it finds the cause, fixes it with a documentation update, runs the checks and shows you the change. A draft pull request is opened only after you approve it. Choose who does the fixing: **PockPock itself** with a local model (the default; nothing leaves your PC), or, if you want to help with a stronger model, your own **Claude Code**, **OpenAI Codex** or **GitHub Copilot** account. An account is used only after you connect it here; the app installs and signs in to these tools for you.
 
 | Report a reply | Choose who fixes it |
 |---|---|
-| ![The Report dialog under a reply that failed](docs/images/report-dialog.png) | ![Maintenance: PockPock itself, Claude Code and GitHub Copilot](docs/images/maintenance-setup.png) |
+| ![The Report dialog under a reply](docs/images/report-dialog.png) | ![Maintenance Manager setup: PockPock itself, Claude Code, OpenAI Codex and GitHub Copilot](docs/images/maintenance-setup.png) |
 
 **Connect your apps.** The **Connectors** page links GitHub, email, Telegram, Slack, Discord and Notion. You paste a key you create in the app; PockPock checks it with the app, stores it encrypted, and gives the OpenClaw agent tools for it. Sending, posting and creating ask you first.
 
@@ -65,7 +75,7 @@ PockPock is a local AI workspace for Windows and macOS. Its desktop app, **PockP
 
 | Cloud models | In the model menu |
 |---|---|
-| ![The Cloud models page with a provider connected](docs/images/cloud-models.png) | ![The model menu with local and cloud models](docs/images/model-menu-cloud.png) |
+| ![The Cloud models page with NVIDIA NIM and Claude connected](docs/images/cloud-models.png) | ![The model menu with local and cloud models](docs/images/model-menu-cloud.png) |
 
 *The Cloud models screenshots show sample models and sample key endings; no real account is connected in them.*
 
@@ -130,7 +140,7 @@ The window (**Agent Studio**) has an icon rail on the far left (Tasks, Workshop,
 - **Connectors**: connect **GitHub**, **email**, **Telegram**, **Slack**, **Discord** or **Notion** with a key you create in that app. PockPock checks the key with the app, stores it encrypted, and gives the OpenClaw agent tools for it (read issues, search mail, read messages; sending, posting and creating ask you first). See [Connectors](docs/features/connectors.md).
 - **Cloud models**: connect **NVIDIA NIM**, **OpenAI**, **Claude (Anthropic)** or **Alibaba Cloud Model Studio** with your own API key (for OpenAI and Claude, a developer-platform API key: a ChatGPT or Claude.ai subscription does not include API use), choose which of their models you want, and pick them in the model menu of Chat, PockPock Agent, OpenClaw or NemoClaw. Disconnecting a service, or switching one of its models off, also puts every model choice that used it back to its default. A cloud model is used only when you pick it; **Smart route** keeps choosing local models. A chat that uses a cloud model sends its messages, files and tool results to that service. See [Cloud models](docs/features/cloud-models.md).
 - **Updates** (Windows): new versions download in the background and install when you press **Restart to update** or quit PockPock; your chats and settings are kept. On a Mac, PockPock tells you when a new version is available and links to its download.
-- **Services** starts, stops and restarts everything (Ollama, the backend services, OpenClaw, NemoClaw) all at once or one by one, shows their logs, and sets startup options. All services start when the app opens; a model loads into memory only when a message uses it.
+- **Services** starts, stops and restarts everything (Ollama, the backend services including Local MCP, OpenClaw, NemoClaw) all at once or one by one, shows their logs, and sets startup options. All services start when the app opens; a model loads into memory only when a message uses it.
 
 Full guide: [PockPock Agent desktop app](docs/features/desktop-app.md).
 
@@ -194,8 +204,10 @@ PockPockAgent/
 │   └── src/            the interface
 ├── backend/
 │   ├── scripts/        gateway (pockpock_server.py), Smart Router, telemetry, pockpock.py, run_tests.py
-│   └── projects/       planner, validator, run_store, browser_automation, agent_core, agent_tools,
-│                       agent_extensions, connectors, openclaw_bridge, nemoclaw_bridge, model_router, local_memory, observability
+│   └── projects/       services: planner, validator, run_store, browser_automation, mcp_hub (Local MCP)
+│                       in the gateway: agent_core, agent_tools, agent_skills, plan_sequence, agent_extensions,
+│                       connectors, openclaw_bridge, nemoclaw_bridge, model_router, local_memory, observability
+│                       tools: agent_eval, agent_verifier
 ├── docs/               architecture, roadmap, task tracker, feature pages
 ├── design-system/      desktop design tokens and rules
 └── AGENTS.md           rules for anyone (human or AI) changing this repository
@@ -265,12 +277,14 @@ Uninstalling the app keeps this data; delete the folders to remove it.
 | "PockPock is not set up yet" | **Settings** → **Run setup**. |
 | Chat or PockPock Agent does not answer | Check **Services** (Ollama and the gateway must run) and that the Smart Router is on in **Settings**. |
 | OpenClaw is offline | **Services** → OpenClaw gateway → **Start**. Start it from the app or PowerShell, never from Git Bash. |
+| "Local MCP is not running", or an MCP server shows **Error** | **Services** → Local MCP → **Start**. For a server in error, **MCP servers** → **Log** shows why, and **Restart** tries again. |
+| A cloud model is refused | Check the key on **Cloud models** (OpenAI and Claude need an API key from their developer platforms; a ChatGPT or Claude.ai subscription does not include API use). |
 | Mac: "PockPock Agent cannot be opened" or "cannot verify the developer" | The app is not notarized yet. **System Settings → Privacy & Security → Open Anyway**, once. |
 | Mac: "is damaged and can't be opened" | The download was altered or only partly copied. Download the `.dmg` again and drag the app to Applications. |
 | Mac: NemoClaw is not offered | It needs Apple silicon. Intel Macs can use Chat, PockPock Agent and OpenClaw. |
 | A large model is very slow | Expected when it does not fit in video memory; use it for hard tasks and start a new chat for it. |
 
-More: [desktop app](docs/features/desktop-app.md), [OpenClaw](docs/features/openclaw-agent.md), [NemoClaw](docs/features/nemoclaw-agent.md), [skills and MCP](docs/features/agent-extensions.md).
+More: [desktop app](docs/features/desktop-app.md), [OpenClaw](docs/features/openclaw-agent.md), [NemoClaw](docs/features/nemoclaw-agent.md), [skills and MCP](docs/features/agent-extensions.md), [Local MCP](docs/features/local-mcp.md), [cloud models](docs/features/cloud-models.md).
 
 ---
 

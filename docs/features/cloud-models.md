@@ -19,7 +19,7 @@ OpenAI and Claude need an **API** key from the developer platform, billed per us
 
 | The Cloud models page | The model menu |
 |---|---|
-| ![The Cloud models page with a provider connected](../images/cloud-models.png) | ![The model menu with local and cloud models](../images/model-menu-cloud.png) |
+| ![The Cloud models page with NVIDIA NIM and Claude connected](../images/cloud-models.png) | ![The model menu with local and cloud models](../images/model-menu-cloud.png) |
 
 *The screenshots show sample models and sample key endings (NVIDIA NIM and Claude connected), not a real account.*
 
