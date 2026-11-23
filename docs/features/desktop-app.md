@@ -117,7 +117,7 @@ On start the app checks every service and, unless **Start services when the app 
 | Service | Started with | Stopped with | Healthy when |
 |---|---|---|---|
 | Ollama | `ollama serve` | ending the process and the Ollama tray app | `GET :11434/api/version` |
-| Planner, Validator, Run store, Browser automation | `python -m uvicorn app:app` in the service folder | ending the process tree | `GET /health` returns its name |
+| Planner, Validator, Run store, Browser automation, Local MCP | `python -m uvicorn app:app` in the service folder | ending the process tree (for Local MCP this also ends the MCP servers it runs) | `GET /health` returns its name |
 | PockPock gateway | `python -u backend/scripts/pockpock_server.py` | ending the process tree | `GET :8766/api/health` |
 | OpenClaw gateway | `node openclaw.mjs gateway start` | `node openclaw.mjs gateway stop` | port 18810 open |
 | NemoClaw sandbox | Docker Desktop and Ollama, then `nemoclaw pockpock start` in WSL; if that fails or the port stays closed, `nemoclaw pockpock recover`; then `nemoclaw pockpock connect --probe-only` to re-establish inference | `nemoclaw pockpock stop` | port 18789 open |

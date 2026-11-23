@@ -482,7 +482,7 @@ if (!app.requestSingleInstanceLock()) {
       // files a running program holds, so they stop before the installer runs.
       beforeInstall: async () => {
         terminals.killAll()
-        for (const id of ['gateway', 'planner', 'validator', 'run-store', 'browser-automation']) await services.stop(id).catch(() => undefined)
+        for (const id of ['gateway', 'planner', 'validator', 'run-store', 'browser-automation', 'mcp-hub']) await services.stop(id).catch(() => undefined)
         services.killOwnedSync()
       },
     })

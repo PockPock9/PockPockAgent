@@ -180,11 +180,14 @@ async def lifespan(_: FastAPI):
     logger.info("PockPock AI API listening on http://127.0.0.1:8766")
     # Watched research sources (off per source by default) are re-checked in the background.
     watcher = asyncio.create_task(research_watch.watch_loop(check_watched_research_sources)) if research_watch.watching_enabled() else None
+    local_mcp = asyncio.create_task(sync_local_mcp_loop()) if os.environ.get("POCKPOCK_MCP_HUB_SYNC", "1") != "0" else None
     try:
         yield
     finally:
         if watcher:
             watcher.cancel()
+        if local_mcp:
+            local_mcp.cancel()
 
 
 api = FastAPI(title="PockPock AI Local API", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
@@ -903,6 +906,24 @@ OPENCLAW_BRIDGE = OpenClawBridge(OPENCLAW_CONFIG)
 api.include_router(create_openclaw_router(OPENCLAW_BRIDGE, require_local_agent_request))
 EXTENSIONS = ExtensionService()
 api.include_router(create_extensions_router(EXTENSIONS, require_local_agent_request))
+
+
+async def sync_local_mcp_loop() -> None:
+    """Moves MCP servers PockPock installed into Local MCP and keeps OpenClaw pointed at it.
+
+    Local MCP and OpenClaw start alongside the gateway and may not be up yet, so this tries again
+    every 30 seconds for about ten minutes, then stops until the next gateway start.
+    """
+    for _ in range(20):
+        try:
+            result = await asyncio.to_thread(EXTENSIONS.sync_local_mcp)
+            changed = {key: value for key, value in result.items() if value}
+            if changed:
+                logger.info("Local MCP: %s", changed)
+            return
+        except Exception as err:  # Local MCP or OpenClaw not running yet
+            logger.debug("Local MCP sync waits: %s", err)
+        await asyncio.sleep(30)
 
 
 def _openclaw_tool_catalog() -> dict[str, Any]:
