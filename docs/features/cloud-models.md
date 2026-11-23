@@ -21,7 +21,7 @@ OpenAI and Claude need an **API** key from the developer platform, billed per us
 |---|---|
 | ![The Cloud models page with a provider connected](../images/cloud-models.png) | ![The model menu with local and cloud models](../images/model-menu-cloud.png) |
 
-*The screenshots show sample models and a sample key ending, not a real account. They were taken in 0.2.8, when OpenRouter was still one of the services; the page now lists NVIDIA NIM, OpenAI, Claude (Anthropic) and Alibaba.*
+*The screenshots show sample models and sample key endings (NVIDIA NIM and Claude connected), not a real account.*
 
 1. Open **Workshop → Cloud models**. Each service shows **Not connected**, **Connected**, or **Key needed again**.
 2. Paste the API key (for Alibaba, choose the region the key belongs to) and press **Connect**. **Get a key** opens the service's key page in the browser.
