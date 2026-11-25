@@ -118,6 +118,8 @@ Decision: setup runs inside the app after a small per-user installer, rather tha
 
 Decision: on macOS, setup installs Python (through uv), Node.js and OpenClaw into PockPock's own runtime folder instead of requiring Homebrew. This needs no administrator password and leaves the user's own Python and Node.js untouched; the cost is a second copy of each when the user already has one, so setup reuses a suitable existing Python 3.12 or Node.js 22+ first. Docker Desktop is the only step that asks for a password, through macOS's own prompt. The macOS app is signed ad hoc, because Apple silicon will not run unsigned code; it is not notarized, so Gatekeeper asks the user to allow it once. A Developer ID and notarization would remove that step.
 
+Decision: a manual install clears the old app's caches and an in-app update keeps them (`desktop/installer/installer.nsh` on Windows, `desktop/electron/fresh-install.cjs` on macOS). A user who downloads the installer again usually wants a clean start, while an in-app update should be seamless. Only caches are removed, never chats, settings, keys or models, so a manual install cannot lose work; the cost is two cache lists kept in step by hand. See [Updates](features/desktop-app.md#updates).
+
 Decision: setup ends by starting and checking every service rather than trusting each installer's exit code. An install can succeed while the service still fails (a missing native library, a blocked port, a model that cannot load), and the user should learn that in setup, with the failing service named, not on their first message.
 
 ### Local service processes

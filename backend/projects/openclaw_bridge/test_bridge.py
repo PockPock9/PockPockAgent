@@ -193,6 +193,30 @@ class TurnTests(unittest.TestCase):
             self.assertEqual(harness.permissions.read()[session_key("main", "pockpock-c1")], "auto")
             self.assertNotIn("toolOverrides", start, "no selection: the session's tools are left as they are")
 
+    def test_the_chosen_folder_goes_to_the_helper(self):
+        with tempfile.TemporaryDirectory() as directory:
+            harness = BridgeHarness(directory)
+            folder = Path(directory) / "project"
+            folder.mkdir()
+            harness.bridge.start_turn("pockpock-c1", "list the files", "auto", workspace_path=str(folder))
+            self.assertEqual(harness.processes[0].received[0]["cwd"], str(folder.resolve()))
+
+    def test_no_folder_means_openclaws_own_workspace(self):
+        with tempfile.TemporaryDirectory() as directory:
+            harness = BridgeHarness(directory)
+            harness.bridge.start_turn("pockpock-c1", "hello", "auto", workspace_path="  ")
+            self.assertIsNone(harness.processes[0].received[0]["cwd"])
+
+    def test_a_missing_or_relative_folder_is_refused_before_starting(self):
+        with tempfile.TemporaryDirectory() as directory:
+            harness = BridgeHarness(directory)
+            for bad in (str(Path(directory) / "gone"), "relative\folder"):
+                with self.assertRaises(OpenClawError) as caught:
+                    harness.bridge.start_turn("pockpock-c1", "hello", "auto", workspace_path=bad)
+                self.assertEqual(caught.exception.code, "invalid_workspace")
+            self.assertEqual(harness.processes, [])
+            harness.bridge.start_turn("pockpock-c1", "hello", "auto")  # the turn lock was not left held
+
     def test_a_tool_selection_goes_to_the_helper(self):
         with tempfile.TemporaryDirectory() as directory:
             harness = BridgeHarness(directory)

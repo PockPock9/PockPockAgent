@@ -91,9 +91,10 @@ The gateway starts at sign-in from a Startup-folder item created by onboarding. 
 2. Choose **OpenClaw** in the composer's mode picker. The option is disabled when Node.js or the helper is missing or the integration is turned off; its line gives the reason.
 3. The mode chip above the composer has a green dot when the gateway answers; the status bar shows OpenClaw's state, and **Services** shows details and the log.
 4. Choose a permission mode from the permission picker. Full access is shown in amber. If the permission plugin is not loaded, Ask first and Auto-approve safe are disabled and only Full access can run.
-5. Send a message. The reply streams as it is written. Each tool call appears as an activity line above the reply: running, completed, failed, denied, or stopped.
-6. When an action needs approval, an **Approval required · OpenClaw** card appears with the action and its target (the command line, file path, or URL). Choose **Allow once** or **Deny**. The agent waits, then continues with the result.
-7. **Stop** cancels the request, denies anything still waiting, and aborts the agent run in OpenClaw.
+5. Choose where it works in the permission picker's **Task folder** section (the same setting PockPock Agent uses). **Work in *folder*** (the open folder, chosen with **Open folder**): OpenClaw works in it: commands run there and files given without a full path are read and saved there. With no open folder, or **Use OpenClaw's workspace**, it works in its own workspace, `~/.openclaw/workspace`. The Inspector's **Workspace** row shows which. The folder is set on the OpenClaw session before every turn, so changing it mid-task applies to the next message and keeps the conversation. OpenClaw's own files (`AGENTS.md`, `SOUL.md` and the rest) stay in its workspace. This sets where OpenClaw starts, not a boundary: like any OpenClaw run it can still reach other paths unless the permission mode stops it.
+6. Send a message. The reply streams as it is written. Each tool call appears as an activity line above the reply: running, completed, failed, denied, or stopped.
+7. When an action needs approval, an **Approval required · OpenClaw** card appears with the action and its target (the command line, file path, or URL). Choose **Allow once** or **Deny**. The agent waits, then continues with the result.
+8. **Stop** cancels the request, denies anything still waiting, and aborts the agent run in OpenClaw.
 
 Skills and MCP servers can be added to this engine by pasting a link; see [Skills and MCP servers](agent-extensions.md#skills-and-mcp-servers). MCP servers added in PockPock run in [Local MCP](local-mcp.md); OpenClaw's configuration holds only each server's local address on it and the hub token. Tools from a connected MCP server ask for approval in Ask first and Auto-approve safe, on a card titled `Use MCP tool: <server> › <tool>`.
 
@@ -234,10 +235,12 @@ Rate limit: 60 per minute. Cached for 15 seconds unless `refresh=1`.
 Rate limit: 12 per minute. Body:
 
 ```json
-{"session_id": "pockpock-<1-70 chars [A-Za-z0-9_-]>", "message": "<1-16,000 chars>", "permission_mode": "ask | auto | full", "model": "<optional: one of status.models>"}
+{"session_id": "pockpock-<1-70 chars [A-Za-z0-9_-]>", "message": "<1-16,000 chars>", "permission_mode": "ask | auto | full", "model": "<optional: one of status.models>", "workspace_path": "<optional: an existing absolute folder>"}
 ```
 
-Validation failures return a JSON error before any stream opens: `400` (`invalid_session`, `empty_message`, `invalid_message`, `invalid_mode`), `413` (`message_too_long`), `409` (`busy`), `503` (`unavailable`), `500` (`permission_state`). Otherwise the response is `text/event-stream`:
+`workspace_path` becomes the session's working folder: the helper (`gateway_turn.mjs`) calls the gateway's `sessions.create` with `{key, cwd}` before `sessions.patch` and `chat.send`. On an existing session this keeps the transcript and replaces the folder. Without `workspace_path` the folder is reset to `agents.defaults.workspace` from `openclaw.json` (default `~/.openclaw/workspace`); a failed reset does not stop the turn. Folders outside OpenClaw's configured workspaces need the `operator.admin` scope, which the helper's connection has.
+
+Validation failures return a JSON error before any stream opens: `400` (`invalid_session`, `empty_message`, `invalid_message`, `invalid_mode`, `invalid_workspace`: the folder is not a full path or no longer exists), `413` (`message_too_long`), `409` (`busy`), `503` (`unavailable`), `500` (`permission_state`). Otherwise the response is `text/event-stream`:
 
 | Event | Fields |
 | --- | --- |
@@ -251,7 +254,7 @@ Validation failures return a JSON error before any stream opens: `400` (`invalid
 | `approval_error` | `id`, `message` (the gateway rejected a decision) |
 | `tool_selection` | Sent after `decision` when skills or MCP servers were hidden for this turn: `skills_offered`, `skills_total`, `servers_offered`, `servers_total`, `tokens_saved` (estimate), `method` (`keyword` or `hybrid`) |
 | `done` | `duration_ms` |
-| `error` | `code` (`plugin_missing`, `timeout`, `stalled`, `turn_failed`, `gateway_closed`, `aborted`, `bridge_failed`), `message` |
+| `error` | `code` (`plugin_missing`, `timeout`, `stalled`, `turn_failed`, `gateway_closed`, `aborted`, `bridge_failed`, `workspace_failed`: the gateway refused the chosen folder), `message` |
 
 Only one OpenClaw turn runs at a time across the gateway.
 
@@ -296,6 +299,7 @@ An invalid agent name disables the integration at startup and logs a warning.
 | Symptom | Cause and fix |
 | --- | --- |
 | OpenClaw button disabled | Node.js not found, or `POCKPOCK_OPENCLAW_ENABLED=0` |
+| OpenClaw works in the wrong folder | Before 0.2.10 OpenClaw ignored the chosen folder and always worked in `~/.openclaw/workspace`. Now check that the permission picker's **Task folder** says **Work in *folder*** and the Inspector's **Workspace** row names your folder. "The selected folder no longer exists": choose it again |
 | `OpenClaw offline` | The gateway is not running. Run `openclaw gateway start`, then recheck |
 | Ask first and Auto-approve safe are disabled, or `plugin_missing` | The permission plugin is not loaded. Run `install_plugin.py`, or `openclaw gateway restart` |
 | `busy` | Another OpenClaw turn is still running. Wait or press Stop |
