@@ -64,6 +64,9 @@ function suggestLocalModel(models) {
   return [...coding].sort((a, b) => size(b) - size(a))[0] || ''
 }
 
+/** Thrown by connectAgent when the tool is already signed in and the user has not confirmed that account. */
+const ACCOUNT_CONFIRM_ERROR = 'This account is already signed in on this PC. Confirm it before PockPock uses it.'
+
 class Maintenance {
   constructor({ userData, emit }) {
     this.file = path.join(userData, 'maintenance.json')
@@ -214,8 +217,11 @@ class Maintenance {
   /**
    * Connect: install the agent's CLI when it is missing, then sign in when needed. Started only by
    * the user's Connect button. Progress goes out as `agent-log` events; sign-in pages as `agent-url`.
+   * A tool that is already signed in on this PC (for example Claude Code from an editor) is never
+   * connected silently: without `useSignedIn` (sent only by the "Use this account" button, after the
+   * user saw which account it is) this stops with ACCOUNT_CONFIRM_ERROR and saves nothing.
    */
-  async connectAgent(id) {
+  async connectAgent(id, { useSignedIn = false } = {}) {
     if (!INSTALLERS[id]) throw new Error('This AI cannot be connected from here.')
     if (this.connecting) throw new Error('Another connection is still running.')
     const agent = AGENTS[id]
@@ -241,6 +247,10 @@ class Maintenance {
       this.cliCache.delete(id)
       // A fresh Copilot install is signed in explicitly, so it does not depend on the GitHub CLI's token.
       const needsLogin = id === 'copilot' ? !this.config().connected?.copilot && !(await this.signedIn(id, file)) : !(await this.signedIn(id, file))
+      if (!needsLogin && !useSignedIn) {
+        say(`${agent.name} is already signed in on this PC. Confirm the account to use it.`)
+        throw new Error(ACCOUNT_CONFIRM_ERROR)
+      }
       if (needsLogin) {
         say(`Signing in to ${agent.vendor}. Finish in your browser…`)
         let announced = false
@@ -400,4 +410,4 @@ class Maintenance {
   }
 }
 
-module.exports = { Maintenance, parseDeviceCode, suggestLocalModel, UPSTREAM, AGENT_IDS, CLOUD_IDS }
+module.exports = { Maintenance, parseDeviceCode, suggestLocalModel, UPSTREAM, AGENT_IDS, CLOUD_IDS, ACCOUNT_CONFIRM_ERROR }
