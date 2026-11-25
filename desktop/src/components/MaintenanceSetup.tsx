@@ -24,6 +24,7 @@ export function MaintenanceSetup({ status, onChange }: { status: MaintenanceStat
   const [cloning, setCloning] = useState(false)
   const [error, setError] = useState('')
   // Connect (install and sign in) for a cloud AI: which one is running, its progress lines and sign-in page.
+  const [confirming, setConfirming] = useState<MaintenanceAgent['id'] | null>(null)
   const [connecting, setConnecting] = useState<MaintenanceAgent['id'] | null>(null)
   const [connectLog, setConnectLog] = useState<{ id: MaintenanceAgent['id']; lines: string[]; url: string; error: string } | null>(null)
 
@@ -62,16 +63,22 @@ export function MaintenanceSetup({ status, onChange }: { status: MaintenanceStat
       refresh()
     } catch (reason) { setError(clean(reason, `${agent.name} could not be disconnected.`)) }
   }
-  const connect = async (agent: MaintenanceAgent) => {
+  const connect = async (agent: MaintenanceAgent, useSignedIn = false) => {
     if (!desktop) return
-    setConnecting(agent.id); setError(''); setConnectLog({ id: agent.id, lines: [], url: '', error: '' })
+    // An account already signed in on this PC (for example Claude Code from an editor) is used only
+    // after the user confirms it; the main process refuses it otherwise.
+    if (!useSignedIn && agent.installed && agent.signedIn) { setConfirming(agent.id); return }
+    setConfirming(null); setConnecting(agent.id); setError(''); setConnectLog({ id: agent.id, lines: [], url: '', error: '' })
     try {
-      const list = await desktop.maintenance.connectAgent(agent.id)
+      const list = await desktop.maintenance.connectAgent(agent.id, { useSignedIn })
       setAgents(list)
       setConnectLog(null)
       if (list.find((item) => item.id === agent.id && ready(item))) setChoice({ id: agent.id, model: '' })
     } catch (reason) {
-      setConnectLog((log) => (log ? { ...log, error: clean(reason, `${agent.name} could not be connected.`) } : log))
+      const message = clean(reason, `${agent.name} could not be connected.`)
+      // Installed just now and found already signed in: ask, as for an account signed in before.
+      if (/already signed in on this PC/.test(message)) { setConnectLog(null); setConfirming(agent.id) }
+      else setConnectLog((log) => (log ? { ...log, error: message } : log))
       void desktop.maintenance.agents().then(setAgents)
     } finally { setConnecting(null) }
   }
@@ -159,6 +166,14 @@ export function MaintenanceSetup({ status, onChange }: { status: MaintenanceStat
                         <div className="card__actions">
                           <button type="button" className="button" disabled={connecting !== null} onClick={() => void disconnect(agent)}><Unplug size={13} /> Disconnect</button>
                           <span className="note">PockPock stops using this account. {agent.name} stays signed in on this PC.</span>
+                        </div>
+                      ) : confirming === agent.id ? (
+                        <div className="maint-confirm" role="group" aria-label={`Use this ${agent.vendor} account?`}>
+                          <p><strong>Use the {agent.vendor} account signed in on this PC{accountText(agent) ? ` (${accountText(agent)})` : ''}?</strong> {agent.name} is already signed in here, for example from your editor, so there is no sign-in page. If you use it, fixes count against that account's plan, and the report, the parts of the PockPock code it reads and its changes are sent to {agent.vendor}.</p>
+                          <div className="card__actions">
+                            <button type="button" className="button button--primary" onClick={() => void connect(agent, true)}><Plug size={13} /> Use this account</button>
+                            <button type="button" className="button" onClick={() => setConfirming(null)}>Cancel</button>
+                          </div>
                         </div>
                       ) : (
                         <div className="card__actions">

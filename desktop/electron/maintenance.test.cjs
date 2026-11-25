@@ -5,7 +5,7 @@ const os = require('node:os')
 const path = require('node:path')
 
 // maintenance.cjs requires paths.cjs, which reads electron's `app`; outside Electron it is undefined.
-const { Maintenance, parseDeviceCode, suggestLocalModel } = require('./maintenance.cjs')
+const { Maintenance, parseDeviceCode, suggestLocalModel, ACCOUNT_CONFIRM_ERROR } = require('./maintenance.cjs')
 
 test('reads the one-time code from gh auth login output', () => {
   const output = '! First copy your one-time code: 1A2B-C3D4\nPress Enter to open https://github.com/login/device in your browser...'
@@ -75,6 +75,22 @@ test('connect refuses unknown AIs and a second run at the same time', async () =
   manager.connecting = { id: 'claude', child: null }
   await assert.rejects(() => manager.connectAgent('copilot'), /still running/)
   assert.equal(manager.cancelConnect(), true)
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('an account already signed in on this PC is connected only after the user confirms it', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'maint-'))
+  const logs = []
+  const manager = new Maintenance({ userData: dir, emit: (event) => logs.push(event) })
+  manager.agentPath = () => 'C:\claude.exe'
+  manager.cliStatus = async () => ({ signedIn: true, account: { email: 'someone@example.com', plan: 'Claude Pro' } })
+  manager.agents = async () => []
+  await assert.rejects(() => manager.connectAgent('claude'), (error) => error.message === ACCOUNT_CONFIRM_ERROR)
+  assert.equal(manager.config().connected, undefined, 'nothing is saved without confirmation')
+  assert.equal(manager.connecting, null)
+  assert.ok(logs.some((event) => /Confirm the account/.test(event.line ?? '')))
+  await manager.connectAgent('claude', { useSignedIn: true })
+  assert.ok(manager.config().connected.claude, 'confirmed: connected')
   fs.rmSync(dir, { recursive: true, force: true })
 })
 
