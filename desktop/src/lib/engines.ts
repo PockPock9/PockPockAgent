@@ -166,7 +166,7 @@ function clawStepStatus(status: unknown): Step['status'] {
   return status === 'completed' ? 'done' : status === 'blocked' ? 'blocked' : status === 'running' ? 'running' : 'failed'
 }
 
-async function runOpenClaw({ sessionId, prompt, attachments, signal, patch, clawPermission, clawModel }: TurnOptions) {
+async function runOpenClaw({ sessionId, prompt, attachments, signal, patch, clawPermission, clawModel, workspacePath }: TurnOptions) {
   const tokens = tokenBuffer(patch)
   try {
     await stream('/api/openclaw/chat', {
@@ -174,6 +174,7 @@ async function runOpenClaw({ sessionId, prompt, attachments, signal, patch, claw
       message: withDocuments(prompt, attachments),
       permission_mode: clawPermission,
       model: clawModel || undefined,
+      workspace_path: workspacePath || undefined,
     }, signal, (event) => {
       if (event.type !== 'token') tokens.flush()
       switch (event.type) {

@@ -23,6 +23,8 @@ class OpenClawChatPayload(BaseModel):
     message: str = Field(min_length=1, max_length=MAX_MESSAGE_CHARS + 2000)
     permission_mode: str = Field(default="ask", max_length=16)
     model: str | None = Field(default=None, max_length=100)
+    # The folder chosen in the composer; OpenClaw's tools work there. None: OpenClaw's own workspace.
+    workspace_path: str | None = Field(default=None, max_length=1000)
 
 
 class OpenClawApprovalPayload(BaseModel):
@@ -62,7 +64,7 @@ def create_router(bridge: OpenClawBridge, require_local: Callable[[Request], Non
     async def openclaw_chat(payload: OpenClawChatPayload):
         try:
             selection = await asyncio.to_thread(bridge.select_tools, payload.session_id, payload.message)
-            turn = bridge.start_turn(payload.session_id, payload.message, payload.permission_mode, payload.model, selection)
+            turn = bridge.start_turn(payload.session_id, payload.message, payload.permission_mode, payload.model, selection, payload.workspace_path)
         except OpenClawError as err:
             raise HTTPException(status_code=err.status_code, detail=str(err)) from err
 
