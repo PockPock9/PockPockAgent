@@ -91,6 +91,7 @@
       "createStartMenuShortcut": true,
       "shortcutName": "PockPock Agent",
       "deleteAppDataOnUninstall": false,
+      "include": "installer/installer.nsh",
       "artifactName": "PockPock-Agent-Setup-${version}.exe",
       "installerIcon": "public/icon.ico",
       "uninstallerIcon": "public/icon.ico"

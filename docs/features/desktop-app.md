@@ -92,6 +92,15 @@ The installed app updates itself from the project's GitHub releases (`electron/u
 
 Copies of 0.1.0 do not contain the updater; they update to a later version by downloading it once.
 
+**Installing by hand clears the old app's caches.** Installing a version from a downloaded installer or DMG removes the old app's caches; an update installed from inside the app (**Restart to update**, or on quit) keeps them. Removed: the Chromium caches in the app's data folder (`Cache`, `Code Cache`, `GPUCache`, the Dawn and shader caches, `Shared Dictionary`, `Service Worker`, `blob_storage`, `Session Storage`) and the installers downloaded by the updater (`pockpock-desktop-updater` and the older `pockpock-ai-desktop-updater`, in `%LOCALAPPDATA%` on Windows and `~/Library/Caches` on macOS). Always kept: chats, settings, setup state, cloud keys, connectors, reports, Maintenance settings, `Local Storage`, logs, models and the Python environment.
+
+| | Windows | macOS |
+|---|---|---|
+| How a manual install is told apart | The installer (`desktop/installer/installer.nsh`, `build.nsis.include`) clears the caches in its `customInstall` step unless electron-updater started it with `--updated` | There are no in-app installs on macOS, so every version change is a manual one: on the first start of a new version, before Chromium opens its caches, `electron/fresh-install.cjs` clears them and records the version in `installed-version.json` in the app's data folder |
+| A cache in use | Left in place (the installer closes PockPock first) | Left for the next new version |
+
+The two cache lists are kept in step by hand. Tests: `electron/fresh-install.test.cjs`.
+
 ## Running from source
 
 Requirements: Python 3.12 (`py -3.12 backend\scripts\pockpock.py setup` on Windows, `python3.12 backend/scripts/pockpock.py setup` on a Mac, creates the repository `.venv`), Node.js 24+, and `npm install` inside `desktop/`.
