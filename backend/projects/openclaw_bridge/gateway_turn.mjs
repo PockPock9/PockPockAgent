@@ -10,7 +10,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import readline from 'node:readline'
-import { buildSubtaskMessage, cleanToolError, DEFAULT_STALL_SECONDS, explainTurnError, grantKey, isStalled, sanitizeToolOverrides, subtaskTimeoutSeconds, validateSubtask } from './turn_helpers.mjs'
+import { buildSubtaskMessage, cleanToolError, DEFAULT_STALL_SECONDS, explainTurnError, grantKey, isStalled, readsUntrustedContent, sanitizeToolOverrides, subtaskTimeoutSeconds, validateSubtask } from './turn_helpers.mjs'
 
 const DEBUG = process.env.POCKPOCK_OPENCLAW_DEBUG === '1'
 const STATE_DIR = process.env.OPENCLAW_STATE_DIR || path.join(os.homedir(), '.openclaw')
@@ -213,6 +213,10 @@ async function run(start) {
   // "Allow for this task": approvals granted for the rest of this turn. An exec grant covers the exact
   // command; a plugin grant covers that tool. They end with the turn.
   const grants = new Set()
+  // Set once this turn has read web or MCP content (readsUntrustedContent). From then on "Allow for this
+  // task" grants are not applied automatically and every approval is marked, so an instruction hidden
+  // in that content cannot ride on an earlier approval (prompt injection; the "lethal trifecta").
+  let untrustedSeen = false
   let aborting = false
   let lastActivity = Date.now()
   const stallSeconds = Number(start.stallSeconds) > 0 ? Number(start.stallSeconds) : DEFAULT_STALL_SECONDS
@@ -240,14 +244,14 @@ async function run(start) {
       if (!approval.id) return
       const key = grantKey(approval)
       lastActivity = Date.now()
-      if (grants.has(key)) {
+      if (grants.has(key) && !untrustedSeen) {
         gateway.call(kind === 'exec' ? 'exec.approval.resolve' : 'plugin.approval.resolve', { id: approval.id, decision: 'allow-once' })
           .then(() => emit({ type: 'approval_auto', id: approval.id, title: approval.title, description: approval.description }))
           .catch((error) => emit({ type: 'approval_error', id: approval.id, message: String(error.message).slice(0, 300) }))
         return
       }
       pendingApprovals.set(approval.id, { kind, key })
-      emit(approval)
+      emit(untrustedSeen ? { ...approval, untrusted: true } : approval)
       return
     }
     if (event === 'plugin.approval.resolved' || event === 'exec.approval.resolved') {
@@ -267,6 +271,7 @@ async function run(start) {
       // A tool run through dispatch_action is reported twice; keep the outer entry only.
       const nested = String(data.toolCallId ?? '').startsWith('tool_call:')
       if (payload.stream === 'item' && data.kind === 'tool' && (data.phase === 'start' || data.phase === 'end')) lastActivity = Date.now()
+      if (payload.stream === 'item' && data.kind === 'tool' && data.phase === 'start' && readsUntrustedContent(data.name)) untrustedSeen = true
       if (payload.stream === 'item' && data.kind === 'tool' && !nested && (data.phase === 'start' || data.phase === 'end')) {
         emit({
           type: 'tool',

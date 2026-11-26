@@ -141,6 +141,16 @@ export function subtaskTimeoutSeconds(subtask, fallbackSeconds) {
 }
 
 /** What an "Allow for this task" grant covers: the exact command for exec, the tool for plugin approvals. */
+/**
+ * Whether a tool brings content from outside this PC into the conversation: web search and fetch,
+ * the browser, and MCP tools (third-party servers). Text from these can carry instructions written
+ * by someone else (prompt injection), so after one has run, later approvals are asked one by one.
+ */
+export function readsUntrustedContent(name) {
+  const tool = String(name ?? '').toLowerCase()
+  return /^(web_fetch|web_search|fetch|browser|http_request)$/.test(tool) || tool.startsWith('mcp') || tool.includes('__')
+}
+
 export function grantKey(approval) {
   return approval.kind === 'exec' ? `exec:${approval.description}` : `plugin:${approval.toolName || approval.title}`
 }

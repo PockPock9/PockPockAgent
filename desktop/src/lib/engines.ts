@@ -191,7 +191,9 @@ async function runOpenClaw({ sessionId, prompt, attachments, signal, patch, claw
           break
         case 'approval':
           patch((message) => upsertApproval(message, {
-            id: text(event.id), source: 'openclaw', title: text(event.title) || 'Approval required', description: text(event.description), status: 'pending', grantable: true,
+            id: text(event.id), source: 'openclaw', title: text(event.title) || 'Approval required', description: text(event.description), status: 'pending',
+            // After the turn read web or MCP content, each action is decided on its own (no "Allow for this task").
+            grantable: event.untrusted !== true, untrusted: event.untrusted === true,
           }))
           break
         case 'approval_auto':
