@@ -6,6 +6,26 @@ import type { Message } from './types'
 import { formatDuration } from './timing'
 
 export type RunPhaseId = 'understand' | 'plan' | 'act' | 'verify'
+/**
+ * Plan steps that finished, for "Kept: ..." and Retry from step: with Plan in steps, the steps whose
+ * check passed in order; otherwise the step before the one the agent last said it was on. Activity
+ * lines ("Agent reasoning ...") are never counted (a run bar once said "54 finished steps" for a
+ * 7-step plan while the card said 6).
+ */
+export function finishedPlanSteps(message: Message): number {
+  let done = 0
+  if (message.stepChecks) {
+    while (message.stepChecks[done + 1] === true) done += 1
+    return done
+  }
+  return message.planStep ? Math.max(0, message.planStep.step - 1) : 0
+}
+
+/** A failed PockPock Agent reply has its own card with Retry from step and Report; nothing else repeats them. */
+export function hasFailedCard(message: Message, live: boolean): boolean {
+  return !live && message.engine === 'agent' && message.status === 'error'
+}
+
 export type RunState = 'working' | 'slow' | 'waiting' | 'failed' | 'stopped' | 'done'
 export type RunPhase = { id: RunPhaseId; label: string; status: 'done' | 'now' | 'todo' }
 
@@ -82,11 +102,13 @@ export function runView(message: Message, live: boolean, now: number): RunView {
 
   if (!live) {
     if (message.status === 'error') {
-      const kept = [message.plan ? 'the plan' : '', doneSteps ? `${doneSteps} finished ${doneSteps === 1 ? 'step' : 'steps'}` : '', message.artifacts?.length ? `${message.artifacts.length} saved ${message.artifacts.length === 1 ? 'file' : 'files'}` : ''].filter(Boolean)
+      const finished = finishedPlanSteps(message)
+      const kept = [message.plan ? 'the plan' : '', finished ? `${finished} finished ${finished === 1 ? 'step' : 'steps'}` : '', message.artifacts?.length ? `${message.artifacts.length} saved ${message.artifacts.length === 1 ? 'file' : 'files'}` : ''].filter(Boolean)
       return { ...base, planStep: undefined, state: 'failed', label: `Stopped: ${errorText(message)}`, detail: reached + (kept.length ? `Kept: ${kept.join(', ')}.` : 'Nothing was changed.') }
     }
     if (message.status === 'stopped' || message.status === 'streaming') {
-      const finishedSteps = doneSteps ? `${doneSteps} ${doneSteps === 1 ? 'step' : 'steps'} finished before it stopped.` : ''
+      const finishedCount = finishedPlanSteps(message)
+      const finishedSteps = finishedCount ? `${finishedCount} plan ${finishedCount === 1 ? 'step' : 'steps'} finished before it stopped.` : ''
       return { ...base, planStep: undefined, state: 'stopped', label: message.status === 'streaming' ? 'Interrupted: the app closed while this ran' : 'Stopped by you', detail: (reached + finishedSteps).trim() || undefined }
     }
     if (declined) return { ...base, planStep: undefined, state: 'done', label: 'Plan declined. Nothing ran.' }

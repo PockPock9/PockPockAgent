@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { ArrowDown, ArrowUp, FileText, Folder, Image as ImageIcon, LoaderCircle, Monitor, NotebookPen, PanelRight, Puzzle, Shield, Sparkles, Square, X } from 'lucide-react'
 import type { Status } from '../lib/status'
+import { hasFailedCard } from '../lib/runState'
 import { ENGINE_LABEL } from '../lib/types'
 import type { AppState, Attachment, Engine, Message, NemoRoute, Session, Settings } from '../lib/types'
 import { getJson, sendJson } from '../lib/api'
@@ -251,7 +252,8 @@ export function ChatPane(props: Props) {
       </header>
       {lastReply && (
         <RunBar message={lastReply} live={lastLive} onStop={onStop} onOpenServices={onOpenServices}
-          onRetry={!busy ? () => onRetry(lastReply) : undefined} onReport={() => setReporting(lastReply)}
+          onRetry={!busy && !hasFailedCard(lastReply, lastLive) ? () => onRetry(lastReply) : undefined}
+          onReport={hasFailedCard(lastReply, lastLive) ? undefined : () => setReporting(lastReply)}
           smallerModel={smaller} onSmaller={smaller ? () => onRetry(lastReply, smaller) : undefined} />
       )}
       <div ref={listRef} className="chat__scroll" onScroll={(event) => { const el = event.currentTarget; setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 80) }}
