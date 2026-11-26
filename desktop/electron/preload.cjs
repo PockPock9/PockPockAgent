@@ -74,6 +74,10 @@ contextBridge.exposeInMainWorld('pockpock', {
     disconnect: (id) => ipcRenderer.invoke('cloud:disconnect', id),
     onChange: (callback) => subscribe('cloud:changed', callback),
   },
+  models: {
+    pullUncensored: () => ipcRenderer.invoke('models:pullUncensored'),
+    onPullProgress: (callback) => subscribe('models:pull-progress', callback),
+  },
   maintenance: {
     status: () => ipcRenderer.invoke('maintenance:status'),
     agents: () => ipcRenderer.invoke('maintenance:agents'),

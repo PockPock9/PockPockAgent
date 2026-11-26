@@ -7,6 +7,7 @@ const { ServiceManager, httpJson, internalToken } = require('./services.cjs')
 const { Setup } = require('./setup.cjs')
 const { Updater } = require('./updater.cjs')
 const { cleanAfterManualInstall } = require('./fresh-install.cjs')
+const { UNCENSORED_MODEL, pullModel } = require('./model-pull.cjs')
 const themes = require('./themes.cjs')
 const { syncGuidance } = require('./openclaw-guidance.cjs')
 const { installedBrowsers } = require('./browsers.cjs')
@@ -298,6 +299,18 @@ function registerIpc() {
   handle('maintenance:status', () => maintenance.status())
   handle('maintenance:agents', () => maintenance.agents())
   handle('maintenance:setAgent', (choice) => maintenance.setAgent(choice))
+  // The optional uncensored model for OpenClaw: downloaded only when the user presses its button, then
+  // written to OpenClaw's model list so it can be chosen. One download at a time.
+  let modelPull = null
+  handle('models:pullUncensored', () => {
+    if (!modelPull) {
+      modelPull = pullModel(UNCENSORED_MODEL, (progress) => send('models:pull-progress', { model: UNCENSORED_MODEL, ...progress }))
+        .then(() => syncOllamaToOpenClaw(true))
+        .then(() => UNCENSORED_MODEL)
+        .finally(() => { modelPull = null })
+    }
+    return modelPull
+  })
   handle('maintenance:connectAgent', (id, options) => maintenance.connectAgent(String(id), { useSignedIn: options?.useSignedIn === true }))
   handle('maintenance:cancelConnect', () => maintenance.cancelConnect())
   handle('maintenance:disconnectAgent', (id) => maintenance.disconnectAgent(String(id)))

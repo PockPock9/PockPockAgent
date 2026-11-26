@@ -12,7 +12,7 @@ export const ENGINE_LABEL: Record<Engine, string> = {
 /** PockPock agent permission levels, as the backend names them. */
 export type AgentPermission = 'default' | 'auto-review' | 'full-access'
 /** OpenClaw permission modes enforced by the PockPock permission plugin. */
-export type ClawPermission = 'ask' | 'auto' | 'full'
+export type ClawPermission = 'ask' | 'auto' | 'full' | 'full-auto'
 
 export type Attachment = {
   name: string
@@ -362,6 +362,11 @@ export type DesktopBridge = {
     setModels: (id: CloudProviderId, models: CloudModel[]) => Promise<CloudProvider[]>
     disconnect: (id: CloudProviderId) => Promise<CloudProvider[]>
     onChange: (callback: (providers: CloudProvider[]) => void) => () => void
+  }
+  models: {
+    /** Downloads the optional uncensored OpenClaw model; resolves with its name once OpenClaw lists it. */
+    pullUncensored: () => Promise<string>
+    onPullProgress: (callback: (progress: { model: string; fraction?: number; detail: string }) => void) => () => void
   }
   maintenance: {
     status: () => Promise<MaintenanceStatus>

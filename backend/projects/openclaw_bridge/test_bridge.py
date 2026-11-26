@@ -9,6 +9,8 @@ import unittest
 from pathlib import Path
 
 from projects.openclaw_bridge.bridge import (
+    FULL_AUTO_STALL_SECONDS,
+    FULL_AUTO_TIMEOUT_SECONDS,
     MAX_MESSAGE_CHARS,
     MAX_TRACKED_SESSIONS,
     OpenClawBridge,
@@ -192,6 +194,26 @@ class TurnTests(unittest.TestCase):
             self.assertEqual(len(harness.commands[0]), 2)
             self.assertEqual(harness.permissions.read()[session_key("main", "pockpock-c1")], "auto")
             self.assertNotIn("toolOverrides", start, "no selection: the session's tools are left as they are")
+
+    def test_full_auto_is_full_access_for_the_plugin_with_a_longer_unattended_run(self):
+        with tempfile.TemporaryDirectory() as directory:
+            harness = BridgeHarness(directory)
+            harness.bridge.start_turn("pockpock-c1", "build it", "full-auto")
+            start = harness.processes[0].received[0]
+            self.assertEqual(start["mode"], "full")
+            self.assertIs(start["fullAuto"], True)
+            self.assertEqual(start["timeoutSeconds"], FULL_AUTO_TIMEOUT_SECONDS)
+            self.assertEqual(start["stallSeconds"], FULL_AUTO_STALL_SECONDS)
+            self.assertEqual(harness.permissions.read()[session_key("main", "pockpock-c1")], "full")
+
+    def test_other_modes_keep_the_normal_limits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            harness = BridgeHarness(directory)
+            harness.bridge.start_turn("pockpock-c1", "hello", "full")
+            start = harness.processes[0].received[0]
+            self.assertNotIn("fullAuto", start)
+            self.assertNotIn("stallSeconds", start)
+            self.assertLess(start["timeoutSeconds"], FULL_AUTO_TIMEOUT_SECONDS)
 
     def test_the_chosen_folder_goes_to_the_helper(self):
         with tempfile.TemporaryDirectory() as directory:

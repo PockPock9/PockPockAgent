@@ -62,7 +62,7 @@ function readinessError(engine: Engine, status: Status, settings: Settings, stat
   }
   if (engine === 'openclaw') {
     if (!status.claw?.ready) return status.claw?.detail ? `OpenClaw is not ready: ${status.claw.detail}` : 'OpenClaw is still being checked.'
-    if ((settings.clawPermission ?? 'ask') !== 'full' && !status.claw.plugin) return 'The PockPock permission plugin is not loaded in OpenClaw, so approvals cannot be enforced. Reinstall it or choose Full access.'
+    if (!['full', 'full-auto'].includes(settings.clawPermission ?? 'ask') && !status.claw.plugin) return 'The PockPock permission plugin is not loaded in OpenClaw, so approvals cannot be enforced. Reinstall it or choose Full access.'
   }
   if (engine === 'nemoclaw' && !status.nemo?.ready) return status.nemoChecking ? 'The NemoClaw sandbox is still being checked.' : status.nemo?.detail || 'NemoClaw is not ready.'
   return ''
