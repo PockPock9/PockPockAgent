@@ -23,9 +23,23 @@ export type Attachment = {
   size: number
 }
 
+/** What a tool call did, for the step's details: the tool, its command or inputs, and its result. */
+export type ToolDetail = {
+  name: string
+  command?: string
+  input?: Record<string, string>
+  output?: string
+  exitCode?: number
+  durationMs?: number
+  cwd?: string
+  diff?: string
+  error?: string
+}
+
 export type Step = {
   id: string
   label: string
+  tool?: ToolDetail
   status: 'running' | 'done' | 'failed' | 'blocked' | 'stopped'
   detail?: string
   startedAt?: number // ms since epoch, recorded by the app when the step's event arrived
@@ -67,6 +81,8 @@ export type PlanCard = {
   planHash: string
   goal: string
   steps: string[]
+  /** The small actions under each step (same order as steps when the plan was made); shown under the step whose text they came with. */
+  stepDetails?: string[][]
   checks: string[]
   deliverables: string[]
   questions: string[]

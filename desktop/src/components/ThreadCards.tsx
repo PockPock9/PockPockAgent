@@ -6,7 +6,7 @@ import { getJson, sendJson } from '../lib/api'
 import { announceWatchChange, setWatched, type SourceWatch } from '../lib/watch'
 import { Toggle } from './page'
 import { decideApproval } from '../lib/engines'
-import type { Approval, Message, ResearchBlock, ResearchSource, Step } from '../lib/types'
+import type { Approval, Message, ResearchBlock, ResearchSource, Step, ToolDetail } from '../lib/types'
 import { errorText, finishedPlanSteps } from '../lib/runState'
 import { formatDuration, stepDuration, useNow } from '../lib/timing'
 import { Mark } from './Mark'
@@ -25,8 +25,44 @@ function StepTime({ step, at }: { step: Step; at: number }) {
   return <time className="step__time">{formatDuration(ms)}</time>
 }
 
-export function Steps({ steps, live, endedAt }: { steps: Step[]; live: boolean; endedAt?: number }) {
+/** The input that says most about a call: the command, else a path, URL, query or name. */
+function toolTarget(tool: ToolDetail): string {
+  if (tool.command) return tool.command
+  const input = tool.input ?? {}
+  const key = ['path', 'file_path', 'filename', 'relative_path', 'url', 'targetUrl', 'query', 'name', 'action'].find((name) => input[name])
+  return key ? input[key] : ''
+}
+
+/** Under a step line: the tool and its command or target, and Details with the inputs and the result. */
+function StepTool({ tool }: { tool: ToolDetail }) {
   const [open, setOpen] = useState(false)
+  const target = toolTarget(tool)
+  const inputs = Object.entries(tool.input ?? {}).filter(([key, value]) => value && !(tool.command && key === 'command'))
+  const hasMore = inputs.length > 0 || tool.output || tool.diff || tool.error || tool.exitCode !== undefined || tool.cwd
+  return (
+    <div className="step__tool">
+      <div className="step__call">
+        <code className="step__name">{tool.name || 'tool'}</code>
+        {target && <code className="step__target" title={target}>{target}</code>}
+        {hasMore && <button type="button" className="link-button step__more" aria-expanded={open} onClick={() => setOpen((value) => !value)}>{open ? 'Hide details' : 'Details'}</button>}
+      </div>
+      {open && (
+        <dl className="step__details">
+          {inputs.map(([key, value]) => <div key={key}><dt>{key}</dt><dd><code>{value}</code></dd></div>)}
+          {tool.cwd && <div><dt>Folder</dt><dd><code>{tool.cwd}</code></dd></div>}
+          {tool.exitCode !== undefined && <div><dt>Exit code</dt><dd>{tool.exitCode}{tool.durationMs !== undefined ? ` · ${formatDuration(tool.durationMs)}` : ''}</dd></div>}
+          {tool.error && <div><dt>Error</dt><dd className="step__error">{tool.error}</dd></div>}
+          {tool.output && <div><dt>Result</dt><dd><pre tabIndex={0}>{tool.output}</pre></dd></div>}
+          {tool.diff && <div><dt>Change</dt><dd><pre tabIndex={0}>{tool.diff}</pre></dd></div>}
+        </dl>
+      )}
+    </div>
+  )
+}
+
+export function Steps({ steps, live, endedAt }: { steps: Step[]; live: boolean; endedAt?: number }) {
+  // Open by default, so each action, the tool it used and its command can be seen without a click.
+  const [open, setOpen] = useState(true)
   const now = useNow(live)
   // After the turn, a step that never reported its end is timed up to the end of the turn.
   const at = live ? now : endedAt ?? now
@@ -51,7 +87,7 @@ export function Steps({ steps, live, endedAt }: { steps: Step[]; live: boolean; 
           {steps.map((step) => (
             <li key={step.id} className={`step step--${step.status}`} title={step.detail}>
               <StepIcon status={step.status} />
-              <span>{step.label}</span>
+              <span className="step__body"><span>{step.label}</span>{step.tool && <StepTool tool={step.tool} />}</span>
               {step.status !== 'done' && step.status !== 'running' && <small>{step.status === 'blocked' ? 'Denied' : step.status === 'stopped' ? 'Stopped' : 'Failed'}</small>}
               <StepTime step={step} at={step.status === 'running' ? at : step.endedAt ?? at} />
             </li>

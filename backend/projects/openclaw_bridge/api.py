@@ -111,6 +111,13 @@ def create_router(bridge: OpenClawBridge, require_local: Callable[[Request], Non
                             "status": event.get("status"),
                             "error": event.get("error"),
                         })
+                    elif kind == "tool_detail":
+                        # The command, arguments and result of a tool call (turn_helpers.toolDetailFromStream).
+                        yield _sse({
+                            key: event.get(key)
+                            for key in ("type", "id", "name", "command", "input", "output", "exitCode", "durationMs", "cwd", "diff", "failed")
+                            if event.get(key) is not None
+                        })
                     elif kind == "approval":
                         yield _sse({
                             "type": "approval",

@@ -10,7 +10,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import readline from 'node:readline'
-import { buildSubtaskMessage, cleanToolError, DEFAULT_STALL_SECONDS, explainTurnError, grantKey, isStalled, readsUntrustedContent, sanitizeToolOverrides, subtaskTimeoutSeconds, validateSubtask } from './turn_helpers.mjs'
+import { buildSubtaskMessage, cleanToolError, DEFAULT_STALL_SECONDS, explainTurnError, grantKey, isStalled, readsUntrustedContent, sanitizeToolOverrides, subtaskTimeoutSeconds, toolDetailFromStream, validateSubtask } from './turn_helpers.mjs'
 
 const DEBUG = process.env.POCKPOCK_OPENCLAW_DEBUG === '1'
 const STATE_DIR = process.env.OPENCLAW_STATE_DIR || path.join(os.homedir(), '.openclaw')
@@ -281,6 +281,11 @@ async function run(start) {
       const nested = String(data.toolCallId ?? '').startsWith('tool_call:')
       if (payload.stream === 'item' && data.kind === 'tool' && (data.phase === 'start' || data.phase === 'end')) lastActivity = Date.now()
       if (payload.stream === 'item' && data.kind === 'tool' && data.phase === 'start' && readsUntrustedContent(data.name)) untrustedSeen = true
+      // The command, arguments and result of each tool call, shown in the step's details in the app.
+      if (payload.stream === 'tool' && !nested) {
+        const detail = toolDetailFromStream(data)
+        if (detail) emit(detail)
+      }
       if (payload.stream === 'item' && data.kind === 'tool' && !nested && (data.phase === 'start' || data.phase === 'end')) {
         emit({
           type: 'tool',

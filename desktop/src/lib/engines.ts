@@ -4,7 +4,7 @@
 import { sendJson, stream, text, uid } from './api'
 import type { StreamEvent } from './api'
 import { stampTiming } from './timing'
-import type { AgentPermission, Approval, Artifact, Attachment, ClawPermission, Engine, Message, PlanCard, PlanCheck, Step, TouchedFile } from './types'
+import type { AgentPermission, Approval, Artifact, Attachment, ClawPermission, Engine, Message, PlanCard, PlanCheck, Step, ToolDetail, TouchedFile } from './types'
 
 export type TurnOptions = {
   engine: Engine
@@ -68,6 +68,24 @@ function touch(message: Message, path: string, kind: TouchedFile['kind']): Messa
   if (index >= 0) { if (rank[kind] > rank[touched[index].kind]) touched[index] = { path, kind } }
   else touched.push({ path, kind })
   return { ...message, touched: touched.slice(-200) }
+}
+
+/** A flat record of short strings from an event field (tool inputs or results), or undefined. */
+function stringRecord(value: unknown): Record<string, string> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const entries = Object.entries(value as Record<string, unknown>).slice(0, 16).map(([key, item]) => [key, typeof item === 'string' ? item : JSON.stringify(item) ?? ''] as const)
+  return entries.length ? Object.fromEntries(entries.map(([key, item]) => [key, item.length > 600 ? `${item.slice(0, 599)}…` : item])) : undefined
+}
+
+/** Adds what a tool call did to its step line (OpenClaw sends it separately from the step itself). */
+function withToolDetail(message: Message, stepId: string, detail: ToolDetail): Message {
+  const steps = message.steps ?? []
+  const index = steps.findIndex((step) => step.id === stepId)
+  if (index < 0) return message
+  const merged: ToolDetail = { ...steps[index].tool, ...Object.fromEntries(Object.entries(detail).filter(([, value]) => value !== undefined)) } as ToolDetail
+  const next = [...steps]
+  next[index] = { ...steps[index], tool: merged }
+  return { ...message, steps: next }
 }
 
 function settleSteps(message: Message, status: Step['status']): Message {
@@ -190,6 +208,18 @@ async function runOpenClaw({ sessionId, prompt, attachments, signal, patch, claw
             detail: text(event.error) || undefined,
           }, false))
           break
+        case 'tool_detail':
+          patch((message) => withToolDetail(message, `tool:${text(event.id)}`, {
+            name: text(event.name),
+            command: text(event.command) || undefined,
+            input: stringRecord(event.input),
+            output: text(event.output) || undefined,
+            exitCode: typeof event.exitCode === 'number' ? event.exitCode : undefined,
+            durationMs: typeof event.durationMs === 'number' ? event.durationMs : undefined,
+            cwd: text(event.cwd) || undefined,
+            diff: text(event.diff) || undefined,
+          }))
+          break
         case 'approval':
           patch((message) => upsertApproval(message, {
             id: text(event.id), source: 'openclaw', title: text(event.title) || 'Approval required', description: text(event.description), status: 'pending',
@@ -245,6 +275,7 @@ async function runNemoClaw({ sessionId, prompt, attachments, signal, patch }: Tu
 
 type Prepared = {
   plan: string[]
+  step_details?: unknown[]
   execution_prompt: string
   selected_model: string
   task_brief: Record<string, unknown>
@@ -263,7 +294,7 @@ function list(value: unknown) {
 type PreparedSequence = {
   plan_id: string
   plan_hash: string
-  sequence_plan: { steps: Array<{ id: string; goal: string }> }
+  sequence_plan: { steps: Array<{ id: string; goal: string; tools_allowed?: string[]; done_condition?: Record<string, unknown> }> }
   selected_model: string
   executor_model: string
   step_checks?: string[]
@@ -290,11 +321,17 @@ async function runAgentSequence(options: TurnOptions) {
   }, 'POST', signal)
   const steps = prepared.sequence_plan.steps.map((step) => step.goal)
   const checks = (prepared.step_checks ?? []).map((check, index) => `Step ${index + 1}: ${check}`)
+  // Plan in steps: under each step, the tools it may use and how it is checked.
+  const stepDetails = prepared.sequence_plan.steps.map((step, index) => [
+    step.tools_allowed?.length ? `Uses ${step.tools_allowed.map((tool) => tool.replaceAll('_', ' ')).join(', ')}` : '',
+    prepared.step_checks?.[index] ? `Checked by: ${prepared.step_checks[index]}` : '',
+  ].filter(Boolean))
   const card: PlanCard = {
     planId: prepared.plan_id,
     planHash: prepared.plan_hash,
     goal: '',
     steps,
+    stepDetails,
     checks,
     deliverables: [],
     questions: [],
@@ -367,6 +404,7 @@ async function runAgent(options: TurnOptions) {
       planHash: prepared.plan_hash,
       goal: text(brief.desired_outcome),
       steps: prepared.plan,
+      stepDetails: Array.isArray(prepared.step_details) ? prepared.step_details.map((row) => list(row)) : undefined,
       checks: list(brief.success_checks),
       deliverables: list(brief.deliverables),
       questions,
@@ -493,7 +531,10 @@ function handleAgentEvent(event: StreamEvent, patch: TurnOptions['patch'], pushT
     case 'verifying': patch((message) => ({ ...addStep(message, { label: text(event.message) || 'Checking the success checks', status: 'running' }), verifying: true })); break
     case 'status': patch((message) => addStep(message, { label: text(event.message) || 'Working', status: 'running' })); break
     case 'decision': patch((message) => ({ ...addStep(message, { label: `Using ${text(event.model) || 'a local model'}`, status: 'done' }), model: text(event.model) || message.model })); break
-    case 'tool_start': patch((message) => addStep(message, { id: `tool:${text(event.tool)}:${text(event.sequence) || uid()}`, label: text(event.message) || text(event.tool).replaceAll('_', ' ') || 'Running a tool', status: 'running' })); break
+    case 'tool_start': patch((message) => addStep(message, {
+      id: `tool:${text(event.tool)}:${text(event.sequence) || uid()}`, label: text(event.message) || text(event.tool).replaceAll('_', ' ') || 'Running a tool', status: 'running',
+      tool: { name: text(event.tool), input: stringRecord(event.input) },
+    })); break
     case 'tool_result':
       if (event.status === 'success' && text(event.tool) === 'read_project_file') {
         const details = event.details && typeof event.details === 'object' ? event.details as Record<string, unknown> : {}
@@ -504,7 +545,12 @@ function handleAgentEvent(event: StreamEvent, patch: TurnOptions['patch'], pushT
         const tool = text(event.tool)
         for (let index = steps.length - 1; index >= 0; index -= 1) {
           if (steps[index].status === 'running' && steps[index].id.startsWith(`tool:${tool}:`)) {
-            steps[index] = { ...steps[index], label: text(event.message) || steps[index].label, status: event.status === 'success' ? 'done' : 'failed' }
+            const details = stringRecord(event.details)
+            const error = event.error && typeof event.error === 'object' ? text((event.error as Record<string, unknown>).message) : text(event.error)
+            steps[index] = {
+              ...steps[index], label: text(event.message) || steps[index].label, status: event.status === 'success' ? 'done' : 'failed',
+              tool: { ...(steps[index].tool ?? { name: tool }), output: details ? Object.entries(details).map(([key, value]) => `${key}: ${value}`).join('\n').slice(0, 2000) : undefined, error: error || undefined },
+            }
             return { ...message, steps }
           }
         }

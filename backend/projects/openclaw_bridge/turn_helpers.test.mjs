@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildSubtaskMessage, cleanToolError, explainTurnError, grantKey, isStalled, readsUntrustedContent, sanitizeToolOverrides, subtaskTimeoutSeconds, validateSubtask, DEFAULT_STALL_SECONDS, OLLAMA_TIMEOUT_KEY } from './turn_helpers.mjs'
+import { buildSubtaskMessage, cleanToolError, explainTurnError, grantKey, isStalled, readsUntrustedContent, toolDetailFromStream, sanitizeToolOverrides, subtaskTimeoutSeconds, validateSubtask, DEFAULT_STALL_SECONDS, OLLAMA_TIMEOUT_KEY } from './turn_helpers.mjs'
 
 test('a turn is stalled only after the limit with no approval waiting', () => {
   const stallMs = DEFAULT_STALL_SECONDS * 1000
@@ -118,4 +118,13 @@ test('the tool overlay only hides skills and MCP servers', () => {
 test('web, browser and MCP tools count as untrusted content; local tools do not', () => {
   for (const name of ['web_fetch', 'web_search', 'browser', 'mcp_github_search', 'github__list_issues']) assert.equal(readsUntrustedContent(name), true, name)
   for (const name of ['read', 'exec', 'ls', 'write', 'tool_search', '', undefined]) assert.equal(readsUntrustedContent(name), false, String(name))
+})
+
+test('a tool call becomes a detail: the command, inputs without secrets or bulk text, then its result', () => {
+  const start = toolDetailFromStream({ phase: 'start', name: 'exec', toolCallId: 'c1', args: { command: 'npm.cmd test', password: 'hunter2', content: 'x'.repeat(1200) } })
+  assert.deepEqual(start, { type: 'tool_detail', id: 'c1', name: 'exec', command: 'npm.cmd test', input: { command: 'npm.cmd test', password: '(hidden)', content: '(1,200 characters)' } })
+  const result = toolDetailFromStream({ phase: 'result', name: 'exec', toolCallId: 'c1', isError: true, result: { content: [{ type: 'text', text: '1 test failed\n' }], details: { exitCode: 1, durationMs: 2345.6, cwd: 'C:/work' } } })
+  assert.deepEqual(result, { type: 'tool_detail', id: 'c1', name: 'exec', output: '1 test failed', exitCode: 1, durationMs: 2346, cwd: 'C:/work', failed: true })
+  assert.equal(toolDetailFromStream({ phase: 'update', name: 'exec', toolCallId: 'c1' }), null)
+  assert.equal(toolDetailFromStream({ phase: 'start', name: 'exec' }), null)
 })
