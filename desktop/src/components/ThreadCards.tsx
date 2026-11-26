@@ -7,7 +7,7 @@ import { announceWatchChange, setWatched, type SourceWatch } from '../lib/watch'
 import { Toggle } from './page'
 import { decideApproval } from '../lib/engines'
 import type { Approval, Message, ResearchBlock, ResearchSource, Step } from '../lib/types'
-import { errorText } from '../lib/runState'
+import { errorText, finishedPlanSteps } from '../lib/runState'
 import { formatDuration, stepDuration, useNow } from '../lib/timing'
 import { Mark } from './Mark'
 
@@ -183,11 +183,7 @@ export function ResearchCard({ block }: { block: ResearchBlock }) {
 /** A failed agent turn: what happened, what is kept, and Retry from step N (a new run of the remaining steps). */
 export function FailedCard({ message, onRetryFrom, onReport }: { message: Message; onRetryFrom?: (step: number) => void; onReport?: () => void }) {
   const planSteps = message.plan?.status === 'approved' ? message.plan.steps : []
-  // Finished plan steps, never inferred from activity lines (those counted every "reasoning" line):
-  // Plan in steps reports each step's check; otherwise the step the agent said it had reached.
-  let done = 0
-  if (message.stepChecks) while (message.stepChecks[done + 1] === true) done += 1
-  else if (message.planStep) done = Math.max(0, message.planStep.step - 1)
+  const done = finishedPlanSteps(message)
   const [from, setFrom] = useState(Math.max(1, Math.min(done + 1, planSteps.length || 1)))
   return (
     <section className="card card--failed" aria-label="The run stopped">
