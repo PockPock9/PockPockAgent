@@ -26,6 +26,57 @@ export function cleanToolError(text, limit = 400) {
   return clean.length > limit ? `${clean.slice(0, limit - 1)}…` : clean
 }
 
+// Argument names whose values are never shown (typed passwords, keys and tokens).
+const SECRET_KEY = /pass(word)?|secret|token|api[_-]?key|authorization|cookie|credential/i
+// Argument names that carry file or page contents: shown as their size, not their text.
+const BULK_KEY = /^(content|contents|text|data|body|html|patch|diff|new_?string|old_?string|file_?text)$/i
+
+function shortText(value, limit) {
+  const text = typeof value === 'string' ? value : JSON.stringify(value) ?? ''
+  return text.length > limit ? `${text.slice(0, limit - 1)}…` : text
+}
+
+/**
+ * What one OpenClaw tool call did, from the gateway's `tool` stream, for the step's details in the app:
+ * at the start the tool's arguments (a command in full, file contents as their size, secrets hidden),
+ * at the result its output (first 2,000 characters), exit code, duration and folder. Returns null for
+ * other phases. The app attaches it to the step line with the same tool call id.
+ */
+export function toolDetailFromStream(data) {
+  if (!data || typeof data !== 'object' || typeof data.toolCallId !== 'string' || !data.toolCallId) return null
+  const id = data.toolCallId
+  const name = String(data.name ?? '')
+  if (data.phase === 'start') {
+    const args = data.args && typeof data.args === 'object' ? data.args : {}
+    const input = {}
+    for (const [key, value] of Object.entries(args).slice(0, 12)) {
+      if (SECRET_KEY.test(key)) input[key] = '(hidden)'
+      else if (BULK_KEY.test(key) && typeof value === 'string') input[key] = `(${value.length.toLocaleString('en-US')} characters)`
+      else input[key] = shortText(value, 400)
+    }
+    const command = typeof args.command === 'string' ? shortText(args.command, 2000) : undefined
+    return { type: 'tool_detail', id, name, ...(command ? { command } : {}), input }
+  }
+  if (data.phase === 'result') {
+    const result = data.result && typeof data.result === 'object' ? data.result : {}
+    const details = result.details && typeof result.details === 'object' ? result.details : {}
+    const text = Array.isArray(result.content)
+      ? result.content.filter((part) => part && part.type === 'text' && typeof part.text === 'string').map((part) => part.text).join('\n')
+      : typeof result === 'string' ? result : ''
+    const output = cleanToolError(text, 2000) === undefined ? '' : shortText(text.trim(), 2000)
+    return {
+      type: 'tool_detail', id, name,
+      ...(output ? { output } : {}),
+      ...(Number.isInteger(details.exitCode) ? { exitCode: details.exitCode } : {}),
+      ...(Number.isFinite(details.durationMs) ? { durationMs: Math.round(details.durationMs) } : {}),
+      ...(typeof details.cwd === 'string' ? { cwd: details.cwd } : {}),
+      ...(typeof details.diff === 'string' && details.diff ? { diff: shortText(details.diff, 2000) } : {}),
+      ...(data.isError === true ? { failed: true } : {}),
+    }
+  }
+  return null
+}
+
 /** The setting that lets OpenClaw wait longer for a slow local model. PockPock's setup sets it. */
 export const OLLAMA_TIMEOUT_KEY = 'models.providers.ollama.timeoutSeconds'
 export const OLLAMA_TIMEOUT_SECONDS = 1800

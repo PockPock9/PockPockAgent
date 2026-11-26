@@ -1185,3 +1185,16 @@ html[data-platform='mac'] .titlebar { padding: 0 8px 0 78px; }
 .toast__close { flex: none; margin-top: -4px; }
 /* In the setup dialog the dialog's own title replaces the card's. */
 .modal .maint-setup > header { display: none; }
+
+.step__body { display: grid; gap: 3px; min-width: 0; flex: 1; }
+.step__tool { display: grid; gap: 4px; min-width: 0; }
+.step__call { display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: wrap; }
+.step__name { padding: 0 6px; border-radius: 4px; background: var(--bg-raise); color: var(--text-2); font-size: 11.5px; }
+.step__target { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--code-text); font-size: 11.5px; }
+.step__more { font-size: 11.5px; }
+.step__details { display: grid; gap: 4px; margin: 2px 0 4px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-code); font-size: 12px; }
+.step__details > div { display: grid; grid-template-columns: 90px 1fr; gap: 8px; min-width: 0; }
+.step__details dt { color: var(--text-3); }
+.step__details dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.step__details pre { margin: 0; max-height: 220px; overflow: auto; white-space: pre-wrap; color: var(--log-text); font-size: 11.5px; }
+.step__error { color: var(--err-text); }

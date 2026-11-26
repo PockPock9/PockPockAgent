@@ -255,6 +255,7 @@ Validation failures return a JSON error before any stream opens: `400` (`invalid
 | `token` | `content`: a piece of streamed reply text |
 | `replace` | `content`: replaces the reply text so far (sent after tool calls and with the final text) |
 | `tool` | `phase` (`start`/`end`), `id`, `name`, `title`, `status` (`running`/`completed`/`failed`/`blocked`), `error` |
+| `tool_detail` | `id` (the tool call), `name`, then at the start `command`, `input`, and at the result `output`, `exitCode`, `durationMs`, `cwd`, `diff`, `failed` |
 | `approval` | `id`, `title`, `description`, `severity`, `tool_name`, `untrusted` (true when the turn read web or MCP content before this request) |
 | `approval_resolved` | `id`, `decision` |
 | `approval_error` | `id`, `message` (the gateway rejected a decision) |
@@ -282,6 +283,10 @@ Set these for the gateway process before `backend/scripts/pockpock.py start`:
 | `OPENCLAW_STATE_DIR` | `~/.openclaw` | OpenClaw state directory, if you moved it |
 
 An invalid agent name disables the integration at startup and logs a warning.
+
+### What each action did (since 0.2.13)
+
+Every tool call in the step list shows the tool and its command or main target (`exec` with the command line, `write` with the path), and **Details** opens its inputs, result (first 2,000 characters), exit code, duration, folder and, for file changes, the diff. The helper reads OpenClaw's `tool` event stream (`toolDetailFromStream` in `turn_helpers.mjs`) and sends a `tool_detail` event per call (start: `command`, `input`; result: `output`, `exitCode`, `durationMs`, `cwd`, `diff`, `failed`), which the app attaches to the step with the same tool call id. Inputs named like passwords, secrets, tokens, keys, cookies or credentials are shown as `(hidden)`; file and page contents as their size. The step list is open by default. PockPock Agent steps get the same details from its `tool_start` inputs and `tool_result` fields.
 
 ### Accurate results (since 0.2.12)
 
