@@ -1,13 +1,14 @@
 // The PockPock Agent plan card: what it delivers, where it works, the reviewer's notes, the
-// gateway's fixed pre-check, open questions with answer buttons (an answer plans the task again),
+// gateway's fixed pre-check, open questions (answered in a paged dialog; the answers plan the task again),
 // an editable step list (reorder, remove, add) and the success checks. Nothing runs before Approve.
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { AlertTriangle, ArrowDown, ArrowUp, Check, Circle, CircleCheck, LoaderCircle, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowUp, Check, Circle, CircleCheck, LoaderCircle, MessageCircleQuestion, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { answerPlan, decidePlan } from '../lib/engines'
 import type { Message, PlanCard as Plan } from '../lib/types'
 import { formatDuration } from '../lib/timing'
 import { Mark } from './Mark'
+import { QuestionsDialog, type QuestionsDraft } from './QuestionsDialog'
 
 /** Yes/No buttons for a question that reads as one, when the planner gave no choices. */
 export function choicesFor(question: string, options?: string[]): string[] {
@@ -66,7 +67,10 @@ export function PlanCard({ message, plan: given, onChange, earlier }: { message:
   const [steps, setSteps] = useState(plan.steps)
   const [checks, setChecks] = useState(plan.checks)
   const [busy, setBusy] = useState<'approve' | 'decline' | 'answer' | null>(null)
-  const [typed, setTyped] = useState<Record<number, string>>({})
+  // The questions dialog opens by itself once for a new plan with questions; the card can open it again.
+  const [asking, setAsking] = useState(false)
+  const askedFor = useRef('')
+  const [draft, setDraft] = useState<QuestionsDraft>({ page: 0, answers: [] })
   const pending = plan.status === 'pending' && !earlier
   // The planner's small actions, by the text of the step they came with: a moved step keeps them, an edited one drops them.
   const stepDetails = new Map((plan.stepDetails ?? []).map((row, index) => [plan.steps[index], row] as const).filter(([step, row]) => step !== undefined && row.length > 0))
@@ -88,11 +92,13 @@ export function PlanCard({ message, plan: given, onChange, earlier }: { message:
       setEditing(false)
     }
   }
-  const answer = async (question: string, value: string) => {
-    if (!value.trim()) return
+  const submitAnswers = async (answers: { question: string; answer: string }[]) => {
     setBusy('answer')
-    try { await answerPlan(message.id, plan, question, value.trim()) } catch (error) { setError(error instanceof Error ? error.message : 'The answer was not sent.') } finally { setBusy(null) }
+    try { await answerPlan(message.id, plan, answers); setAsking(false) } catch (error) { setError(error instanceof Error ? error.message : 'The answers were not sent.') } finally { setBusy(null) }
   }
+  useEffect(() => {
+    if (pending && plan.questions.length > 0 && askedFor.current !== plan.planId) { askedFor.current = plan.planId; setAsking(true) }
+  }, [pending, plan.planId, plan.questions.length])
 
   const status = plan.status === 'pending' ? 'Waiting for you' : plan.status === 'approved' ? 'Approved' : plan.status === 'replaced' ? 'Replaced after your answer' : 'Declined'
   // An open question is answered in the question box below, so it is not repeated as a warning.
@@ -134,24 +140,17 @@ export function PlanCard({ message, plan: given, onChange, earlier }: { message:
       {plan.questions.length > 0 && (
         <div className="plan__questions" role="group" aria-label={plan.questions.length === 1 ? 'One question before it runs' : `${plan.questions.length} questions before it runs`}>
           <strong>{plan.questions.length === 1 ? 'One question before it runs.' : `${plan.questions.length} questions before it runs.`}</strong>
-          {plan.questions.map((question, index) => {
-            const choices = choicesFor(question, plan.questionOptions?.[index])
-            return (
-              <div key={index} className="plan__question">
-                <p>{question}</p>
-                {pending && (
-                  <div className="plan__answers">
-                    {choices.map((choice) => <button key={choice} type="button" className="button button--small" disabled={busy !== null} onClick={() => void answer(question, choice)}>{choice}</button>)}
-                    <form className="plan__answer-form" onSubmit={(event) => { event.preventDefault(); void answer(question, typed[index] ?? '') }}>
-                      <input className="input" aria-label={`Your answer to: ${question}`} placeholder={choices.length ? 'Or type an answer' : 'Type an answer'} value={typed[index] ?? ''} onChange={(event) => setTyped((current) => ({ ...current, [index]: event.target.value }))} />
-                      <button type="submit" className="button button--small" disabled={busy !== null || !(typed[index] ?? '').trim()}>{busy === 'answer' ? <LoaderCircle size={13} className="spin" /> : null} Answer</button>
-                    </form>
-                  </div>
-                )}
-              </div>
-            )
-          })}
-          {pending && <small>Answering plans the task again with your answer. You can also approve and let the agent decide.</small>}
+          <ol className="plan__question-list">{plan.questions.map((question, index) => <li key={index}>{question}</li>)}</ol>
+          {pending && (
+            <div className="card__actions">
+              <button type="button" className="button button--primary" disabled={busy !== null} onClick={() => setAsking(true)}><MessageCircleQuestion size={13} /> Answer {plan.questions.length === 1 ? 'the question' : 'questions'}</button>
+              <small>Or approve the plan and let the agent decide.</small>
+            </div>
+          )}
+          {asking && pending && (
+            <QuestionsDialog questions={plan.questions} options={plan.questionOptions} busy={busy === 'answer'} error={plan.error} draft={draft} onDraft={setDraft}
+              onSubmit={(answers) => void submitAnswers(answers)} onClose={() => setAsking(false)} />
+          )}
         </div>
       )}
       <div className="plan__section">

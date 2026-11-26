@@ -121,7 +121,7 @@ export function MessageView({ message, live, onChange, onReport, onRetry, onRetr
       {failed && message.engine === 'agent' && <FailedCard message={message} onRetryFrom={onRetryFrom} onReport={onReport} />}
       {!live && (
         <div className="message__footer">
-          <MessageActions message={message} onRetry={onRetry} onReport={onReport} />
+          <MessageActions message={message} onRetry={failed ? undefined : onRetry} onReport={failed ? undefined : onReport} />
           <span>{message.status === 'stopped' ? 'Stopped · ' : ''}{relativeTime(message.createdAt)}</span>
           {phases && (
             <span className="message__timing" aria-label="Time taken">
