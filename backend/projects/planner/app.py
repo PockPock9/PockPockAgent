@@ -42,6 +42,7 @@ async def _request_model_json(
     timeout: aiohttp.ClientTimeout,
     role: str,
     temperature: float = 0.1,
+    schema: dict | None = None,
 ) -> dict:
     # Streamed, so the read timeout is the longest silence, not the whole answer: a slow model that
     # keeps writing is never cut off, while one that stops is. A single non-streamed request used to
@@ -51,6 +52,7 @@ async def _request_model_json(
         messages=messages,
         temperature=temperature,
         response_format={"type": "json_object"},
+        json_schema=schema,
         context_window=8192,
         think=False,
     )
@@ -66,6 +68,46 @@ async def _request_model_json(
     if not isinstance(parsed, dict):
         raise ValueError(f"{role.capitalize()} model returned an invalid object")
     return parsed
+
+
+#: The shape of a /plan reply. Sent as Ollama's ``format`` so decoding is constrained to it: a small
+#: model can no longer return prose, a truncated object or a plan that is not a list. Loose on
+#: purpose (no length limits, extra keys allowed): the content is still checked by
+#: normalized_plan_steps / normalized_task_brief, and too strict a grammar hurts small models.
+PLAN_SCHEMA: dict = {
+    "type": "object",
+    "properties": {
+        "plan": {"type": "array", "items": {"type": "string"}},
+        "execution_prompt": {"type": "string"},
+        "reason": {"type": "string"},
+        "task_brief": {"type": "object"},
+        "delegation_plan": {"type": "object"},
+    },
+    "required": ["plan", "execution_prompt", "reason", "task_brief"],
+}
+
+
+async def _plan_json(model: str, prompt: str, *, timeout: aiohttp.ClientTimeout) -> tuple[dict, list[str]]:
+    """The planner's reply and its steps. An unusable reply (not JSON, or no steps) gets one retry
+    that says what was wrong; a timeout or model error is not retried (it would only take as long)."""
+    messages = [{"role": "user", "content": prompt}]
+    try:
+        parsed = await _request_model_json(model, messages, timeout=timeout, role="planner", schema=PLAN_SCHEMA)
+        steps = normalized_plan_steps(parsed.get("plan"))
+        if not steps:
+            raise ValueError("the plan list was empty")
+        return parsed, steps
+    except (ValueError, TypeError) as err:
+        problem = str(err)[:300]
+    retry = messages + [{"role": "user", "content": (
+        f"Your previous reply could not be used: {problem}. Reply again with only the JSON object described above, "
+        "with plan as a list of 3-10 short step strings."
+    )}]
+    parsed = await _request_model_json(model, retry, timeout=timeout, role="planner", schema=PLAN_SCHEMA)
+    steps = normalized_plan_steps(parsed.get("plan"))
+    if not steps:
+        raise ValueError("Planner returned no usable plan steps")
+    return parsed, steps
 
 
 #: Longest silence allowed while a planner call streams. Ollama sends nothing while it reads the
@@ -322,10 +364,7 @@ async def plan(payload: PlanRequest):
     )
     timeout = planning_timeout(payload.model_profiles, selected)
     try:
-        parsed = await _request_model_json(selected, [{"role": "user", "content": prompt}], timeout=timeout, role="planner")
-        plan_steps = normalized_plan_steps(parsed.get("plan"))
-        if not plan_steps:
-            raise ValueError("Planner returned no usable plan steps")
+        parsed, plan_steps = await _plan_json(selected, prompt, timeout=timeout)
         task_brief = normalized_task_brief(
             parsed.get("task_brief"),
             original_request=task,

@@ -111,6 +111,7 @@ SUPPORTED_EVENTS = frozenset({
     "agent_task_started",
     "agent_task_completed",
     "agent_tool_started",
+    "agent_tool_repeat_refused",
     "agent_tool_completed",
     # Agent diagnostics recorded by the executor (issue #50). save_event stores only fixed columns,
     # so these keep the same prompt-free footprint.

@@ -30,6 +30,45 @@ class StreamingPlannerCallTests(unittest.TestCase):
         # The read timeout is the longest silence, and the whole call may take much longer.
         self.assertEqual((seen["timeout"].sock_read, seen["timeout"].total), (240, 600))
 
+    def test_plan_json_sends_the_schema_and_retries_an_unusable_reply_once(self):
+        calls = []
+
+        async def fake(model, messages, *, timeout, role, temperature=0.1, schema=None):
+            calls.append((messages, schema))
+            if len(calls) == 1:
+                raise ValueError("Expecting value: line 1 column 1")
+            return {"plan": ["Read the file", "Write the summary"], "execution_prompt": "x", "reason": "y", "task_brief": {}}
+
+        with mock.patch.object(app, "_request_model_json", fake):
+            parsed, steps = asyncio.run(app._plan_json("m", "Plan it", timeout=aiohttp.ClientTimeout(total=5)))
+        self.assertEqual(steps, ["Read the file", "Write the summary"])
+        self.assertEqual(len(calls), 2)
+        self.assertIs(calls[0][1], app.PLAN_SCHEMA)
+        self.assertIn("could not be used: Expecting value", calls[1][0][-1]["content"])
+
+    def test_plan_json_gives_up_after_one_retry_and_never_retries_a_model_failure(self):
+        calls = []
+
+        async def empty_plan(model, messages, *, timeout, role, temperature=0.1, schema=None):
+            calls.append(1)
+            return {"plan": []}
+
+        with mock.patch.object(app, "_request_model_json", empty_plan):
+            with self.assertRaises(ValueError):
+                asyncio.run(app._plan_json("m", "Plan it", timeout=aiohttp.ClientTimeout(total=5)))
+        self.assertEqual(len(calls), 2)
+
+        calls.clear()
+
+        async def model_down(model, messages, *, timeout, role, temperature=0.1, schema=None):
+            calls.append(1)
+            raise app.HTTPException(status_code=502, detail="The planner model failed.")
+
+        with mock.patch.object(app, "_request_model_json", model_down):
+            with self.assertRaises(app.HTTPException):
+                asyncio.run(app._plan_json("m", "Plan it", timeout=aiohttp.ClientTimeout(total=5)))
+        self.assertEqual(len(calls), 1)
+
     def test_empty_reply_is_an_error(self):
         async def stream_tokens(request, *, timeout):
             if False:
