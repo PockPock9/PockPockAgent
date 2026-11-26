@@ -23,6 +23,8 @@ export function MaintenanceSetup({ status, onChange }: { status: MaintenanceStat
   const [cloneLog, setCloneLog] = useState<string[]>([])
   const [cloning, setCloning] = useState(false)
   const [error, setError] = useState('')
+  // Saving the AI choice: shown next to its button, since the dialog's top banner is usually out of view there.
+  const [agentSave, setAgentSave] = useState<{ phase: 'idle' | 'saving' | 'saved' | 'error'; text: string }>({ phase: 'idle', text: '' })
   // Connect (install and sign in) for a cloud AI: which one is running, its progress lines and sign-in page.
   const [confirming, setConfirming] = useState<MaintenanceAgent['id'] | null>(null)
   const [connecting, setConnecting] = useState<MaintenanceAgent['id'] | null>(null)
@@ -87,10 +89,19 @@ export function MaintenanceSetup({ status, onChange }: { status: MaintenanceStat
   const agentChosen = Boolean(status.chosen ?? status.agent)
   const githubReady = Boolean(github?.loggedIn)
 
+  // The saved choice matches what is selected: the button shows Saved instead of asking to save again.
+  const saved = status.chosen ?? status.agent
+  const unchanged = Boolean(saved && choice && saved.id === choice.id && (choice.id !== 'local' || (saved.model === choice.model && Boolean(saved.openclaw) === Boolean(choice.openclaw))))
+  useEffect(() => { setAgentSave((current) => (current.phase === 'saving' ? current : { phase: 'idle', text: '' })) }, [choice?.id, choice?.model, choice?.openclaw])
   const saveAgent = async () => {
     if (!desktop || !choice) return
-    setError('')
-    try { await desktop.maintenance.setAgent(choice); onChange() } catch (reason) { setError(clean(reason, 'The AI could not be saved.')) }
+    setError(''); setAgentSave({ phase: 'saving', text: '' })
+    try {
+      await desktop.maintenance.setAgent(choice)
+      const name = agents?.find((agent) => agent.id === choice.id)?.name ?? choice.id
+      setAgentSave({ phase: 'saved', text: choice.id === 'local' ? `Saved. PockPock itself fixes your reports with ${choice.model}${choice.openclaw ? ', through OpenClaw' : ''}.` : `Saved. ${name} fixes your reports from now on.` })
+      onChange()
+    } catch (reason) { setAgentSave({ phase: 'error', text: clean(reason, 'The AI could not be saved.') }) }
   }
   const signIn = async () => {
     if (!desktop) return
@@ -210,7 +221,11 @@ export function MaintenanceSetup({ status, onChange }: { status: MaintenanceStat
             </fieldset>
           )}
           <div className="card__actions">
-            <button type="button" className="button button--primary" disabled={!choice || (choice.id === 'local' && !choice.model)} onClick={() => void saveAgent()}>{agentChosen ? 'Save choice' : 'Use this AI'}</button>
+            <button type="button" className="button button--primary" disabled={!choice || (choice.id === 'local' && !choice.model) || agentSave.phase === 'saving' || (agentChosen && unchanged)} onClick={() => void saveAgent()}>
+              {agentSave.phase === 'saving' ? <LoaderCircle size={13} className="spin" /> : agentChosen && unchanged ? <Check size={13} /> : null} {agentChosen && unchanged && agentSave.phase !== 'saving' ? 'Saved' : agentChosen ? 'Save choice' : 'Use this AI'}
+            </button>
+            {agentSave.phase === 'saved' && <span className="note" role="status">{agentSave.text}</span>}
+            {agentSave.phase === 'error' && <span className="note note--error" role="alert">{agentSave.text}</span>}
           </div>
         </li>
 
