@@ -125,6 +125,10 @@ class ChatCompletionRequest:
     top_p: float | None = None
     max_tokens: int | None = None
     response_format: Mapping[str, Any] | None = None
+    # A JSON schema the reply must follow. Ollama constrains decoding to it (its ``format`` field),
+    # so a small model cannot return the wrong shape; cloud requests are unchanged (they keep
+    # ``response_format``), because providers differ in which schema keywords they accept.
+    json_schema: Mapping[str, Any] | None = None
     context_window: int | None = None
     options: Mapping[str, Any] | None = None
     # Ollama's reasoning switch; None leaves the model default. Structured JSON calls turn it off
@@ -344,7 +348,9 @@ class OllamaChatCompletionAdapter:
             # of Ollama's 5-minute default unload (see DEFAULT_KEEP_ALIVE).
             "keep_alive": request.keep_alive or ollama_keep_alive(),
         }
-        if request.response_format and request.response_format.get("type") == "json_object":
+        if request.json_schema:
+            payload["format"] = dict(request.json_schema)
+        elif request.response_format and request.response_format.get("type") == "json_object":
             payload["format"] = "json"
         if request.think is not None:
             payload["think"] = request.think
