@@ -1,7 +1,7 @@
 {
   "name": "pockpock-desktop",
   "productName": "PockPock Agent",
-  "version": "0.2.12",
+  "version": "0.2.13",
   "private": true,
   "description": "Desktop agent app for PockPock AI",
   "main": "electron/main.cjs",
