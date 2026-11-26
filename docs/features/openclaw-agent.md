@@ -283,6 +283,11 @@ Set these for the gateway process before `backend/scripts/pockpock.py start`:
 
 An invalid agent name disables the integration at startup and logs a warning.
 
+### Accurate results (since 0.2.12)
+
+- **Failed actions are reported.** A turn that ends normally but had tool steps that failed or were blocked gets a notice under the reply ("Finished, but 1 action failed and 1 was blocked along the way. Check the steps above before relying on the result."), and the task list says **Done with problems**.
+- **A stopped run's error no longer fails the next message.** After **Stop** and a model change, OpenClaw's cleanup of the stopped run can end with "Terminal accounting session changed". Until `chat.send` returns the new turn's run id, `gateway_turn.mjs` holds end-of-run chat events and then replays only the new run's, so the old run's error is not shown as the new message's failure (report 2026-11-22).
+
 ## Persistence
 
 - `~/.openclaw/pockpock/permissions.json`: the mode for up to 300 most recent PockPock sessions. Written by PockPock before each turn, read by the plugin.

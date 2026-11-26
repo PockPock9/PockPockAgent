@@ -2,13 +2,11 @@
 // permission (PockPock Agent and OpenClaw) and model menus. Each opens above its button with a title
 // and one line per option; arrow keys move, Escape closes and returns focus (ui.tsx Popover).
 import { useEffect, useState, type ReactNode } from 'react'
-import { Bot, Box, ChevronDown, Cloud, Download, Flag, Folder, Image as ImageIcon, LoaderCircle, MessageSquare, Paperclip, Plug, Plus, Puzzle, Shield, ShieldOff, Sparkles, Terminal } from 'lucide-react'
+import { Bot, ChevronDown, Cloud, Download, Flag, Folder, Image as ImageIcon, LoaderCircle, Paperclip, Plug, Plus, Puzzle, Shield, ShieldOff, Sparkles } from 'lucide-react'
 import type { Status } from '../lib/status'
 import { ENGINE_LABEL } from '../lib/types'
 import type { AgentPermission, ClawPermission, Engine, NemoRoute, Settings } from '../lib/types'
 import { AGENT_PERMISSION, CLAW_PERMISSION } from '../lib/permissions'
-import { computer, isMac } from '../lib/platform'
-import { EngineIcon } from './MessageView'
 import { MenuItem, Popover } from './ui'
 
 /** The optional uncensored OpenClaw model (electron/model-pull.cjs): a community Qwen 3.5 9B with its refusals removed. */
@@ -50,25 +48,6 @@ export function PlusMenu({ menu, onToggle, busy, counts, workspace, onAttach, on
         <MenuItem icon={<Puzzle size={14} />} title="Skills" detail={counts?.skills !== undefined ? `${counts.skills} available` : 'Add or switch skills'} onSelect={close(() => onOpenPage('skills'))} />
         <MenuItem icon={<Plug size={14} />} title="MCP servers" detail={counts?.mcp !== undefined ? `${counts.mcp} connected` : 'Connect tool servers'} onSelect={close(() => onOpenPage('mcp'))} />
         <MenuItem icon={<Flag size={14} />} title="Report a problem" detail="Opens Maintenance" onSelect={close(() => onOpenPage('maintenance'))} />
-      </Popover>
-    </div>
-  )
-}
-
-export function EnginePicker({ menu, onToggle, engine, status, onChoose }: { menu: Menu; onToggle: (id: Menu) => void; engine: Engine; status: Status; onChoose: (engine: Engine) => void }) {
-  const clawBadge = !status.claw ? 'Checking…' : !status.claw.available ? 'Not installed' : status.claw.ready ? 'Ready' : 'Not ready'
-  const nemoBadge = status.nemoChecking ? 'Checking…' : !status.nemo ? 'Checking…' : !status.nemo.available ? 'Not installed' : status.nemo.ready ? 'Ready' : 'Not ready'
-  return (
-    <div className="anchor">
-      <Toggle menu={menu} id="engine" label={`Engine: ${ENGINE_LABEL[engine]}`} onToggle={onToggle}>
-        <EngineIcon engine={engine} size={13} /> {ENGINE_LABEL[engine]} <ChevronDown size={12} aria-hidden="true" />
-      </Toggle>
-      <Popover open={menu === 'engine'} onClose={() => onToggle(null)} className="popover--wide" label="Engine">
-        <div className="popover__label">Engine</div>
-        <MenuItem icon={<MessageSquare size={14} />} title="Chat" detail="Plain conversation with a local model. No tools." selected={engine === 'chat'} onSelect={() => onChoose('chat')} />
-        <MenuItem icon={<Bot size={14} />} title="PockPock Agent" detail="Plans, checks and runs tools in your folder." selected={engine === 'agent'} onSelect={() => onChoose('agent')} />
-        <MenuItem icon={<Terminal size={14} />} title="OpenClaw" badge={clawBadge} detail={status.claw && !status.claw.available ? status.claw.detail : 'Computer-use agent on this PC. Asks before it acts.'} selected={engine === 'openclaw'} disabled={Boolean(status.claw && !status.claw.available)} onSelect={() => onChoose('openclaw')} />
-        <MenuItem icon={<Box size={14} />} title="NemoClaw" badge={nemoBadge} detail={status.nemo && !status.nemo.available ? status.nemo.detail : `Runs inside an isolated ${isMac ? 'Docker' : 'WSL'} sandbox. Cannot touch this ${computer}.`} selected={engine === 'nemoclaw'} disabled={Boolean(status.nemo && !status.nemo.available)} onSelect={() => onChoose('nemoclaw')} />
       </Popover>
     </div>
   )

@@ -1,6 +1,6 @@
 // One message in the conversation: the user's prompt, or an assistant turn with its steps, plan,
 // approvals, reply, sources, changed and produced files, notes, and actions.
-import { AlertTriangle, Box, Bot, FileText, FolderOpen, Image as ImageIcon, MessageSquare, NotebookPen, Terminal } from 'lucide-react'
+import { AlertTriangle, Box, Bot, CircleCheck, FileText, FolderOpen, Image as ImageIcon, MessageSquare, NotebookPen, Play, Terminal } from 'lucide-react'
 import { relativeTime } from '../lib/api'
 import { bridge, ENGINE_LABEL } from '../lib/types'
 import type { Engine, Message } from '../lib/types'
@@ -19,6 +19,20 @@ export function EngineIcon({ engine, size = 14 }: { engine: Engine; size?: numbe
 
 const NOTE_STATUS = { sending: 'Sending…', queued: 'Joins at the next step', given: 'Given to the agent', failed: 'Not sent' }
 
+
+const isAbsolute = (file: string) => /^([A-Za-z]:[\\/]|[\\/])/.test(file)
+const baseName = (file: string) => file.split(/[\\/]/).filter(Boolean).at(-1) ?? file
+
+/** The web page a finished task made, as a full path: index.html first, then any other .html file. */
+function demoFile(message: Message, folder: string | undefined): string {
+  const join = (file: string, base = folder) => (isAbsolute(file) || !base ? file : `${base}${base.includes('\\') ? '\\' : '/'}${file}`)
+  const candidates = [
+    ...(message.artifacts ?? []).map((artifact) => artifact.path),
+    // Files changed in an open folder are recorded relative to it; others are full paths.
+    ...(message.touched ?? []).filter((file) => file.kind !== 'read').map((file) => join(file.path, message.workspacePath || folder)),
+  ].filter((file) => /\.html?$/i.test(file) && isAbsolute(file))
+  return candidates.find((file) => /^index\.html?$/i.test(baseName(file))) ?? candidates[0] ?? ''
+}
 export function MessageView({ message, live, onChange, onReport, onRetry, onRetryFrom, permissionLabel }: {
   message: Message
   live: boolean
@@ -46,6 +60,10 @@ export function MessageView({ message, live, onChange, onReport, onRetry, onRetr
   // The task folder holds the run's files; older runs only recorded the workspace (issue #76).
   const taskFolder = message.taskFolder || message.workspacePath
   const openFolder = () => { if (taskFolder) void bridge()?.openPath(taskFolder) }
+  // A PockPock Agent task that finished and passed its checks offers its result: a web page it made
+  // opens in the browser ("demo"), and the task folder opens in the file manager.
+  const succeeded = !live && message.engine === 'agent' && message.status === 'done' && !message.notice
+  const demo = succeeded ? demoFile(message, taskFolder) : ''
   const failed = !live && message.status === 'error'
   // The error is shown on the failed card; the reply keeps only what came before it.
   const marker = message.content.lastIndexOf('**Error:**')
@@ -86,7 +104,16 @@ export function MessageView({ message, live, onChange, onReport, onRetry, onRetr
           ))}
         </div>
       ) : null}
-      {taskFolder && (
+      {succeeded && taskFolder ? (
+        <section className="card card--result" aria-label="Result">
+          <header><CircleCheck size={14} aria-hidden="true" /><strong>Done{message.plan?.checks?.length ? ', and the checks passed' : ''}</strong></header>
+          <p className="card__sub">{demo ? `Open ${baseName(demo)} to try the result in your browser, or open the task folder to see every file.` : 'Open the task folder to see the files this task made.'}</p>
+          <div className="card__actions">
+            {demo && <button type="button" className="button button--primary" onClick={() => void bridge()?.openPath(demo)} title={demo}><Play size={13} /> Open demo</button>}
+            <button type="button" className={demo ? 'button' : 'button button--primary'} onClick={openFolder} title={taskFolder}><FolderOpen size={13} /> Open task folder</button>
+          </div>
+        </section>
+      ) : taskFolder && (
         <div className="artifacts">
           <button type="button" className="artifact" onClick={openFolder} title={taskFolder}><FolderOpen size={14} /><span>Task folder</span><small>Open</small></button>
         </div>

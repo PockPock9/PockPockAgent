@@ -127,6 +127,8 @@ export type Message = {
   timing?: Timing
   usage?: Usage
   planStep?: PlanStep
+  /** Plan in steps: each step's check result once it has run (1-based step number → passed). */
+  stepChecks?: Record<number, boolean>
   /** The agent stopped calling tools and is checking its answer against the success checks. */
   verifying?: boolean
   touched?: TouchedFile[]

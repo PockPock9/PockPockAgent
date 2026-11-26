@@ -26,6 +26,7 @@ from typing import Annotated, Literal, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from projects.agent_tools.artifacts import TEXT_ARTIFACT_EXTENSIONS
 from projects.agent_tools.registry import registered_tool_contracts
 from projects.agent_tools.tool_retriever import estimate_tokens
 
@@ -209,9 +210,9 @@ class SequenceRunResult(BaseModel):
     total_prompt_tokens: int = 0
 
 
-# Which artifact tool can write a file of each kind. save_text_artifact writes .txt/.md/.csv/.json/.html;
-# create_office_document writes .docx/.xlsx/.pptx.
-_TEXT_EXTENSIONS = {".txt", ".md", ".csv", ".json", ".html"}
+# Which artifact tool can write a file of each kind. save_text_artifact writes the text and code files
+# in TEXT_ARTIFACT_EXTENSIONS; create_office_document writes .docx/.xlsx/.pptx.
+_TEXT_EXTENSIONS = TEXT_ARTIFACT_EXTENSIONS
 _OFFICE_EXTENSIONS = {".docx", ".xlsx", ".pptx"}
 
 

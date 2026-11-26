@@ -210,6 +210,15 @@ async function runOpenClaw({ sessionId, prompt, attachments, signal, patch, claw
           break
       }
     })
+    // A reply that ends normally can still hide actions that failed or were blocked along the way
+    // (report 2026-11-22: "some failed but it still shows as succeeded"). Say so under the reply.
+    patch((message) => {
+      const failed = (message.steps ?? []).filter((step) => step.id.startsWith('tool:') && step.status === 'failed').length
+      const blocked = (message.steps ?? []).filter((step) => step.id.startsWith('tool:') && step.status === 'blocked').length
+      if (!failed && !blocked) return message
+      const parts = [failed ? `${failed} action${failed === 1 ? '' : 's'} failed` : '', blocked ? `${blocked} ${blocked === 1 ? 'was' : 'were'} blocked` : ''].filter(Boolean)
+      return { ...message, notice: message.notice || `Finished, but ${parts.join(' and ')} along the way. Check the steps above before relying on the result.` }
+    })
   } finally {
     tokens.flush()
     patch((message) => ({ ...settleSteps(message, 'stopped'), approvals: message.approvals?.map((item) => item.status === 'pending' || item.status === 'busy' ? { ...item, status: 'expired' as const } : item) }))
@@ -457,11 +466,18 @@ function handleAgentEvent(event: StreamEvent, patch: TurnOptions['patch'], pushT
       patch((message) => ({ ...message, planStep: { step, total, label: text(event.label).slice(0, 160) } }))
       break
     }
-    case 'sequence_check':
-      patch((message) => addStep(message, { label: text(event.message) || `Step ${Number(event.step)} checked`, status: event.passed ? 'done' : 'failed' }, false))
+    case 'sequence_check': {
+      // The attempt is over: what was running for it ends as the check says, not as done regardless.
+      const stepNumber = Number(event.step)
+      patch((message) => addStep({
+        ...settleSteps(message, event.passed ? 'done' : 'failed'),
+        stepChecks: Number.isInteger(stepNumber) && stepNumber > 0 ? { ...message.stepChecks, [stepNumber]: event.passed === true } : message.stepChecks,
+      }, { label: text(event.message) || `Step ${stepNumber} checked`, status: event.passed ? 'done' : 'failed' }, false))
       break
+    }
     case 'sequence_retry':
-      patch((message) => addStep(message, { label: text(event.message) || `Trying step ${Number(event.step)} again`, status: 'running' }))
+      // Added without finishing other lines: a retry is not proof that the earlier attempt worked.
+      patch((message) => addStep(message, { label: text(event.message) || `Trying step ${Number(event.step)} again`, status: 'running' }, false))
       break
     case 'tool_selection': {
       // OpenClaw tool retrieval: how many skills (and MCP servers) this message was offered.

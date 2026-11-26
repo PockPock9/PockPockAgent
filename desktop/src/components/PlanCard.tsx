@@ -3,7 +3,7 @@
 // an editable step list (reorder, remove, add) and the success checks. Nothing runs before Approve.
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import { AlertTriangle, ArrowDown, ArrowUp, Check, CircleCheck, LoaderCircle, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowUp, Check, Circle, CircleCheck, LoaderCircle, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { answerPlan, decidePlan } from '../lib/engines'
 import type { Message, PlanCard as Plan } from '../lib/types'
 import { formatDuration } from '../lib/timing'
@@ -157,7 +157,14 @@ export function PlanCard({ message, plan: given, onChange, earlier }: { message:
       <div className="plan__section">
         <h4>{plan.sequence ? 'Each step’s check' : 'Success checks'}</h4>
         {editing ? <EditableList label="Success check" items={checks} onChange={setChecks} editing />
-          : <ul className="plan__checklist">{checks.map((check, index) => <li key={index}><Check size={13} aria-hidden="true" />{check}</li>)}</ul>}
+          : <ul className="plan__checklist">{checks.map((check, index) => {
+            // A check is shown as passed or failed only after it ran (Plan in steps reports each step's
+            // check); before that, and for checks no result is known for, it is a plain bullet.
+            const result = plan.sequence && !earlier ? message.stepChecks?.[index + 1] : undefined
+            return <li key={index} className={result === true ? 'is-pass' : result === false ? 'is-fail' : undefined}>
+              {result === true ? <Check size={13} aria-label="Passed" /> : result === false ? <X size={13} aria-label="Failed" /> : <Circle size={9} aria-hidden="true" />}{check}
+            </li>
+          })}</ul>}
       </div>
       {plan.error && <p className="card__error" role="alert">{plan.error}</p>}
       {pending && (
