@@ -1,7 +1,7 @@
 // Cards inside an assistant turn: the collapsed step list, approval cards (Allow once, Allow for this
 // task, Deny), saved research sources (Save, Check for changes, Watch for changes), the failed-step card (Retry from step N) and message actions.
 import { useEffect, useState } from 'react'
-import { Bookmark, Check, ChevronRight, CircleSlash, Copy, ExternalLink, Flag, Globe, LoaderCircle, RefreshCw, RotateCcw, Shield, X } from 'lucide-react'
+import { AlertTriangle, Bookmark, Check, ChevronRight, CircleSlash, Copy, ExternalLink, Flag, Globe, LoaderCircle, RefreshCw, RotateCcw, Shield, X } from 'lucide-react'
 import { getJson, sendJson } from '../lib/api'
 import { announceWatchChange, setWatched, type SourceWatch } from '../lib/watch'
 import { Toggle } from './page'
@@ -84,6 +84,7 @@ export function ApprovalCard({ approval, permissionLabel, onChange }: { approval
         <span className={`badge${pending ? ' badge--accent' : approval.status === 'approved' ? ' badge--ok' : ''}`}>{outcome}</span>
       </header>
       {permissionLabel && <p className="card__sub">{approval.source === 'openclaw' ? 'OpenClaw' : 'PockPock Agent'} · {permissionLabel}</p>}
+      {approval.untrusted && pending && <p className="card__warn" role="note"><AlertTriangle size={13} aria-hidden="true" /> This task has read web or MCP content since it started. Text there can contain instructions from someone else. If you did not ask for this action, deny it.</p>}
       {approval.description && <code className="card__detail">{approval.description}</code>}
       {approval.diff && <pre className="card__diff">{approval.diff}</pre>}
       {approval.error && <p className="card__error" role="alert">{approval.error}</p>}

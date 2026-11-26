@@ -119,6 +119,7 @@ def create_router(bridge: OpenClawBridge, require_local: Callable[[Request], Non
                             "description": event.get("description"),
                             "severity": event.get("severity"),
                             "tool_name": event.get("toolName"),
+                            "untrusted": event.get("untrusted") is True,
                         })
                     elif kind == "approval_resolved":
                         yield _sse({"type": "approval_resolved", "id": event.get("id"), "decision": event.get("decision")})
