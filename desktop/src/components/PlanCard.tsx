@@ -15,14 +15,17 @@ export function choicesFor(question: string, options?: string[]): string[] {
   return /^(is|are|do|does|did|should|shall|can|could|would|will|may|include|keep|use|add|want|must)\b/i.test(question.trim()) ? ['Yes', 'No'] : []
 }
 
-function EditableList({ label, items, onChange, editing, current }: { label: string; items: string[]; onChange: (items: string[]) => void; editing: boolean; current?: number }) {
+function EditableList({ label, items, onChange, editing, current, details }: { label: string; items: string[]; onChange: (items: string[]) => void; editing: boolean; current?: number; details?: Map<string, string[]> }) {
   if (!editing) {
     // `current`: the step the running agent said it is on (1-based); marked, never inferred.
     return (
       <ol className="plan__list">
         {items.map((item, index) => (
           <li key={index} className={current === index + 1 ? 'is-current' : undefined} aria-current={current === index + 1 ? 'step' : undefined}>
-            <span className="plan__number" aria-hidden="true">{index + 1}</span><span>{item}</span>
+            <span className="plan__number" aria-hidden="true">{index + 1}</span>
+            <span className="plan__step"><span>{item}</span>
+              {(details?.get(item)?.length ?? 0) > 0 && <ul className="plan__substeps" aria-label={`What step ${index + 1} does`}>{details!.get(item)!.map((detail, position) => <li key={position}>{detail}</li>)}</ul>}
+            </span>
             {current === index + 1 && <span className="plan__now">Now</span>}
           </li>
         ))}
@@ -65,6 +68,8 @@ export function PlanCard({ message, plan: given, onChange, earlier }: { message:
   const [busy, setBusy] = useState<'approve' | 'decline' | 'answer' | null>(null)
   const [typed, setTyped] = useState<Record<number, string>>({})
   const pending = plan.status === 'pending' && !earlier
+  // The planner's small actions, by the text of the step they came with: a moved step keeps them, an edited one drops them.
+  const stepDetails = new Map((plan.stepDetails ?? []).map((row, index) => [plan.steps[index], row] as const).filter(([step, row]) => step !== undefined && row.length > 0))
   const planningMs = message.timing?.planReadyAt ? message.timing.planReadyAt - message.timing.startedAt : null
   const setError = (error: string | undefined) => onChange({ ...message, plan: { ...plan, error } })
 
@@ -151,7 +156,7 @@ export function PlanCard({ message, plan: given, onChange, earlier }: { message:
       )}
       <div className="plan__section">
         <h4>{editing ? 'Steps, editable' : 'Steps'}</h4>
-        <EditableList label="Step" items={steps} onChange={setSteps} editing={editing}
+        <EditableList label="Step" items={steps} onChange={setSteps} editing={editing} details={stepDetails}
           current={!earlier && plan.status === 'approved' && message.status === 'streaming' && message.planStep?.total === plan.steps.length ? message.planStep.step : undefined} />
       </div>
       <div className="plan__section">

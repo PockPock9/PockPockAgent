@@ -82,6 +82,7 @@ PLAN_SCHEMA: dict = {
         "reason": {"type": "string"},
         "task_brief": {"type": "object"},
         "delegation_plan": {"type": "object"},
+        "step_details": {"type": "array", "items": {"type": "array", "items": {"type": "string"}}},
     },
     "required": ["plan", "execution_prompt", "reason", "task_brief"],
 }
@@ -108,6 +109,40 @@ async def _plan_json(model: str, prompt: str, *, timeout: aiohttp.ClientTimeout)
     if not steps:
         raise ValueError("Planner returned no usable plan steps")
     return parsed, steps
+
+
+MAX_STEP_DETAILS = 5
+MAX_STEP_DETAIL_CHARS = 160
+
+
+def normalized_step_details(raw: object, steps: list[str]) -> list[list[str]]:
+    """The planner's small actions under each step (owner request 2026-11-26: "each step should have
+    many small points of what the agent is going to do"), aligned with the steps: one list per step,
+    at most five short strings each; anything missing or malformed becomes an empty list."""
+    rows = raw if isinstance(raw, list) else []
+    details: list[list[str]] = []
+    for index in range(len(steps)):
+        row = rows[index] if index < len(rows) and isinstance(rows[index], list) else []
+        items = []
+        for item in row:
+            if isinstance(item, str) and item.strip():
+                text = " ".join(item.split())
+                items.append(text if len(text) <= MAX_STEP_DETAIL_CHARS else text[: MAX_STEP_DETAIL_CHARS - 1] + "…")
+            if len(items) >= MAX_STEP_DETAILS:
+                break
+        details.append(items)
+    return details
+
+
+def with_step_details(execution_prompt: str, steps: list[str], details: list[list[str]]) -> str:
+    """Adds the planned actions to the run's instructions, so the agent follows the same small steps."""
+    if not any(details):
+        return execution_prompt
+    lines = []
+    for index, (step, actions) in enumerate(zip(steps, details), start=1):
+        lines.append(f"{index}. {step}")
+        lines.extend(f"   - {action}" for action in actions)
+    return execution_prompt + "\n\nPlanned actions for each step (follow them in order):\n" + "\n".join(lines)
 
 
 #: Longest silence allowed while a planner call streams. Ollama sends nothing while it reads the
@@ -348,7 +383,9 @@ async def plan(payload: PlanRequest):
         "Success checks must be verifiable with the agent's own tools, such as a named file existing in the workspace "
         "or a file containing a required feature; never use checks that need a person to run, play, or view the result, "
         "such as 'the game runs successfully'. "
-        "Preserve the requested outcome. Return JSON with plan (3-10 short steps), execution_prompt (at least 40 words of imperative "
+        "Preserve the requested outcome. Return JSON with plan (3-10 short steps), step_details (one list per plan step, in the same "
+        "order, of 2-4 short concrete actions the agent will take in that step, each naming the tool or command it will use "
+        "and what it works on, for example 'Write index.html with the header, menu and contact sections'), execution_prompt (at least 40 words of imperative "
         "instructions that include verification), and reason (one short sentence). Do not return an empty prompt or "
         "generic tutorial. Put code deliverables in the task workspace. Also return task_brief containing desired_outcome, "
         "constraints, assumptions, required_capabilities (choose only from workspace_read, workspace_write, "
@@ -382,6 +419,8 @@ async def plan(payload: PlanRequest):
             success_checks=task_brief["success_checks"],
             generate_json=generate_critic_json,
         )
+        # The actions belong to the steps as planned; a reviewer that rewrote the steps makes them stale.
+        step_details = normalized_step_details(parsed.get("step_details"), plan_steps) if reviewed["plan"] == plan_steps else [[] for _ in reviewed["plan"]]
         plan_steps = reviewed["plan"]
         task_brief = normalized_task_brief(
             {**task_brief, "success_checks": reviewed["success_checks"]},
@@ -390,12 +429,13 @@ async def plan(payload: PlanRequest):
             permission_level=payload.permission_mode,
             has_workspace=bool(payload.workspace_path),
         )
-        execution_prompt = build_execution_prompt(task, plan_steps, parsed.get("execution_prompt"))
+        execution_prompt = with_step_details(build_execution_prompt(task, plan_steps, parsed.get("execution_prompt")), plan_steps, step_details)
         delegation_plan = normalized_subtask_plan(parsed.get("delegation_plan"))
         return {
             "contract_version": 1,
             "task_brief": task_brief,
             "plan": plan_steps,
+            "step_details": step_details,
             "critic_review": reviewed["critic_review"],
             "execution_prompt": execution_prompt,
             "selected_model": selected,

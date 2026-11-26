@@ -20,3 +20,5 @@ Turns an agent request into an execution plan, selects an enabled tool-capable l
 - Run from this folder with the repository environment: `..\..\.venv\Scripts\python.exe -m uvicorn app:app --host 127.0.0.1 --port 8771`.
 
 Install the service dependencies listed in `requirements.txt` into the shared repository environment. The project currently imports shared internal authentication from `backend/projects/internal_auth.py`.
+
+- Step details (since 0.2.13): `/plan` also asks for `step_details`, one list per step of 2–4 short concrete actions (the tool or command and what it works on). `normalized_step_details` aligns them with the steps (at most 5 per step, 160 characters each) and drops them when the reviewer rewrote the steps; `with_step_details` appends them to the execution prompt as "Planned actions for each step", so the run follows the same small steps. The app shows them under each step on the plan card.

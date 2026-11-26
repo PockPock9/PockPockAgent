@@ -81,6 +81,8 @@ export type PlanCard = {
   planHash: string
   goal: string
   steps: string[]
+  /** The small actions under each step (same order as steps when the plan was made); shown under the step whose text they came with. */
+  stepDetails?: string[][]
   checks: string[]
   deliverables: string[]
   questions: string[]

@@ -274,6 +274,7 @@ async function runNemoClaw({ sessionId, prompt, attachments, signal, patch }: Tu
 
 type Prepared = {
   plan: string[]
+  step_details?: unknown[]
   execution_prompt: string
   selected_model: string
   task_brief: Record<string, unknown>
@@ -292,7 +293,7 @@ function list(value: unknown) {
 type PreparedSequence = {
   plan_id: string
   plan_hash: string
-  sequence_plan: { steps: Array<{ id: string; goal: string }> }
+  sequence_plan: { steps: Array<{ id: string; goal: string; tools_allowed?: string[]; done_condition?: Record<string, unknown> }> }
   selected_model: string
   executor_model: string
   step_checks?: string[]
@@ -319,11 +320,17 @@ async function runAgentSequence(options: TurnOptions) {
   }, 'POST', signal)
   const steps = prepared.sequence_plan.steps.map((step) => step.goal)
   const checks = (prepared.step_checks ?? []).map((check, index) => `Step ${index + 1}: ${check}`)
+  // Plan in steps: under each step, the tools it may use and how it is checked.
+  const stepDetails = prepared.sequence_plan.steps.map((step, index) => [
+    step.tools_allowed?.length ? `Uses ${step.tools_allowed.map((tool) => tool.replaceAll('_', ' ')).join(', ')}` : '',
+    prepared.step_checks?.[index] ? `Checked by: ${prepared.step_checks[index]}` : '',
+  ].filter(Boolean))
   const card: PlanCard = {
     planId: prepared.plan_id,
     planHash: prepared.plan_hash,
     goal: '',
     steps,
+    stepDetails,
     checks,
     deliverables: [],
     questions: [],
@@ -396,6 +403,7 @@ async function runAgent(options: TurnOptions) {
       planHash: prepared.plan_hash,
       goal: text(brief.desired_outcome),
       steps: prepared.plan,
+      stepDetails: Array.isArray(prepared.step_details) ? prepared.step_details.map((row) => list(row)) : undefined,
       checks: list(brief.success_checks),
       deliverables: list(brief.deliverables),
       questions,
