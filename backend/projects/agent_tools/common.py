@@ -80,9 +80,11 @@ _PROJECT_EXTENSIONS = {
     ".toml", ".ts", ".tsx", ".txt", ".xml", ".yaml", ".yml",
 }
 
-_PROJECT_READ_MAX_LINES = 160
+# One read covers a typical source file (a 455-line stylesheet took three 160-line reads, and the
+# run ran out of tool calls); the character limit still bounds what enters the context.
+_PROJECT_READ_MAX_LINES = 600
 
-_PROJECT_READ_MAX_CHARS = 12_000
+_PROJECT_READ_MAX_CHARS = 20_000
 
 _PROJECT_EDIT_MAX_CHARS = 12_000
 
@@ -161,6 +163,9 @@ class ProjectAgentContext:
     patches_proposed: int = 0
     inspected_paths: set[str] = field(default_factory=set)
     fully_read_hashes: dict[str, str] = field(default_factory=dict)
+    # path -> (content hash, last line read without a gap from line 1): parts read in order add up
+    # to a full read, so a file longer than one read can still be replaced.
+    read_coverage: dict[str, tuple[str, int]] = field(default_factory=dict)
 
 @dataclass
 class PendingProjectPatch:

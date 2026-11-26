@@ -6,14 +6,17 @@ an identical call run twice; a third identical call is not run, and the model is
 result it already has or try something else. After ``MAX_REFUSALS`` refused calls the run stops
 with a clear message instead of using up its remaining turns.
 
-"Identical" means the same tool name and the same arguments since the last call that could change
-state (any tool whose risk is not ``read``): after a file is written, reading it again is new work.
+"Identical" means the same tool name and the same arguments since the last write (``WRITE_SIDE_EFFECTS``,
+or an unknown tool): after a file is written, reading it again is new work.
 """
 
 from __future__ import annotations
 
 import json
 from typing import Any
+
+#: Side effects after which an earlier identical call may give a different result.
+WRITE_SIDE_EFFECTS = frozenset({"workspace_write", "task_artifact_write", "local_artifact_write", "external_interaction"})
 
 #: Identical calls allowed before the next one is refused.
 MAX_IDENTICAL_CALLS = 2
@@ -60,6 +63,9 @@ class RepeatGuard:
         """A call that may change state ran: earlier identical reads may now give a different result."""
         self.counts.clear()
 
-    def after_call(self, risk_level: str | None) -> None:
-        if risk_level != "read":
+    def after_call(self, side_effect: str | None) -> None:
+        # Only a write can make an identical read return something new. Running the project's checks
+        # (validate_project) used to reset the count too, so a run re-read the same lines after each
+        # validation until it ran out of tool calls (report 2026-11-26).
+        if side_effect in WRITE_SIDE_EFFECTS or side_effect is None:
             self.state_changed()
