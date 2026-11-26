@@ -29,7 +29,12 @@ SESSION_ID = re.compile(r"^pockpock-[A-Za-z0-9][A-Za-z0-9_-]{0,69}$")
 AGENT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 APPROVAL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9:._-]{0,127}$")
 MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}$")
-PERMISSION_MODES = ("ask", "auto", "full")
+PERMISSION_MODES = ("ask", "auto", "full", "full-auto")
+# "full-auto" is Full access for the permission plugin (nothing pauses), plus a run that keeps going on
+# its own: a longer time limit, a longer quiet period before it is stopped, and an instruction not to
+# stop and ask questions (gateway_turn.mjs). The plugin itself only knows ask/auto/full.
+FULL_AUTO_TIMEOUT_SECONDS = 4 * 60 * 60
+FULL_AUTO_STALL_SECONDS = 30 * 60
 APPROVAL_DECISIONS = ("allow-once", "allow-task", "deny")
 MAX_MESSAGE_CHARS = 16_000
 DEFAULT_TIMEOUT_SECONDS = 1800  # long enough for a large, partly CPU-run model
@@ -100,7 +105,7 @@ def validate_message(message: str) -> str:
 def validate_mode(mode: str) -> str:
     value = (mode or "").strip().lower()
     if value not in PERMISSION_MODES:
-        raise OpenClawError("invalid_mode", "Choose Ask first, Auto-approve safe, or Full access.", 400)
+        raise OpenClawError("invalid_mode", "Choose Ask first, Auto-approve safe, Full access or Full auto.", 400)
     return value
 
 
@@ -397,7 +402,7 @@ class OpenClawBridge:
         release = self._release_once()
         try:
             try:
-                self.permissions.set(session_key(self.config.agent, session), permission)
+                self.permissions.set(session_key(self.config.agent, session), "full" if permission == "full-auto" else permission)
             except OSError as err:
                 # Without the record the plugin falls back to "ask", which is safe but not what
                 # the user selected, so stop instead of running under a different mode.
@@ -412,10 +417,11 @@ class OpenClawBridge:
                 "type": "start",
                 "sessionId": session,
                 "message": text,
-                "mode": permission,
+                "mode": "full" if permission == "full-auto" else permission,
+                **({"fullAuto": True, "stallSeconds": FULL_AUTO_STALL_SECONDS} if permission == "full-auto" else {}),
                 "model": chosen_model,
                 "agent": self.config.agent,
-                "timeoutSeconds": self.config.timeout_seconds,
+                "timeoutSeconds": max(self.config.timeout_seconds, FULL_AUTO_TIMEOUT_SECONDS) if permission == "full-auto" else self.config.timeout_seconds,
                 # The session's working folder, set before every turn so a changed folder applies at once.
                 "cwd": folder,
                 # The session's tool overlay; null clears one left by an earlier turn. Absent when no
