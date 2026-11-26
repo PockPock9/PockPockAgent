@@ -40,8 +40,13 @@ test('store: create, list, update, delete; rejects bad input and path tricks', (
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'reports-'))
   const store = new ReportStore(dir)
   assert.throws(() => store.create({ category: 'nope', description: '', capture: {} }), /Choose what went wrong/)
-  // Issue #77: an empty or blank description is refused, so no report says "No description".
-  for (const description of ['', '   ', undefined]) assert.throws(() => store.create({ category: 'hang', description, capture: {} }), /Describe what happened/)
+  // The description is optional (it was required for issue #77); a report without one is saved with ''.
+  for (const description of ['', '   ', undefined]) {
+    const saved = store.create({ category: 'hang', description, capture: {} })
+    assert.equal(saved.description.trim(), '')
+    store.remove(saved.id)
+  }
+  assert.throws(() => store.create({ category: 'hang', description: 42, capture: {} }), /must be text/)
   assert.equal(store.list().length, 0)
   const report = store.create({ category: 'hang', description: 'It froze for alice', capture: { engine: 'openclaw', chatTitle: 'Scrape' } }, ctx)
   assert.match(report.id, /^r-[a-z0-9]+-[a-f0-9]{8}$/)
