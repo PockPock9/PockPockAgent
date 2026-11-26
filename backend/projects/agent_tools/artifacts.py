@@ -17,12 +17,21 @@ def _record_artifact(context: AgentToolContext, path: Path, kind: str) -> dict[s
     context.artifacts.append(artifact)
     return artifact
 
+#: Text files the task folder accepts. Includes web and code files (.css, .js, ...): asked for a
+#: website without an open folder, the agent saves index.html, styles.css and script.js here; before
+#: 0.2.12 only .txt/.md/.csv/.json/.html were accepted, so the CSS and JS steps could never pass.
+#: These files are only saved, never run.
+TEXT_ARTIFACT_EXTENSIONS = frozenset({
+    ".txt", ".md", ".csv", ".json", ".html", ".htm", ".css", ".js", ".mjs", ".ts", ".svg", ".xml", ".yml", ".yaml", ".py",
+})
+
+
 def save_text_artifact(context: AgentToolContext, filename: str, content: str) -> dict[str, str]:
     if not isinstance(content, str) or not content.strip() or len(content) > MAX_OUTPUT_CHARS:
         raise AgentToolError("Text output must be non-empty and at most 100,000 characters")
     extension = Path(filename).suffix.lower()
-    if extension not in {".txt", ".md", ".csv", ".json", ".html"}:
-        raise AgentToolError("Text output must use .txt, .md, .csv, .json, or .html")
+    if extension not in TEXT_ARTIFACT_EXTENSIONS:
+        raise AgentToolError("Text output must use one of: " + ", ".join(sorted(TEXT_ARTIFACT_EXTENSIONS)))
     safe_name = _safe_filename(filename, extension)
     path = context.output_dir / safe_name
     try:

@@ -35,6 +35,7 @@ import contextlib
 import inspect
 import json
 import logging
+import re
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -71,6 +72,74 @@ FILE_WRITING_TOOLS = frozenset({
     "propose_project_addition",
     "generate_local_image",
 })
+
+#: Tools that create a file from a path and its full text, with their argument names. Used to save a
+#: file the executor printed as text instead of saving (see printed_file_call).
+_WRITE_TOOL_ARGS = {
+    "save_text_artifact": ("filename", "content"),
+    "propose_project_patch": ("path", "content"),
+}
+_FENCE = re.compile(r"```([A-Za-z0-9_+.-]*)[ \t]*\r?\n(.*?)```", re.S)
+_LANGUAGES = {
+    ".html": {"html", "htm"}, ".htm": {"html", "htm"}, ".css": {"css"}, ".js": {"js", "javascript"},
+    ".md": {"md", "markdown"}, ".json": {"json"}, ".py": {"py", "python"}, ".csv": {"csv"}, ".txt": {"txt", "text"},
+    ".ts": {"ts", "typescript"}, ".svg": {"svg", "xml"}, ".xml": {"xml"}, ".yml": {"yml", "yaml"}, ".yaml": {"yml", "yaml"},
+}
+
+
+def printed_file_call(step: dict, content: str) -> dict | None:
+    """A write call for a file the executor printed as text instead of saving.
+
+    Small local models often answer "create index.html" with the file in a code block and no tool
+    call, so the step's file check fails on every attempt (report 2026-11-25: step 2 of a restaurant
+    website failed three times with "file does not exist: index.html"). When the step's check names
+    one file, the step may use a file-writing tool, and the reply holds a code block for it (matching
+    language, or the only block), that block is saved with the allowed tool.
+    """
+    condition = step.get("done_condition") if isinstance(step, dict) else None
+    if not isinstance(condition, dict) or condition.get("type") not in ("file_exists", "file_contains"):
+        return None
+    path = condition.get("path")
+    if not isinstance(path, str) or not path.strip() or not isinstance(content, str):
+        return None
+    tool = next((name for name in _WRITE_TOOL_ARGS if name in set(step.get("tools_allowed") or [])), None)
+    if tool is None:
+        return None
+    blocks = [(lang.lower(), body) for lang, body in _FENCE.findall(content) if body.strip()]
+    suffix = Path(path).suffix.lower()
+    wanted = _LANGUAGES.get(suffix, set())
+    matching = [body for lang, body in blocks if lang in wanted]
+    if matching:
+        text = max(matching, key=len)
+    elif len(blocks) == 1:
+        text = blocks[0][1]
+    elif not blocks and suffix in (".html", ".htm") and content.lstrip().lower().startswith(("<!doctype", "<html")):
+        text = content.strip()
+    else:
+        return None
+    path_key, content_key = _WRITE_TOOL_ARGS[tool]
+    arguments = {path_key: path.strip(), content_key: text}
+    if tool == "propose_project_patch":
+        arguments["summary"] = f"Create {path.strip()}"
+    return {"name": tool, "arguments": arguments}
+
+
+def retry_instruction(step: dict, detail: str) -> str:
+    """What the next attempt is told: the failure, and for a missing file the exact call to make."""
+    condition = step.get("done_condition") if isinstance(step, dict) else None
+    tool = next((name for name in _WRITE_TOOL_ARGS if name in set(step.get("tools_allowed") or [])), None)
+    if (
+        isinstance(condition, dict) and condition.get("type") in ("file_exists", "file_contains")
+        and isinstance(condition.get("path"), str) and tool and "does not exist" in detail
+    ):
+        path_key, content_key = _WRITE_TOOL_ARGS[tool]
+        return (
+            f"\n\nThe previous attempt failed: {detail}. The file was not saved. Call {tool} now with "
+            f'{path_key} "{condition["path"]}" and {content_key} set to the complete file. '
+            "Do not answer with the file as text: only a tool call saves it."
+        )
+    return f"\n\nThe previous attempt failed: {detail}. Fix only that."
+
 
 _SYSTEM_INSTRUCTION = (
     "You are executing one step of a larger plan. Do only this step, "
@@ -345,6 +414,10 @@ class SequenceRunner:
         raw_calls = response.get("tool_calls") or []
         if not isinstance(raw_calls, list):
             raise ValueError("executor returned malformed tool_calls")
+        if not raw_calls:
+            printed = printed_file_call(step, response.get("content") or "")
+            if printed is not None:
+                raw_calls = [printed]
         allowed = set(step.get("tools_allowed") or [])
         tool_calls: list[dict] = []
         call_arguments: list[dict] = []
@@ -526,10 +599,7 @@ class SequenceRunner:
                 if attempts == 1:
                     attempt_prompt = prompt
                 else:
-                    attempt_prompt = (
-                        prompt
-                        + f"\n\nThe previous attempt failed: {last_detail}. Fix only that."
-                    )
+                    attempt_prompt = prompt + retry_instruction(step, last_detail)
                 attempt_tokens = estimate_tokens(attempt_prompt)
                 step_prompt_tokens += attempt_tokens
                 messages = [
@@ -570,6 +640,9 @@ class SequenceRunner:
                     status="passed" if verification["passed"] else "failed",
                     passed=verification["passed"], evidence=verification["evidence"],
                     detail=verification["detail"], attempt=attempts,
+                    # What the attempt did, so a failed step can be diagnosed from the run's history.
+                    tools=[{"tool": str(call.get("tool"))[:80], "ok": bool(call.get("ok"))} for call in step_result.get("tool_calls", [])][:12],
+                    errors=[str(error)[:300] for error in step_result.get("errors", [])][:5],
                 ))
                 if verification["passed"]:
                     passed = True

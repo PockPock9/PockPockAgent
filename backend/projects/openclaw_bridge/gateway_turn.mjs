@@ -233,6 +233,8 @@ async function run(start) {
     else finish({ type: 'error', code: 'aborted', message: 'The OpenClaw turn was stopped.' }, 0)
   }
 
+  const heldTerminal = []
+  let runKnown = false
   gateway.onEvent = (event, payload) => {
     debug('EVT', event, JSON.stringify(payload).slice(0, 1500))
     if (event === 'plugin.approval.requested' || event === 'exec.approval.requested') {
@@ -262,6 +264,13 @@ async function run(start) {
       return
     }
     if (payload.sessionKey !== sessionKey || (runId && payload.runId && payload.runId !== runId)) return
+    // Until chat.send returns this turn's run id, an end-of-run chat event may belong to the previous
+    // run of the session (for example one just stopped, whose cleanup fails with "Terminal accounting
+    // session changed" once this turn changes the model). Hold those and replay only this run's.
+    if (!runKnown && event === 'chat' && TERMINAL_CHAT_STATES.has(String(payload.state ?? ''))) {
+      heldTerminal.push(payload)
+      return
+    }
     // Only real progress resets the stall watchdog: a model call starting, a tool starting or ending,
     // or reply text. OpenClaw keeps sending status and lifecycle events while a run is stuck (for
     // example on a tool that never returns), so those do not count.
@@ -352,7 +361,12 @@ async function run(start) {
   await gateway.call('sessions.patch', { key: sessionKey, permissionMode: 'full', ...(sessionModel ? { model: sessionModel } : {}), ...overlay })
   const sent = await gateway.call('chat.send', { sessionKey, message, idempotencyKey: crypto.randomUUID() })
   runId = String(sent?.runId ?? '')
+  runKnown = true
   emit({ type: 'started', runId, ...(subtask ? { subtaskId: subtask.id } : {}) })
+  // End-of-run events that arrived before the run id: replay this run's (or, without ids, all of them).
+  for (const payload of heldTerminal.splice(0)) {
+    if (!runId || !payload.runId || payload.runId === runId) gateway.onEvent('chat', payload)
+  }
   setTimeout(() => { void abort('timeout') }, timeoutSeconds * 1000).unref()
   // Watchdog: a run that goes quiet (for example after a failed approval) would otherwise wait for the
   // full timeout. Approvals waiting for the user never count as quiet.

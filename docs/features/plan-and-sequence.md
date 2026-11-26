@@ -195,6 +195,10 @@ and the `SequenceRunner` has no OpenClaw `chat` callable in the repo — the
 subtask path is exercised only by the Node unit tests
 (`turn_helpers.test.mjs`).
 
+## Task folder file types
+
+`save_text_artifact` accepts the text and code files in `TEXT_ARTIFACT_EXTENSIONS` (`agent_tools/artifacts.py`): `.txt .md .csv .json .html .htm .css .js .mjs .ts .svg .xml .yml .yaml .py`. Before 0.2.12 it accepted only `.txt/.md/.csv/.json/.html`, so a website made without an open folder could never save `styles.css` or `script.js`. `contracts.repair_artifact_tools` uses the same set. The files are only saved, never run.
+
 ## Persistence
 
 The runner emits events to injected `on_event` / `record_event` handlers:
@@ -274,6 +278,7 @@ without retry (see Failure states).
 | Planner timeout | Treated as a re-plan trigger, not a fatal error (planner service returns 502 naming it so). **Fixed 2026-11-21:** planner calls stream, so a slow model that keeps writing is no longer cut off at about 111 seconds; only 240 s of silence or the per-call limit (600 s, 900 s for large models) stops it. |
 | Executor zero-tools bug | **Fixed in 0.2.5 (#92, PR #99):** a task that needs a tool but was planned with no capability gets the artifact tools. |
 | Capsule pointer loss | If trimming must drop a `path`/`id` pointer to fit 400 tokens, the capsule records `dropped_pointers=True` and logs a warning; a later step may need to re-derive the pointer. (Not observed in the P1 sample: no capsule dropped pointers.) |
+| Executor prints the file instead of saving it | Small models often answer "create index.html" with the file in a code block and no tool call, so a file check failed on every attempt (report 2026-11-25). Since 0.2.12, `printed_file_call` in `runner.py` saves it: when the step's check is `file_exists`/`file_contains` for one path, the step may use `save_text_artifact` or `propose_project_patch`, and the reply holds a code block for that file (matching language, the only block, or a bare HTML document for an `.html` file), the block is written with the allowed tool as if the executor had called it. A retry after "file does not exist" now names the exact call (`retry_instruction`): "Call save_text_artifact now with filename "index.html" and content set to the complete file. Do not answer with the file as text". Each `step_verified` event also records the attempt's `tools` (name and ok) and up to five `errors`, so a failed step can be diagnosed from the run's history. |
 | Tool outside the pinned subset | Rejected by the runner without executing; recorded as a step error and verified as a failure. |
 
 ## Verification

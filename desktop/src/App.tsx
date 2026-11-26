@@ -50,6 +50,17 @@ function useNarrow(query: string) {
   return match
 }
 
+
+/** The documents of the most recent earlier user message in a chat that has any (text kept in memory and in the chat file). */
+function earlierDocuments(history: Message[]): Attachment[] {
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const message = history[index]
+    if (message.role !== 'user') continue
+    const documents = (message.attachments ?? []).filter((file) => file.kind === 'document' && file.text)
+    if (documents.length) return documents
+  }
+  return []
+}
 export default function App() {
   const { settings, patch, loaded: settingsLoaded } = useSettings()
   useTheme(settings.theme, settingsLoaded)
@@ -136,11 +147,15 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [overlay])
 
-  const send = async ({ prompt, attachments: files }: SendRequest, overrides: Overrides = {}) => {
+  const send = async ({ prompt, attachments: picked }: SendRequest, overrides: Overrides = {}) => {
     if (runningRef.current) return
     const turnEngine = overrides.engine ?? engine
     const sessionId = active?.id ?? sessions.create()
     const history = active?.messages ?? []
+    // A follow-up without its own document ("make the resume look nice") uses the documents attached
+    // earlier in this chat; they are shown on the new message. Reports 2026-11-22: the agent could not
+    // see a resume attached to an earlier message and replanned five times.
+    const files = picked.some((file) => file.kind === 'document') ? picked : [...picked, ...earlierDocuments(history)]
     const now = Date.now()
     const user: Message = { id: uid(), role: 'user', content: prompt, createdAt: now, engine: turnEngine, attachments: files }
     const reply: Message = { id: uid(), role: 'assistant', content: '', createdAt: now, engine: turnEngine, status: 'streaming' }

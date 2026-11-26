@@ -10,7 +10,7 @@ import { getJson, sendJson } from '../lib/api'
 import { ExtensionCard, inspectLink, linkFromMessage } from './ExtensionCard'
 import type { Proposal } from './ExtensionCard'
 import { MessageView } from './MessageView'
-import { EnginePicker, ModelPicker, PermissionPicker, PlusMenu } from './Pickers'
+import { ModelPicker, PermissionPicker, PlusMenu } from './Pickers'
 import type { Menu } from './Pickers'
 import { ReportDialog } from './ReportDialog'
 import { RunBar } from './RunBar'
@@ -309,7 +309,6 @@ export function ChatPane(props: Props) {
             <div className="composer__left">
               <PlusMenu menu={menu} onToggle={setMenu} busy={uploading} counts={status.counts ?? undefined} workspace={settings.workspace}
                 onAttach={() => fileRef.current?.click()} onImage={() => imageRef.current?.click()} onChooseFolder={onChooseFolder} onOpenPage={onOpenPage} />
-              <EnginePicker menu={menu} onToggle={setMenu} engine={engine} status={status} onChoose={chooseEngine} />
               <PermissionPicker menu={menu} onToggle={setMenu} engine={engine} settings={settings} status={status} patchSettings={patchSettings} />
             </div>
             <div className="composer__right">

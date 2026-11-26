@@ -90,7 +90,7 @@ export function runView(message: Message, live: boolean, now: number): RunView {
       return { ...base, planStep: undefined, state: 'stopped', label: message.status === 'streaming' ? 'Interrupted: the app closed while this ran' : 'Stopped by you', detail: (reached + finishedSteps).trim() || undefined }
     }
     if (declined) return { ...base, planStep: undefined, state: 'done', label: 'Plan declined. Nothing ran.' }
-    return { ...base, planStep: undefined, state: 'done', label: `Finished in ${formatDuration(elapsedMs)}` }
+    return { ...base, planStep: undefined, state: 'done', label: message.notice ? `Finished with problems in ${formatDuration(elapsedMs)}` : `Finished in ${formatDuration(elapsedMs)}` }
   }
 
   const pendingApproval = message.approvals?.find((approval) => approval.status === 'pending' || approval.status === 'busy')
@@ -134,5 +134,7 @@ export function taskSubtitle(message: Message | undefined, live: boolean, now: n
   }
   if (view.state === 'failed') return { text: `${engineLabel} · Failed · ${clock}`, tone: 'err' }
   if (view.state === 'stopped') return { text: `${engineLabel} · Stopped · ${clock}`, tone: 'off' }
+  // A turn that finished but reported problems (a notice, for example OpenClaw actions that failed) is not a clean Done.
+  if (message.notice) return { text: `${engineLabel} · Done with problems · ${clock}`, tone: 'warn' }
   return { text: `${engineLabel} · Done · ${clock}`, tone: 'ok' }
 }
