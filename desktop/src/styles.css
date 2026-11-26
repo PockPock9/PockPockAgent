@@ -599,6 +599,7 @@ button.context-chip:hover { color: var(--text); background: var(--bg-raise); }
 .tree__action:hover { background: var(--bg-active); color: var(--text); }
 .tree__note { display: flex; align-items: center; gap: 6px; padding: 4px 12px; color: var(--text-3); font-size: 12px; }
 .tree__note--error { color: var(--err-text); }
+.note--error { color: var(--err-text); }
 .files__toast { margin: 8px; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: 7px; background: var(--bg-raise); color: var(--text-2); font-size: 12px; }
 .empty { display: grid; justify-items: center; gap: 8px; margin: 36px 16px; color: var(--text-2); text-align: center; font-size: 12.5px; }
 .empty p { margin: 0; color: var(--text-3); }
