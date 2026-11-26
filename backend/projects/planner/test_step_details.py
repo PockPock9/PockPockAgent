@@ -24,7 +24,7 @@ class StepDetailsTests(unittest.TestCase):
 
     def test_the_plan_schema_allows_step_details(self):
         self.assertIn("step_details", app.PLAN_SCHEMA["properties"])
-        self.assertNotIn("step_details", app.PLAN_SCHEMA["required"])
+        self.assertIn("step_details", app.PLAN_SCHEMA["required"], "so constrained decoding always writes them")
 
 
 if __name__ == "__main__":
