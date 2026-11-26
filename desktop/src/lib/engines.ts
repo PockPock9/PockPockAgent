@@ -26,7 +26,8 @@ export type TurnOptions = {
   plannerModel?: string
 }
 
-type PlanDecision = { approved: boolean; plan: string[]; checks: string[]; planHash?: string; versionHash?: string; answer?: { question: string; answer: string } }
+type PlanAnswer = { question: string; answer: string }
+type PlanDecision = { approved: boolean; plan: string[]; checks: string[]; planHash?: string; versionHash?: string; answers?: PlanAnswer[] }
 
 /** Plan cards resolve the waiting agent turn through this registry, keyed by message id. */
 const planWaiters = new Map<string, (decision: PlanDecision) => void>()
@@ -387,10 +388,11 @@ async function runAgent(options: TurnOptions) {
       signal.addEventListener('abort', onAbort, { once: true })
       planWaiters.set(messageId, (result) => { signal.removeEventListener('abort', onAbort); resolve(result) })
     })
-    if (!decision.answer || signal.aborted) break
-    answers.push(decision.answer)
-    const answered = decision.answer
-    patch((message) => addStep({ ...message, plan: undefined, earlierPlans: [...(message.earlierPlans ?? []), { ...shown, status: 'replaced' }] }, { label: `Planning again with your answer: ${answered.answer}`.slice(0, 160), status: 'running' }))
+    if (!decision.answers?.length || signal.aborted) break
+    answers.push(...decision.answers)
+    const answered = decision.answers
+    const label = answered.length === 1 ? `Planning again with your answer: ${answered[0].answer}` : `Planning again with your ${answered.length} answers`
+    patch((message) => addStep({ ...message, plan: undefined, earlierPlans: [...(message.earlierPlans ?? []), { ...shown, status: 'replaced' }] }, { label: label.slice(0, 160), status: 'running' }))
   }
   const planDecidedAt = Date.now()
   patch((message) => ({ ...message, timing: message.timing && { ...message.timing, planDecidedAt } }))
@@ -588,12 +590,15 @@ export async function decideApproval(approval: Approval, allow: boolean, scope: 
   if (!result.accepted) throw new Error(result.detail || 'This approval is no longer available.')
 }
 
-/** Answers one of the planner's questions: declines this plan in the backend, then the turn plans again with the answer. */
-export async function answerPlan(messageId: string, plan: PlanCard, question: string, answer: string) {
+/** Answers the planner's questions: declines this plan in the backend, then the turn plans again with all the answers. */
+/** Sends the answers to the planner's questions together; the task is planned again once, with all of them. */
+export async function answerPlan(messageId: string, plan: PlanCard, answers: PlanAnswer[]) {
+  const given = answers.map((item) => ({ question: item.question, answer: item.answer.trim() })).filter((item) => item.answer)
+  if (!given.length) return
   try {
     await sendJson(`/api/agents/plans/${encodeURIComponent(plan.planId)}/decision`, { action_hash: plan.planHash, decision: 'rejected', plan: plan.steps, success_checks: plan.checks })
   } catch { /* An expired plan needs no decline; the new plan replaces it either way. */ }
-  resolvePlan(messageId, { approved: false, plan: plan.steps, checks: plan.checks, answer: { question, answer } })
+  resolvePlan(messageId, { approved: false, plan: plan.steps, checks: plan.checks, answers: given })
 }
 
 /** Sends a note to the running PockPock Agent task; it reaches the model before its next step. */

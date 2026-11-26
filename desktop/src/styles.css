@@ -1185,3 +1185,15 @@ html[data-platform='mac'] .titlebar { padding: 0 8px 0 78px; }
 .toast__close { flex: none; margin-top: -4px; }
 /* In the setup dialog the dialog's own title replaces the card's. */
 .modal .maint-setup > header { display: none; }
+
+.plan__question-list { margin: 6px 0 8px; padding-left: 20px; display: grid; gap: 2px; font-size: 13px; color: var(--text-2); }
+.questions { display: grid; gap: 12px; min-width: min(480px, 80vw); }
+.questions__progress { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-3); }
+.questions__progress span { margin-left: 6px; }
+.questions__dot { width: 10px; height: 10px; min-height: 0; padding: 0; border-radius: 50%; border: 1px solid var(--border-strong); background: none; cursor: pointer; }
+.questions__dot.is-answered { background: var(--accent); border-color: var(--accent); }
+.questions__dot.is-current { outline: 2px solid var(--accent-ring); outline-offset: 2px; }
+.questions__text { margin: 0; font-size: 15px; font-weight: 600; color: var(--text); }
+.questions__choices { display: flex; flex-wrap: wrap; gap: 6px; }
+.questions__choices .button.is-pressed { border-color: var(--accent-border); background: var(--accent-bg); color: var(--text); }
+.questions__footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; flex-wrap: wrap; }
