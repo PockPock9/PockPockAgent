@@ -96,7 +96,7 @@ export function ReportDialog({ session, message, onClose, onOpenMaintenance }: {
               ))}
             </fieldset>
             <label className="report-description">
-              <span>What happened, and what did you expect?</span>
+              <span>What happened, and what did you expect? <small className="note">(optional)</small></span>
               <textarea className="input" rows={4} maxLength={4000} value={description} onChange={(event) => setDescription(event.target.value)}
                 placeholder="For example: it opened the page but never clicked Download, then stopped." />
             </label>
@@ -112,11 +112,11 @@ export function ReportDialog({ session, message, onClose, onOpenMaintenance }: {
             {error && <p className="card__error" role="alert">{error}</p>}
             </div>
             <div className="card__actions modal__foot">
-              <button type="submit" className="button button--primary" disabled={!category || !description.trim() || !capture || phase === 'saving'}>
+              <button type="submit" className="button button--primary" disabled={!category || !capture || phase === 'saving'}>
                 {phase === 'saving' ? <LoaderCircle size={13} className="spin" /> : <Flag size={13} />} Save report
               </button>
               <button type="button" className="button" onClick={onClose}>Cancel</button>
-              {(!category || !description.trim()) && <span className="note">{!category ? 'Choose what went wrong' : 'Describe what happened'} to save.</span>}
+              {!category && <span className="note">Choose what went wrong to save.</span>}
             </div>
           </form>
         )}
