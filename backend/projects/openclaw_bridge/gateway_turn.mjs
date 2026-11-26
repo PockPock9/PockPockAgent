@@ -18,6 +18,7 @@ const CONFIG_PATH = process.env.OPENCLAW_CONFIG_PATH || path.join(STATE_DIR, 'op
 const PLUGIN_STATUS_METHOD = 'pockpock.permissions.status'
 const CONNECT_TIMEOUT_MS = 20_000
 const RPC_TIMEOUT_MS = 30_000
+const FULL_AUTO_NOTE = '(Full auto: work on your own until the task is done. Do not stop to ask me questions or for confirmation; choose sensible defaults, and list any assumptions you made in your final reply.)'
 const TERMINAL_CHAT_STATES = new Set(['final', 'error', 'aborted'])
 
 let finished = false
@@ -180,7 +181,8 @@ async function run(start) {
   const timeoutSeconds = subtaskTimeoutSeconds(subtask, start.timeoutSeconds)
   // In subtask mode the small built message replaces the caller's full message:
   // no long system prompt, no conversation history.
-  const message = subtask ? buildSubtaskMessage(subtask) : start.message
+  // Full auto: the user chose to let OpenClaw work on its own, so it must not stop to ask.
+  const message = subtask ? buildSubtaskMessage(subtask) : start.fullAuto ? `${start.message}\n\n${FULL_AUTO_NOTE}` : start.message
 
   const sessionKey = `agent:${start.agent}:explicit:${start.sessionId}`
   const gateway = new Gateway(loadGateway())

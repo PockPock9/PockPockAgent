@@ -1,8 +1,8 @@
 // Composer pickers: the plus menu (attach, folder, Skills, MCP servers, report), the engine,
 // permission (PockPock Agent and OpenClaw) and model menus. Each opens above its button with a title
 // and one line per option; arrow keys move, Escape closes and returns focus (ui.tsx Popover).
-import type { ReactNode } from 'react'
-import { Bot, Box, ChevronDown, Cloud, Flag, Folder, Image as ImageIcon, LoaderCircle, MessageSquare, Paperclip, Plug, Plus, Puzzle, Shield, Sparkles, Terminal } from 'lucide-react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { Bot, Box, ChevronDown, Cloud, Download, Flag, Folder, Image as ImageIcon, LoaderCircle, MessageSquare, Paperclip, Plug, Plus, Puzzle, Shield, ShieldOff, Sparkles, Terminal } from 'lucide-react'
 import type { Status } from '../lib/status'
 import { ENGINE_LABEL } from '../lib/types'
 import type { AgentPermission, ClawPermission, Engine, NemoRoute, Settings } from '../lib/types'
@@ -10,6 +10,9 @@ import { AGENT_PERMISSION, CLAW_PERMISSION } from '../lib/permissions'
 import { computer, isMac } from '../lib/platform'
 import { EngineIcon } from './MessageView'
 import { MenuItem, Popover } from './ui'
+
+/** The optional uncensored OpenClaw model (electron/model-pull.cjs): a community Qwen 3.5 9B with its refusals removed. */
+export const UNCENSORED_MODEL = 'huihui_ai/qwen3.5-abliterated:9b'
 
 export type Menu = 'attach' | 'engine' | 'permission' | 'model' | null
 
@@ -75,7 +78,7 @@ export function PermissionPicker({ menu, onToggle, engine, settings, status, pat
   if (engine !== 'openclaw' && engine !== 'agent') return null
   const clawPermission = settings.clawPermission ?? 'ask'
   const agentPermission = settings.agentPermission ?? 'auto-review'
-  const risky = engine === 'openclaw' ? clawPermission === 'full' : agentPermission === 'full-access'
+  const risky = engine === 'openclaw' ? clawPermission === 'full' || clawPermission === 'full-auto' : agentPermission === 'full-access'
   const title = engine === 'openclaw' ? CLAW_PERMISSION[clawPermission].title : AGENT_PERMISSION[agentPermission].title
   const folderName = settings.workspace?.split(/[\\/]/).filter(Boolean).at(-1)
   const choose = (change: Partial<Settings>) => { patchSettings(change); onToggle(null) }
@@ -88,8 +91,8 @@ export function PermissionPicker({ menu, onToggle, engine, settings, status, pat
         <div className="popover__label">Permission · {ENGINE_LABEL[engine]}</div>
         {engine === 'openclaw'
           ? (Object.keys(CLAW_PERMISSION) as ClawPermission[]).map((key) => (
-            <MenuItem key={key} icon={<Shield size={14} />} title={CLAW_PERMISSION[key].title} badge={key === 'full' ? 'Risky' : undefined} detail={CLAW_PERMISSION[key].detail} danger={key === 'full'} selected={clawPermission === key}
-              disabled={key !== 'full' && status.claw?.plugin === false} onSelect={() => choose({ clawPermission: key })} />
+            <MenuItem key={key} icon={<Shield size={14} />} title={CLAW_PERMISSION[key].title} badge={key === 'full' || key === 'full-auto' ? 'Risky' : undefined} detail={CLAW_PERMISSION[key].detail} danger={key === 'full' || key === 'full-auto'} selected={clawPermission === key}
+              disabled={key !== 'full' && key !== 'full-auto' && status.claw?.plugin === false} onSelect={() => choose({ clawPermission: key })} />
           ))
           : (Object.keys(AGENT_PERMISSION) as AgentPermission[]).map((key) => (
             <MenuItem key={key} icon={<Shield size={14} />} title={AGENT_PERMISSION[key].title} badge={key === 'full-access' ? 'Use with care' : undefined} detail={AGENT_PERMISSION[key].detail} danger={key === 'full-access'} selected={agentPermission === key} onSelect={() => choose({ agentPermission: key })} />
@@ -125,6 +128,25 @@ export function ModelPicker({ menu, onToggle, engine, settings, status, patchSet
   const chatModelKnown = settings.chatModel && settings.chatModel !== 'auto' && (local.some((model) => model.name === settings.chatModel) || cloudNames.has(settings.chatModel))
   const size = (bytes: number) => (bytes ? `${(bytes / 1e9).toFixed(1)} GB` : '')
   const pick = (change: Partial<Settings>) => { patchSettings(change); onToggle(null) }
+  // Downloading the uncensored model: progress text while it runs, or the error.
+  const [pull, setPull] = useState<{ busy: boolean; detail: string; error: string }>({ busy: false, detail: '', error: '' })
+  useEffect(() => window.pockpock?.models.onPullProgress((progress) => {
+    setPull((current) => ({ ...current, detail: progress.fraction !== undefined ? `${Math.round(progress.fraction * 100)}% · ${progress.detail}` : progress.detail }))
+  }), [])
+  const pullUncensored = async () => {
+    const desktop = window.pockpock
+    if (!desktop || pull.busy) return
+    setPull({ busy: true, detail: 'Starting the download…', error: '' })
+    try {
+      const name = await desktop.models.pullUncensored()
+      await status.refreshClaw(true)
+      setPull({ busy: false, detail: '', error: '' })
+      pick({ clawModel: name })
+    } catch (error) {
+      setPull({ busy: false, detail: '', error: (error instanceof Error ? error.message : String(error)).replace(/^Error invoking remote method '[^']+': (Error: )?/, '') })
+    }
+  }
+  const uncensoredReady = clawAll.includes(UNCENSORED_MODEL)
   if (engine === 'nemoclaw' && !cloudModels.length && !nemo.route?.cloud) return null
   return (
     <div className="anchor">
@@ -143,7 +165,15 @@ export function ModelPicker({ menu, onToggle, engine, settings, status, patchSet
         </> : engine === 'openclaw' ? <>
           <div className="popover__label">OpenClaw model · loads when used</div>
           <MenuItem icon={<Sparkles size={14} />} title="Default" detail={status.claw?.model?.replace('ollama/', '') || 'OpenClaw default'} selected={!settings.clawModel || !clawAll.includes(settings.clawModel)} onSelect={() => pick({ clawModel: '' })} />
-          {clawAll.filter((name) => !cloudNames.has(name) && `ollama/${name}` !== status.claw?.model && name !== status.claw?.model).map((name) => (
+          <div className="popover__label">Uncensored · refusals removed</div>
+          {uncensoredReady
+            ? <MenuItem icon={<ShieldOff size={14} />} title="Qwen 3.5 9B uncensored" detail={`${local.find((model) => model.name === UNCENSORED_MODEL)?.running ? 'Loaded' : 'Not loaded'} · does what you ask, including what the normal model declines`} selected={settings.clawModel === UNCENSORED_MODEL} onSelect={() => pick({ clawModel: UNCENSORED_MODEL })} />
+            : <MenuItem icon={pull.busy ? <LoaderCircle size={14} className="spin" /> : <Download size={14} />} title={pull.busy ? 'Downloading Qwen 3.5 9B uncensored…' : 'Download Qwen 3.5 9B uncensored (6.6 GB)'}
+                detail={pull.busy ? pull.detail : `A community build (${UNCENSORED_MODEL}) with its refusals removed: it does what you ask, including what the normal model declines. You are responsible for how you use it.`}
+                disabled={pull.busy} onSelect={() => void pullUncensored()} />}
+          {pull.error && <div className="popover__note" role="alert">{pull.error}</div>}
+          <div className="popover__label">Local</div>
+          {clawAll.filter((name) => !cloudNames.has(name) && name !== UNCENSORED_MODEL && `ollama/${name}` !== status.claw?.model && name !== status.claw?.model).map((name) => (
             <MenuItem key={name} icon={<Bot size={14} />} title={name} detail={local.find((model) => model.name === name)?.running ? 'Loaded' : 'Not loaded'} selected={settings.clawModel === name} onSelect={() => pick({ clawModel: name })} />
           ))}
           {clawAll.some((name) => cloudNames.has(name)) && <div className="popover__label">Cloud · sends data to the provider</div>}
