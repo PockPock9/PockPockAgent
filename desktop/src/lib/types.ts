@@ -53,6 +53,8 @@ export type Approval = {
   status: 'pending' | 'busy' | 'approved' | 'rejected' | 'expired'
   /** "Allow for this task" is offered: the gateway can grant this kind of action for the rest of the run. */
   grantable?: boolean
+  /** OpenClaw: asked after the turn read web or MCP content, which could contain someone else's instructions. */
+  untrusted?: boolean
   /** How it was allowed: this action only, or this kind of action for the rest of the task. */
   scope?: 'once' | 'task'
   error?: string

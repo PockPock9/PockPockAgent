@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildSubtaskMessage, cleanToolError, explainTurnError, grantKey, isStalled, sanitizeToolOverrides, subtaskTimeoutSeconds, validateSubtask, DEFAULT_STALL_SECONDS, OLLAMA_TIMEOUT_KEY } from './turn_helpers.mjs'
+import { buildSubtaskMessage, cleanToolError, explainTurnError, grantKey, isStalled, readsUntrustedContent, sanitizeToolOverrides, subtaskTimeoutSeconds, validateSubtask, DEFAULT_STALL_SECONDS, OLLAMA_TIMEOUT_KEY } from './turn_helpers.mjs'
 
 test('a turn is stalled only after the limit with no approval waiting', () => {
   const stallMs = DEFAULT_STALL_SECONDS * 1000
@@ -113,4 +113,9 @@ test('the tool overlay only hides skills and MCP servers', () => {
   assert.equal(sanitizeToolOverrides({ skills: { pdf: true } }), null, 'switching on is never passed through')
   assert.equal(sanitizeToolOverrides(null), null)
   assert.equal(sanitizeToolOverrides('skills'), null)
+})
+
+test('web, browser and MCP tools count as untrusted content; local tools do not', () => {
+  for (const name of ['web_fetch', 'web_search', 'browser', 'mcp_github_search', 'github__list_issues']) assert.equal(readsUntrustedContent(name), true, name)
+  for (const name of ['read', 'exec', 'ls', 'write', 'tool_search', '', undefined]) assert.equal(readsUntrustedContent(name), false, String(name))
 })
