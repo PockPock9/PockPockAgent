@@ -94,6 +94,22 @@ class OllamaChatCompletionAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["choices"][0]["message"]["content"], '{"steps": []}')
         self.assertEqual(result["choices"][0]["finish_reason"], "stop")
 
+    async def test_a_json_schema_constrains_ollama_and_stays_out_of_cloud_payloads(self):
+        FakeSession.response = FakeResponse(result={"message": {"role": "assistant", "content": '{"plan": ["a"]}'}, "done_reason": "stop"})
+        schema = {"type": "object", "properties": {"plan": {"type": "array", "items": {"type": "string"}}}, "required": ["plan"]}
+        request = ChatCompletionRequest(
+            model="local-model",
+            messages=[{"role": "user", "content": "Plan this"}],
+            response_format={"type": "json_object"},
+            json_schema=schema,
+        )
+        with patch("projects.model_router.client.aiohttp.ClientSession", FakeSession):
+            await self.adapter.complete(request, timeout=self.timeout)
+        _, payload, _ = FakeSession.calls[0]
+        self.assertEqual(payload["format"], schema)
+        self.assertNotIn("json_schema", request.to_payload())
+        self.assertEqual(request.to_payload()["response_format"], {"type": "json_object"})
+
     async def test_tool_request_uses_openai_compatible_endpoint(self):
         FakeSession.response = FakeResponse(result={"choices": [{"message": {"content": "ok"}}]})
         with patch("projects.model_router.client.aiohttp.ClientSession", FakeSession):

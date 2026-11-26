@@ -38,6 +38,7 @@ from projects.agent_tools import (
 )
 from projects.agent_tools.tool_retriever import tool_retrieval_enabled
 from projects.agent_tools.context_compaction import compact_messages, truncate_tool_output
+from projects.agent_core.repeat_guard import RepeatGuard
 from projects.agent_tools.plan_progress import (
     PLAN_STEP_TOOL, plan_step_event, plan_step_prompt, plan_step_reply, plan_step_reports_enabled, plan_step_tool_spec,
 )
@@ -1443,6 +1444,8 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                 # "Allow for this task" grants: "workspace_change", or "browser:<action>" (never a
                 # high-impact click). They last for this run only.
                 task_grants: set[str] = set()
+                # Refuses a third identical tool call and stops a run that keeps repeating (repeat_guard.py).
+                repeat_guard = RepeatGuard()
                 # A reply that only reports a step uses a turn, so each plan step gets one extra turn.
                 for _ in range(tool_call_limit + (len(plan_steps) if step_reports else 0)):
                     if cancel_event.is_set():
@@ -2053,6 +2056,28 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                                 last_reported_step = step_event["step"]
                                 yield sse(step_event)
                             continue
+                        repeat_message = repeat_guard.check(name, arguments)
+                        if repeat_message is not None:
+                            messages.append({"role": "tool", "tool_call_id": call_id, "content": repeat_message})
+                            record({
+                                "event": "agent_tool_repeat_refused",
+                                "request_id": request_id,
+                                "call_id": call_id,
+                                "model": selected,
+                                "role": name[:80],
+                                "category": "agentic",
+                            })
+                            if repeat_guard.exhausted:
+                                yield sse({
+                                    "type": "error",
+                                    "status": "partial",
+                                    "message": (
+                                        f"Stopped: the agent kept repeating the same {name.replace('_', ' ')} call without making progress. "
+                                        "Try again with a larger model, or split the task into smaller requests."
+                                    ),
+                                })
+                                return
+                            continue
                         if payload.delegation_contract and call_count >= tool_call_limit:
                             tool_limit_message = "The delegate reached its approved tool-call limit before completing the subtask."
                             yield sse({"type": "error", "message": tool_limit_message, "status": "partial"})
@@ -2437,6 +2462,7 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                             "tool_call_id": call_id,
                             "content": result_text,
                         })
+                        repeat_guard.after_call(contract.risk_level if contract else None)
                         (succeeded_tools if tool_status == "success" else failed_tools).add(name)
                         record({
                             "event": "agent_tool_completed",
