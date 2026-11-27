@@ -117,6 +117,17 @@ class AgentCoreServices:
 _BACKSTOP_CAPABILITIES = ("artifact_creation", "attachment_read")
 
 
+#: Tool calls a run may make: 20, plus 4 for every plan step beyond the third, at most 48. A 6-step
+#: website plan used all of a fixed 20 (report 2026-11-26).
+BASE_TOOL_CALLS = 20
+TOOL_CALLS_PER_EXTRA_STEP = 4
+MAX_TOOL_CALLS = 48
+
+
+def tool_call_budget(plan_steps: int) -> int:
+    return min(MAX_TOOL_CALLS, BASE_TOOL_CALLS + TOOL_CALLS_PER_EXTRA_STEP * max(0, plan_steps - 3))
+
+
 def effective_task_capabilities(
     planned: list[str], *, requires_tool: bool, has_files: bool, own_task_folder: bool = False
 ) -> list[str]:
@@ -1438,7 +1449,7 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                 last_reported_step = 0
                 profile = router._tune_execution_parameters("agentic", decision.get("complexity", 5))
 
-                tool_call_limit = payload.delegation_contract.max_tool_calls if payload.delegation_contract else 20
+                tool_call_limit = payload.delegation_contract.max_tool_calls if payload.delegation_contract else tool_call_budget(len(plan_steps))
                 context_window: int | None = None
                 verifying_announced = False
                 # "Allow for this task" grants: "workspace_change", or "browser:<action>" (never a
@@ -1740,7 +1751,7 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                             builds_files = "workspace_write" in payload.task_brief.required_capabilities
                             if validation_retry_count < (3 if builds_files else 2):
                                 messages.append({"role": "assistant", "content": raw_answer if research_requested else (answer if isinstance(answer, str) else "")})
-                                completion_retry = "The final response must include one line for every approved success check, in order: `- CHECK N: PASS - <specific evidence>` or `- CHECK N: INCOMPLETE - <reason>`. Do not output a bare PASS status. Verify each check against actual results; do not claim PASS without evidence. Do not repeat successful tool calls solely to reformat the checks."
+                                completion_retry = "The final response must include one line for every approved success check, in order: `- CHECK N: PASS - <specific evidence>` or `- CHECK N: INCOMPLETE - <reason>`. Do not output a bare PASS status. Verify each check against actual results; do not claim PASS without evidence. Do not repeat successful tool calls solely to reformat the checks: use the file contents and check results you already have, and do not read a file again unless you changed it."
                                 if browser_observations and payload.task_brief.required_capabilities == ["browser_read"]:
                                     approved_checks = "\n".join(
                                         f"{index}. {check}"
@@ -1768,7 +1779,7 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                                     missing = "; ".join(str(check) for check in incomplete_checks)
                                     completion_retry = (
                                         f"These approved checks are not done yet: {missing}. "
-                                        "You still have the workspace tools. Implement the missing work now: read the current files, then call "
+                                        "You still have the workspace tools. Implement the missing work now: use the file contents you already read (read a file again only if you changed it since), then call "
                                         "propose_project_edit or propose_project_patch (rewriting a whole file is fine) so the code really contains "
                                         "each missing feature. Do not reply with only a report. If you cannot make a tool call, reply with the "
                                         "complete updated file in one fenced code block under a heading with its file name, and it will be saved "
@@ -2462,7 +2473,7 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                             "tool_call_id": call_id,
                             "content": result_text,
                         })
-                        repeat_guard.after_call(contract.risk_level if contract else None)
+                        repeat_guard.after_call(contract.side_effect if contract else None)
                         (succeeded_tools if tool_status == "success" else failed_tools).add(name)
                         record({
                             "event": "agent_tool_completed",

@@ -84,7 +84,9 @@ PLAN_SCHEMA: dict = {
         "delegation_plan": {"type": "object"},
         "step_details": {"type": "array", "items": {"type": "array", "items": {"type": "string"}}},
     },
-    "required": ["plan", "execution_prompt", "reason", "task_brief"],
+    # step_details is required: with constrained decoding a small model leaves optional fields out, and a
+    # 0.2.13 plan showed no actions under its steps (owner screenshot 2026-11-26).
+    "required": ["plan", "step_details", "execution_prompt", "reason", "task_brief"],
 }
 
 
@@ -383,8 +385,8 @@ async def plan(payload: PlanRequest):
         "Success checks must be verifiable with the agent's own tools, such as a named file existing in the workspace "
         "or a file containing a required feature; never use checks that need a person to run, play, or view the result, "
         "such as 'the game runs successfully'. "
-        "Preserve the requested outcome. Return JSON with plan (3-10 short steps), step_details (one list per plan step, in the same "
-        "order, of 2-4 short concrete actions the agent will take in that step, each naming the tool or command it will use "
+        "Preserve the requested outcome. Return JSON with plan (3-10 short steps), step_details (exactly as many lists as plan steps, in the same "
+        "order; list N describes only step N, never later steps; each list has 2-4 short concrete actions the agent will take in that step, each naming the tool or command it will use "
         "and what it works on, for example 'Write index.html with the header, menu and contact sections'), execution_prompt (at least 40 words of imperative "
         "instructions that include verification), and reason (one short sentence). Do not return an empty prompt or "
         "generic tutorial. Put code deliverables in the task workspace. Also return task_brief containing desired_outcome, "

@@ -307,6 +307,15 @@ def read_project_file(
     truncated = actual_end < total_lines
     if start_line == 1 and actual_end == total_lines and not truncated:
         context.fully_read_hashes[result["path"]] = result["_source_hash"]
+    else:
+        source_hash, covered = context.read_coverage.get(result["path"], ("", 0))
+        if source_hash != result["_source_hash"]:
+            covered = 0
+        if start_line <= covered + 1:
+            covered = max(covered, actual_end)
+        context.read_coverage[result["path"]] = (result["_source_hash"], covered)
+        if covered >= total_lines:
+            context.fully_read_hashes[result["path"]] = result["_source_hash"]
     return {
         "path": result["path"],
         "content": "".join(content_lines).replace("\r\n", "\n").replace("\r", "\n"),
@@ -415,8 +424,8 @@ def propose_project_patch(
     full_read_hash = context.fully_read_hashes.get(display_path)
     if original_exists and full_read_hash is None:
         raise AgentToolError(
-            "Read the entire file in one call before proposing a full replacement; "
-            "use propose_project_edit for localized changes"
+            "Read the whole file before proposing a full replacement (in one call, or in consecutive parts "
+            "starting at line 1); use propose_project_edit for localized changes"
         )
     try:
         original = path.read_bytes() if original_exists else b""

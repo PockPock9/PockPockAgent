@@ -45,6 +45,34 @@ from pockpock_server import require_local_agent_request
 
 
 
+class ReadCoverageTests(unittest.TestCase):
+    """Parts read in order from line 1 add up to a full read (report 2026-11-26)."""
+
+    def test_consecutive_parts_count_as_a_full_read(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "styles.css"
+            target.write_text("".join(f".rule{index} {{ color: red; }}\n" for index in range(900)), encoding="utf-8")
+            context = ProjectAgentContext("e" * 32, root)
+            read_project_file(context, "styles.css", 1, 600)
+            self.assertNotIn("styles.css", context.fully_read_hashes)
+            read_project_file(context, "styles.css", 601, 900)
+            self.assertIn("styles.css", context.fully_read_hashes, "two parts in order cover the file")
+
+    def test_a_gap_or_a_changed_file_does_not_count(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "app.js"
+            target.write_text("".join(f"line{index}();\n" for index in range(900)), encoding="utf-8")
+            context = ProjectAgentContext("f" * 32, root)
+            read_project_file(context, "app.js", 700, 900)
+            self.assertNotIn("app.js", context.fully_read_hashes, "a part that does not start the coverage")
+            read_project_file(context, "app.js", 1, 600)
+            target.write_text(target.read_text(encoding="utf-8") + "changed();\n", encoding="utf-8")
+            read_project_file(context, "app.js", 601, 901)
+            self.assertNotIn("app.js", context.fully_read_hashes, "the file changed between the parts")
+
+
 class WorkspaceToolTests(unittest.TestCase):
         def test_npm_validation_runs_without_opening_a_console(self):
             from projects.agent_tools.workspace import validate_project
@@ -208,18 +236,18 @@ class WorkspaceToolTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
                 target = root / "large.py"
-                original = "".join(f"value_{index} = {index}\n" for index in range(220))
+                original = "".join(f"value_{index} = {index}\n" for index in range(700))
                 target.write_text(original, encoding="utf-8")
                 context = ProjectAgentContext("d" * 32, root)
     
-                first_chunk = read_project_file(context, "large.py", 1, 220)
+                first_chunk = read_project_file(context, "large.py", 1, 700)
                 self.assertEqual(first_chunk["start_line"], 1)
-                self.assertEqual(first_chunk["end_line"], 160)
-                self.assertEqual(first_chunk["total_lines"], 220)
+                self.assertEqual(first_chunk["end_line"], 600)
+                self.assertEqual(first_chunk["total_lines"], 700)
                 self.assertTrue(first_chunk["truncated"])
-                self.assertEqual(first_chunk["next_start_line"], 161)
+                self.assertEqual(first_chunk["next_start_line"], 601)
                 self.assertEqual(context.files_read, 1)
-                with self.assertRaisesRegex(AgentToolError, "entire file in one call"):
+                with self.assertRaisesRegex(AgentToolError, "Read the whole file before proposing a full replacement"):
                     propose_project_patch(context, "large.py", "replacement\n", "Replace a partially read file")
     
                 second_chunk = read_project_file(context, "large.py", 161, 180)
