@@ -1171,11 +1171,16 @@ async def review_build_completeness(model: str, request_text: str, sources: str)
     """
     if not sources.strip():
         return None
+    is_game = bool(re.search(r"\bgames?\b|\bplayable\b|\bplayer\b", request_text or "", re.IGNORECASE))
+    example = (
+        "(for a game: main loop, controls, obstacles or opponents, collision or losing condition, a visible score, and a way to restart)"
+        if is_game else "(for a website or app: every requested page, section, screen and action)"
+    )
     review_messages = [
             {"role": "system", "content": (
                 "You are a strict code reviewer. First list the core features the user's request implies for a finished, working "
-                "deliverable (for a game: main loop, controls, obstacles or opponents, collision or losing condition, a visible score, "
-                "and a way to restart; for an app: every requested screen and action). Then, for each feature, check the code: it is "
+                f"deliverable {example}. A feature is something the finished files do or show, never a step to produce them "
+                "(not 'parse the input', 'generate the HTML' or 'apply styling'). Then, for each feature, check the code: it is "
                 "implemented only if you can name the function or code that does it and trace that it actually runs and works "
                 "(it is called from an event handler or the loop, and it does not leave the program stuck: for example, a restart "
                 "that resets variables but never starts the stopped game loop again does not work; a score that is drawn but never "
@@ -1220,7 +1225,16 @@ async def review_build_completeness(model: str, request_text: str, sources: str)
         evidence = item.get("evidence")
         # "Implemented" without naming any code is not evidence.
         if item.get("implemented") is not True or not (isinstance(evidence, str) and evidence.strip()):
-            missing.append(item["feature"].strip()[:160])
+            feature = item["feature"].strip()[:160]
+            # A small reviewer copies the game example into other reviews; game-only features are not
+            # missing from a website or document (live run 2026-11-27).
+            if not is_game and re.search(r"obstacle|opponent|collision|losing|game loop|main loop|visible score|\bscore\b|restart", feature, re.IGNORECASE):
+                continue
+            # A step that produces the files is not a feature of them ("Parse resume.txt content" was reported
+            # missing from a finished resume, live run 2026-11-27).
+            if re.match(r"(parse|generate|apply|inject|read|load|create|write|build|convert|extract)\b", feature, re.IGNORECASE):
+                continue
+            missing.append(feature)
     return missing[:8]
 
 
@@ -2226,7 +2240,9 @@ async def run_sequence_agent_task(payload: AgentSequenceRunPayload, request: Req
                         tool_result = {**tool_result, "status": "applied", "output": f"Changed {written_path}"}
                     elif name in {"save_text_artifact", "create_office_document", "generate_local_image"} and isinstance(tool_result, dict) and tool_result.get("name"):
                         events.put_nowait({"type": "artifact", "name": str(tool_result["name"]), "path": str(tool_result.get("path", "")), "kind": str(tool_result.get("kind", "")), "url": f"/api/agents/artifacts/{run_id}/{quote(str(tool_result['name']))}"})
-                except (AgentToolError, ToolError, ToolContractError, ValueError) as err:
+                # ToolError is a plain record, not an exception: listing it here turned every tool failure
+                # into "catching classes that do not inherit from BaseException" (runs 2026-11-27).
+                except (AgentToolError, ToolContractError, ValueError, OSError) as err:
                     return {"ok": False, "output": "", "exit_code": None, "error": str(err)[:500]}
                 if not isinstance(tool_result, dict):
                     return {"ok": False, "output": "", "exit_code": None, "error": "Tool returned a non-dict result"}

@@ -276,8 +276,69 @@ _IN_FOLDER = re.compile(
 )
 
 
+_WEB_TOOLS = {"browse_public_page", "scrape_public_page", "search_public_site", "browser_action"}
+_IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".gif", ".webp")
+_FILE_SUFFIXES = {
+    "md", "txt", "html", "htm", "css", "js", "mjs", "ts", "tsx", "json", "csv", "py", "pdf", "docx", "xlsx", "pptx",
+    "png", "jpg", "jpeg", "gif", "webp", "svg", "xml", "yaml", "yml", "ini", "toml", "log", "sh", "ps1",
+}
+_HOST = re.compile(r"\b(?:https?://)?((?:[a-z0-9-]+\.)+([a-z]{2,24}))\b", re.IGNORECASE)
+
+
+def names_a_website(task: str) -> bool:
+    """Whether the request names a website: a URL or a host name (not a file name such as notes.md)."""
+    return any(match.group(2).lower() not in _FILE_SUFFIXES for match in _HOST.finditer(task or ""))
+
+
+def repair_plan_mistakes(raw: object, *, task: str, folder_open: bool, permission_mode: str) -> object:
+    """Fix the plan mistakes a small planner makes that guarantee a failed step (live runs 2026-11-27,
+    qwen3.5:9b planning: 0 of 4 tasks finished, every failure from the plan):
+
+    - Web tools (browse, scrape, search, browser) are dropped when the request names no website: they
+      may only fetch hosts named in the request, so a "research competitors" step could never work.
+    - The image generator is dropped from a step whose result is not an image ("write summary.md" was
+      given generate_local_image).
+    - A step left with no tool that must produce a text file gets the file-writing tool (into the open
+      folder when one is open and the permission allows it, else the task folder).
+    - A step that only reads cannot change a file, so a "contains <text>" check on it becomes "file
+      exists" (a read of resume.txt was checked for an invented name, "John Doe").
+    - Inputs that name no earlier step are dropped instead of rejecting the plan.
+    """
+    if not isinstance(raw, dict) or not isinstance(raw.get("steps"), list):
+        return raw
+    web_allowed = names_a_website(task)
+    write_tool = "propose_project_patch" if folder_open and permission_mode != "default" else "save_text_artifact"
+    seen_ids: list[str] = []
+    for step in raw["steps"]:
+        if not isinstance(step, dict):
+            continue
+        tools = [tool for tool in step.get("tools_allowed") or [] if isinstance(tool, str)]
+        condition = step.get("done_condition") if isinstance(step.get("done_condition"), dict) else {}
+        path = condition.get("path") if isinstance(condition.get("path"), str) else ""
+        makes_image = path.lower().endswith(_IMAGE_SUFFIXES)
+        if not web_allowed:
+            tools = [tool for tool in tools if tool not in _WEB_TOOLS]
+        if not makes_image:
+            tools = [tool for tool in tools if tool != "generate_local_image"]
+        # Only a step left with no tool at all (its web or image tools removed) is given the writer: a step
+        # that lists or reads files to confirm one exists keeps its tools.
+        if not tools and condition.get("type") in ("file_exists", "file_contains") and path and not makes_image:
+            tools = [write_tool]
+        writes = any(tool in _WRITE_TOOLS for tool in tools)
+        if not writes and condition.get("type") == "file_contains" and path:
+            step["done_condition"] = {**condition, "type": "file_exists", "pattern": None}
+        if not tools:
+            tools = ["list_project_files"] if folder_open else [write_tool]
+        step["tools_allowed"] = list(dict.fromkeys(tools))[:MAX_TOOLS_PER_STEP]
+        if isinstance(step.get("inputs"), list):
+            step["inputs"] = [item for item in step["inputs"] if item == "task" or item in seen_ids] or ["task"]
+        if isinstance(step.get("id"), str):
+            seen_ids.append(step["id"])
+    return raw
+
+
 def repair_folder_writes(raw: object, *, task: str, folder_open: bool, permission_mode: str) -> object:
-    """Write into the open folder when the request says so.
+    """Write into the open folder when one is open (and the permission allows changing it).
 
     save_text_artifact writes into the task's own output folder. Live validation (2026-11-22): asked to
     "write summary.md in this folder", the planner chose it anyway, so the file landed elsewhere. With a
@@ -285,7 +346,10 @@ def repair_folder_writes(raw: object, *, task: str, folder_open: bool, permissio
     into the folder and, in Auto-review, shows the change for approval. Default mode cannot change the
     folder, so nothing is swapped there.
     """
-    if not folder_open or permission_mode == "default" or not _IN_FOLDER.search(task or ""):
+    # The app sends the folder only when the user chose "Work in <folder>", so that choice decides: before
+    # 2026-11-27 the request also had to say "in this folder", and a website asked for without those words
+    # was saved in the task folder while the checking steps read the open folder (runs 2026-11-27).
+    if not folder_open or permission_mode == "default":
         return raw
     if not isinstance(raw, dict) or not isinstance(raw.get("steps"), list):
         return raw

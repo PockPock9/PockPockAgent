@@ -223,6 +223,18 @@ async def validate_project_service(context: ProjectAgentContext) -> dict[str, An
         if not isinstance(result, dict) or not isinstance(result.get("checks"), list):
             raise AgentToolError("Validation service returned an invalid result")
         return result
+    except aiohttp.ClientConnectionError:
+        # The validator service is not running: say so as a result, not an error, so the run continues.
+        return {
+            "status": "unavailable",
+            "valid": True,
+            "checks": [],
+            "issues": [],
+            "checked_files": 0,
+            "execution_enabled": False,
+            "summary": "Not checked: the validation service is not running, so no automatic checks ran (valid only means no "
+                       "problem was found). Do not call validate_project again; check the files yourself by reading them, then finish.",
+        }
     except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as err:
         raise AgentToolError(f"Validation service is unavailable: {err}") from err
 
@@ -372,8 +384,13 @@ def _stage_project_content(
         raise AgentToolError(f"A project task may propose at most {_PROJECT_PATCH_LIMIT} file changes")
     if not isinstance(content, str) or len(content.encode("utf-8")) > 250_000:
         raise AgentToolError("A proposed project file must be at most 250 KB")
-    if not isinstance(summary, str) or not summary.strip() or len(summary) > 240:
-        raise AgentToolError("Provide a short explanation for the proposed change")
+    # A missing or long summary no longer refuses the change (live run 2026-11-27: a stylesheet step
+    # failed on "Provide a short explanation"): the change is described from the file instead.
+    if not isinstance(summary, str) or not summary.strip():
+        summary = f"{'Update' if original_exists else 'Create'} {display_path}"
+    summary = " ".join(summary.split())
+    if len(summary) > 240:
+        summary = summary[:239] + "…"
     encoded = content.encode("utf-8")
     if original == encoded:
         raise AgentToolError("The proposed content does not change this file")

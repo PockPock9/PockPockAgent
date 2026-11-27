@@ -27,5 +27,13 @@ class StepDetailsTests(unittest.TestCase):
         self.assertIn("step_details", app.PLAN_SCHEMA["required"], "so constrained decoding always writes them")
 
 
+class UserWaitTests(unittest.TestCase):
+    def test_steps_and_checks_that_wait_for_the_user_are_dropped(self):
+        steps = ["Clarify the cuisine and colours", "Wait for user input to resolve ambiguities", "Write index.html", "Write styles.css"]
+        self.assertEqual(app.without_user_waits(steps), ["Write index.html", "Write styles.css"])
+        self.assertEqual(app.without_user_waits(["None pending user clarification.", "index.html exists"]), ["index.html exists"])
+        self.assertEqual(app.without_user_waits(["Ask the user what to build"]), ["Ask the user what to build"], "never empties the plan")
+
+
 if __name__ == "__main__":
     unittest.main()
