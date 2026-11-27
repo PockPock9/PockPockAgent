@@ -129,6 +129,17 @@ def without_user_waits(items: list[str]) -> list[str]:
     return kept or items
 
 
+async def image_engine_running() -> bool:
+    """Whether ComfyUI or Stable Diffusion WebUI answers locally (the image tool needs one)."""
+    try:
+        from projects.agent_tools.artifacts import image_backend_status
+
+        status = await image_backend_status()
+        return bool(status.get("available"))
+    except Exception:  # A failed probe never blocks planning; the tool reports a missing engine itself.
+        return True
+
+
 MAX_STEP_DETAILS = 5
 MAX_STEP_DETAIL_CHARS = 160
 
@@ -499,7 +510,10 @@ async def plan_sequence(payload: SequencePlanRequest):
             )
     except ValueError as err:
         raise HTTPException(status_code=503, detail=str(err)) from err
-    tool_names = sorted(registered_tool_contracts())
+    # The image tool is offered only when a local image engine runs: a 27B plan's hero-image step failed
+    # three times with "No local image-generation engine is running" (live run 2026-11-27).
+    image_available = await image_engine_running()
+    tool_names = sorted(name for name in registered_tool_contracts() if image_available or name != "generate_local_image")
     prompt = build_sequence_plan_prompt(task, tool_names, payload.workspace_path, payload.permission_mode)
     timeout = planning_timeout(payload.model_profiles, planner_model)
     try:
@@ -514,7 +528,7 @@ async def plan_sequence(payload: SequencePlanRequest):
             detail=f"Planner returned unusable JSON for the sequence plan: {err}",
         ) from err
     try:
-        validated = validate_sequence_plan(repair_read_tools(repair_folder_writes(repair_artifact_tools(repair_plan_mistakes(raw, task=task, folder_open=bool(payload.workspace_path), permission_mode=payload.permission_mode)), task=task, folder_open=bool(payload.workspace_path), permission_mode=payload.permission_mode)), allowed_tools=set(tool_names))
+        validated = validate_sequence_plan(repair_read_tools(repair_folder_writes(repair_artifact_tools(repair_plan_mistakes(raw, task=task, folder_open=bool(payload.workspace_path), permission_mode=payload.permission_mode, image_available=image_available)), task=task, folder_open=bool(payload.workspace_path), permission_mode=payload.permission_mode)), allowed_tools=set(tool_names))
     except ValueError as err:
         fixup_prompt = build_sequence_plan_fixup_prompt(str(err), raw, tool_names)
         try:
@@ -527,7 +541,7 @@ async def plan_sequence(payload: SequencePlanRequest):
                 detail=f"Planner returned unusable JSON for the sequence plan: {retry_err}",
             ) from retry_err
         try:
-            validated = validate_sequence_plan(repair_read_tools(repair_folder_writes(repair_artifact_tools(repair_plan_mistakes(raw_retry, task=task, folder_open=bool(payload.workspace_path), permission_mode=payload.permission_mode)), task=task, folder_open=bool(payload.workspace_path), permission_mode=payload.permission_mode)), allowed_tools=set(tool_names))
+            validated = validate_sequence_plan(repair_read_tools(repair_folder_writes(repair_artifact_tools(repair_plan_mistakes(raw_retry, task=task, folder_open=bool(payload.workspace_path), permission_mode=payload.permission_mode, image_available=image_available)), task=task, folder_open=bool(payload.workspace_path), permission_mode=payload.permission_mode)), allowed_tools=set(tool_names))
         except ValueError as retry_err:
             raise HTTPException(
                 status_code=502,

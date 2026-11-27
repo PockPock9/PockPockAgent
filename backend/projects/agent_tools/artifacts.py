@@ -34,6 +34,12 @@ def save_text_artifact(context: AgentToolContext, filename: str, content: str) -
         raise AgentToolError("Text output must use one of: " + ", ".join(sorted(TEXT_ARTIFACT_EXTENSIONS)))
     safe_name = _safe_filename(filename, extension)
     path = context.output_dir / safe_name
+    # A file this task saved may be saved again: a step whose first index.html failed its check could not
+    # replace it on retry (live run 2026-11-27). Files the task did not create are still never overwritten.
+    created_here = any(item.get("path") == str(path) for item in context.artifacts)
+    if created_here:
+        path.write_text(content, encoding="utf-8", newline="")
+        return {"name": path.name, "path": str(path), "kind": "file", "replaced": "true"}
     try:
         with path.open("x", encoding="utf-8", newline="") as output:
             output.write(content)

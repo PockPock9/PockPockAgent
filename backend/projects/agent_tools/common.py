@@ -78,6 +78,8 @@ _PROJECT_EXTENSIONS = {
     ".bat", ".cjs", ".cmd", ".conf", ".css", ".example", ".gitignore", ".html", ".ini",
     ".js", ".json", ".jsx", ".md", ".mjs", ".ps1", ".py", ".sh", ".sql",
     ".toml", ".ts", ".tsx", ".txt", ".xml", ".yaml", ".yml",
+    # Plain data files (a sales.csv could not be read, live run 2026-11-27).
+    ".csv", ".tsv", ".log", ".htm", ".svg", ".env.example",
 }
 
 # One read covers a typical source file (a 455-line stylesheet took three 160-line reads, and the

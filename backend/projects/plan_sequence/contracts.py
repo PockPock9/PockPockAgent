@@ -290,7 +290,7 @@ def names_a_website(task: str) -> bool:
     return any(match.group(2).lower() not in _FILE_SUFFIXES for match in _HOST.finditer(task or ""))
 
 
-def repair_plan_mistakes(raw: object, *, task: str, folder_open: bool, permission_mode: str) -> object:
+def repair_plan_mistakes(raw: object, *, task: str, folder_open: bool, permission_mode: str, image_available: bool = True) -> object:
     """Fix the plan mistakes a small planner makes that guarantee a failed step (live runs 2026-11-27,
     qwen3.5:9b planning: 0 of 4 tasks finished, every failure from the plan):
 
@@ -318,8 +318,12 @@ def repair_plan_mistakes(raw: object, *, task: str, folder_open: bool, permissio
         makes_image = path.lower().endswith(_IMAGE_SUFFIXES)
         if not web_allowed:
             tools = [tool for tool in tools if tool not in _WEB_TOOLS]
-        if not makes_image:
+        if not makes_image or not image_available:
             tools = [tool for tool in tools if tool != "generate_local_image"]
+        if makes_image and not image_available and not tools:
+            # No image engine runs: an image-only step could never pass, so it is left out.
+            step["_drop"] = True
+            continue
         # Only a step left with no tool at all (its web or image tools removed) is given the writer: a step
         # that lists or reads files to confirm one exists keeps its tools.
         if not tools and condition.get("type") in ("file_exists", "file_contains") and path and not makes_image:
@@ -334,6 +338,16 @@ def repair_plan_mistakes(raw: object, *, task: str, folder_open: bool, permissio
             step["inputs"] = [item for item in step["inputs"] if item == "task" or item in seen_ids] or ["task"]
         if isinstance(step.get("id"), str):
             seen_ids.append(step["id"])
+    dropped = {step.get("id") for step in raw["steps"] if isinstance(step, dict) and step.get("_drop")}
+    if dropped and len(dropped) < len(raw["steps"]):
+        raw["steps"] = [step for step in raw["steps"] if not (isinstance(step, dict) and step.get("_drop"))]
+        for step in raw["steps"]:
+            if isinstance(step, dict) and isinstance(step.get("inputs"), list):
+                step["inputs"] = [item for item in step["inputs"] if item not in dropped] or ["task"]
+    else:
+        for step in raw["steps"]:
+            if isinstance(step, dict):
+                step.pop("_drop", None)
     return raw
 
 

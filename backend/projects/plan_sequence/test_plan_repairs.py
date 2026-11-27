@@ -58,6 +58,26 @@ class PlanRepairTests(unittest.TestCase):
         self.assertFalse(names_a_website("Build index.html and styles.css"))
 
 
+class MoreRepairTests(unittest.TestCase):
+    def test_image_steps_are_left_out_when_no_image_engine_runs(self):
+        plan = {"steps": [
+            step("page", ["propose_project_patch"], {"type": "file_exists", "path": "index.html"}),
+            step("hero", ["generate_local_image"], {"type": "file_exists", "path": "hero.jpg"}),
+            step("check", ["read_project_file"], {"type": "file_exists", "path": "index.html"}, inputs=["hero"]),
+        ]}
+        fixed = repair_plan_mistakes(plan, task="Build a website", folder_open=True, permission_mode="full-access", image_available=False)
+        self.assertEqual([s["id"] for s in fixed["steps"]], ["page", "check"])
+        self.assertEqual(fixed["steps"][1]["inputs"], ["task"])
+
+    def test_a_step_meant_to_change_files_must_write(self):
+        from projects.plan_sequence.runner import step_must_write, wrote_something
+        fix = step("fix", ["propose_project_patch", "read_project_file"], {"type": "no_error"})
+        self.assertTrue(step_must_write(fix))
+        self.assertFalse(wrote_something({"tool_calls": [{"tool": "read_project_file", "ok": True}]}), "a read is not a change")
+        self.assertTrue(wrote_something({"tool_calls": [{"tool": "propose_project_patch", "ok": True}]}))
+        self.assertFalse(step_must_write(step("read", ["read_project_file"], {"type": "no_error"})))
+
+
 class PatternListTests(unittest.TestCase):
     def check(self, text, pattern):
         with tempfile.TemporaryDirectory() as tmp:

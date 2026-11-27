@@ -2177,7 +2177,9 @@ async def run_sequence_agent_task(payload: AgentSequenceRunPayload, request: Req
             # so a file read in one step may be changed in a later one). A change is a proposal: in
             # Auto-review it waits for the user (the step's time budget is paused meanwhile), in Full
             # access it is applied, and in Default the change tools are refused by the permission check.
-            project_context = ProjectAgentContext(run_id, workspace)
+            # Full access may run the project's own checks and tests, as in one-model runs (a "run the tests"
+            # step could never run them before, live run 2026-11-27).
+            project_context = ProjectAgentContext(run_id, workspace, allow_execution=ticket["permission_mode"] == "full-access")
             task_grants: set[str] = set()
             project_tools = {"list_project_files", "search_project", "read_project_file", "propose_project_edit", "propose_project_patch", "validate_project"}
 
@@ -2223,6 +2225,10 @@ async def run_sequence_agent_task(payload: AgentSequenceRunPayload, request: Req
                         tool_result = await execute_project_tool(name, arguments, project_context)
                     else:
                         tool_result = await execute_agent_tool(name, arguments, context)
+                    if name == "validate_project" and isinstance(tool_result, dict) and tool_result.get("status") == "unavailable":
+                        # A step can only be checked by the validator when it runs (a "verify the fix" step
+                        # passed unchecked while the tests still failed, live run 2026-11-27).
+                        return {"ok": False, "output": "", "exit_code": None, "error": "The Validator service is not running, so this step could not be checked. Start it on the Services page, then retry."}
                     patch_id = tool_result.get("patch_id") if isinstance(tool_result, dict) else None
                     if patch_id:
                         if await review_change(name, tool_result) != "approved":

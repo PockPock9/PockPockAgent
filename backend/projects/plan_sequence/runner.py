@@ -144,6 +144,18 @@ def retry_instruction(step: dict, detail: str) -> str:
             f'{path_key} "{condition["path"]}" and {content_key} set to the complete file. '
             "Do not answer with the file as text: only a tool call saves it."
         )
+    if (
+        isinstance(condition, dict) and condition.get("type") == "file_contains" and isinstance(condition.get("path"), str)
+        and isinstance(condition.get("pattern"), str) and tool and "does not contain" in detail
+    ):
+        # The file exists but lacks the checked text: say the exact text to include (a summary without the
+        # word "key" failed three times on "Fix only that", live run 2026-11-27).
+        path_key, content_key = _WRITE_TOOL_ARGS[tool]
+        return (
+            f"\n\nThe previous attempt failed: {detail}. Save {condition['path']} again with {tool} "
+            f'({path_key} "{condition["path"]}"), with {content_key} set to the complete file, and make sure it '
+            f'contains the exact text "{condition["pattern"][:80]}".'
+        )
     return f"\n\nThe previous attempt failed: {detail}. Fix only that."
 
 
@@ -174,6 +186,17 @@ def _one_line(spec: dict) -> str:
         param_names = f" Params: {param_names}."
     first_line = str(description).splitlines()[0] if description else ""
     return f"- {name}: {first_line}{param_names}"
+
+
+def step_must_write(step: dict) -> bool:
+    """A step whose only check is "no error" but which may write a file is meant to change something."""
+    condition = step.get("done_condition") if isinstance(step, dict) else None
+    tools = set(step.get("tools_allowed") or []) if isinstance(step, dict) else set()
+    return isinstance(condition, dict) and condition.get("type") == "no_error" and bool(tools & FILE_WRITING_TOOLS - {"generate_local_image"})
+
+
+def wrote_something(step_result: dict) -> bool:
+    return any(call.get("ok") and call.get("tool") in FILE_WRITING_TOOLS for call in step_result.get("tool_calls", []) if isinstance(call, dict))
 
 
 def describe_done_condition(condition: object) -> str:
@@ -657,6 +680,10 @@ class SequenceRunner:
                     verification = verify_done_condition(
                         step["done_condition"], workspace=workspace, step_result=step_result, artifact_dir=artifact_dir
                     )
+                    # A step meant to change files ("fix the code") that changed none has not done its work, even
+                    # if nothing errored: it passed with only a read while the bug stayed (live run 2026-11-27).
+                    if verification["passed"] and step_must_write(step) and not wrote_something(step_result):
+                        verification = {"passed": False, "evidence": "", "detail": "the step changed no file"}
                     last_detail = verification["detail"]
                     last_evidence = verification["evidence"]
                 await self._emit(self._event(
