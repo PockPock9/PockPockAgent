@@ -17,6 +17,7 @@ This index points to detailed feature contracts. Every new feature or change to 
 - [Agent tool capabilities](features/agent-tools.md)
 - [Tool retrieval (progressive disclosure)](features/tool-retrieval.md)
 - [Plan-and-Sequence: strong-model planning, small-model steps, code-first verification](features/plan-and-sequence.md)
+- [PockPock Code: the terminal coding agent for local models](features/coding-cli.md)
 - [Agent eval harness (pass@1 / pass^k, prompt optimisation, LoRA trace export)](features/agent-eval-harness.md)
 - [LoRA distillation recipe (executor-only)](features/lora-distillation-recipe.md)
 - [Self-authored skill + reasoning memory](features/agent-skills-memory.md)

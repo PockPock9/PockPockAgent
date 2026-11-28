@@ -144,6 +144,10 @@ The window (**Agent Studio**) has an icon rail on the far left (Tasks, Workshop,
 
 Full guide: [PockPock Agent desktop app](docs/features/desktop-app.md).
 
+### PockPock Code in the terminal
+
+`pockpock-code` is a coding agent for the terminal that runs on your local models. Open a terminal in a project folder and type `pockpock-code`, or `pockpock-code "fix the failing test"`. It reads the code, answers with file and line references, edits files, runs your tests and fixes what fails. It asks before running commands; `--mode suggest` also asks before edits and `--mode full-auto` asks for nothing. Inside a session, `/undo` restores the last request's changes, `/model` switches the model and `/help` lists the commands. The app installs the command after setup; open a new terminal the first time. See [PockPock Code](docs/features/coding-cli.md).
+
 ---
 
 ## How it works

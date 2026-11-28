@@ -5,6 +5,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { ServiceManager, httpJson, internalToken } = require('./services.cjs')
 const { Setup } = require('./setup.cjs')
+const { installCommand } = require('./cli-command.cjs')
 const { Updater } = require('./updater.cjs')
 const { cleanAfterManualInstall } = require('./fresh-install.cjs')
 const { UNCENSORED_MODEL, pullModel } = require('./model-pull.cjs')
@@ -227,6 +228,8 @@ function registerIpc() {
     // The model is checked against the offered choices in setup.start; anything else means "recommended".
     const model = typeof plan?.model === 'string' ? plan.model.slice(0, 64) : undefined
     void setup.start({ components, disabledSkills: Array.isArray(plan?.disabledSkills) ? plan.disabledSkills.map(String) : [], model })
+      .then(() => { if (app.isPackaged && fs.existsSync(paths.venvPython())) return installCommand({ python: paths.venvPython(), backend: paths.backendRoot(), dataRoot: paths.dataRoot() }) })
+      .catch((error) => console.warn('pockpock-code command not installed:', error?.message || error))
     return true
   })
   handle('setup:cancel', () => { setup.cancel(); return true })
@@ -439,6 +442,9 @@ async function createWindow() {
   try { syncGuidance(paths.backendRoot()) } catch (error) { console.warn('OpenClaw guidance not updated:', error?.message || error) }
   // Before setup has installed the backend there is nothing to start.
   const needsSetup = !fs.existsSync(paths.venvPython())
+  // The pockpock-code terminal command (PockPock Code). Installed builds only: a development run
+  // must not put the checkout on the user's PATH.
+  if (!needsSetup && app.isPackaged) void installCommand({ python: paths.venvPython(), backend: paths.backendRoot(), dataRoot: paths.dataRoot() }).catch((error) => console.warn('pockpock-code command not installed:', error?.message || error))
   if (!needsSetup && appSettings().autoStart) {
     autoStarting = true
     send('backend:status', backendPhase())
