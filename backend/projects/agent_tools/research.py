@@ -140,8 +140,10 @@ def requested_artifact_extension(task: str) -> str | None:
         ):
             continue
         request = action.group(1)
-        if re.search(r"\b(?:\.docx|docx|word\s+(?:document|file))\b", request, re.IGNORECASE):
+        if re.search(r"\b(?:\.docx|docx|word\s+(?:document|file|format)|in\s+word)\b", request, re.IGNORECASE):
             return ".docx"
+        if re.search(r"\b(?:\.pdf|pdf)\b", request, re.IGNORECASE):
+            return ".pdf"
         if re.search(r"\b(?:\.xlsx|xlsx|spreadsheet|workbook|excel)\b", request, re.IGNORECASE):
             return ".xlsx"
         if re.search(r"\b(?:\.pptx|pptx|presentation|powerpoint|slides)\b", request, re.IGNORECASE):

@@ -185,6 +185,49 @@ function clawStepStatus(status: unknown): Step['status'] {
   return status === 'completed' ? 'done' : status === 'blocked' ? 'blocked' : status === 'running' ? 'running' : 'failed'
 }
 
+/** OpenClaw's tool lines, command details and approvals: in an OpenClaw turn, and in Plan-in-steps runs
+ * whose steps OpenClaw does (the gateway sends those as openclaw_* events). */
+function handleClawEvent(event: StreamEvent, patch: TurnOptions['patch']) {
+  switch (text(event.type).replace(/^openclaw_/, '')) {
+    case 'tool':
+      patch((message) => addStep(message, {
+        id: `tool:${text(event.id)}`,
+        label: text(event.title) || text(event.name) || 'Tool',
+        status: event.phase === 'start' ? 'running' : clawStepStatus(event.status),
+        detail: text(event.error) || undefined,
+      }, false))
+      break
+    case 'tool_detail':
+      patch((message) => withToolDetail(message, `tool:${text(event.id)}`, {
+        name: text(event.name),
+        command: text(event.command) || undefined,
+        input: stringRecord(event.input),
+        output: text(event.output) || undefined,
+        exitCode: typeof event.exitCode === 'number' ? event.exitCode : undefined,
+        durationMs: typeof event.durationMs === 'number' ? event.durationMs : undefined,
+        cwd: text(event.cwd) || undefined,
+        diff: text(event.diff) || undefined,
+      }))
+      break
+    case 'approval':
+      patch((message) => upsertApproval(message, {
+        id: text(event.id), source: 'openclaw', title: text(event.title) || 'Approval required', description: text(event.description), status: 'pending',
+        // After the turn read web or MCP content, each action is decided on its own (no "Allow for this task").
+        grantable: event.untrusted !== true, untrusted: event.untrusted === true,
+      }))
+      break
+    case 'approval_auto':
+      patch((message) => addStep(message, { label: `Allowed for this task: ${text(event.title)} ${text(event.description)}`.trim().slice(0, 160), status: 'done' }, false))
+      break
+    case 'approval_resolved':
+      patch((message) => setApprovalStatus(message, text(event.id), event.decision === 'deny' ? 'rejected' : 'approved'))
+      break
+    case 'approval_error':
+      patch((message) => ({ ...message, notice: text(event.message) || 'OpenClaw could not record that decision.' }))
+      break
+  }
+}
+
 async function runOpenClaw({ sessionId, prompt, attachments, signal, patch, clawPermission, clawModel, workspacePath }: TurnOptions) {
   const tokens = tokenBuffer(patch)
   try {
@@ -200,41 +243,8 @@ async function runOpenClaw({ sessionId, prompt, attachments, signal, patch, claw
         case 'token': tokens.push(text(event.content)); break
         case 'replace': patch((message) => ({ ...message, content: text(event.content) || message.content })); break
         case 'decision': patch((message) => ({ ...message, model: text(event.model) })); break
-        case 'tool':
-          patch((message) => addStep(message, {
-            id: `tool:${text(event.id)}`,
-            label: text(event.title) || text(event.name) || 'Tool',
-            status: event.phase === 'start' ? 'running' : clawStepStatus(event.status),
-            detail: text(event.error) || undefined,
-          }, false))
-          break
-        case 'tool_detail':
-          patch((message) => withToolDetail(message, `tool:${text(event.id)}`, {
-            name: text(event.name),
-            command: text(event.command) || undefined,
-            input: stringRecord(event.input),
-            output: text(event.output) || undefined,
-            exitCode: typeof event.exitCode === 'number' ? event.exitCode : undefined,
-            durationMs: typeof event.durationMs === 'number' ? event.durationMs : undefined,
-            cwd: text(event.cwd) || undefined,
-            diff: text(event.diff) || undefined,
-          }))
-          break
-        case 'approval':
-          patch((message) => upsertApproval(message, {
-            id: text(event.id), source: 'openclaw', title: text(event.title) || 'Approval required', description: text(event.description), status: 'pending',
-            // After the turn read web or MCP content, each action is decided on its own (no "Allow for this task").
-            grantable: event.untrusted !== true, untrusted: event.untrusted === true,
-          }))
-          break
-        case 'approval_auto':
-          patch((message) => addStep(message, { label: `Allowed for this task: ${text(event.title)} ${text(event.description)}`.trim().slice(0, 160), status: 'done' }, false))
-          break
-        case 'approval_resolved':
-          patch((message) => setApprovalStatus(message, text(event.id), event.decision === 'deny' ? 'rejected' : 'approved'))
-          break
-        case 'approval_error':
-          patch((message) => ({ ...message, notice: text(event.message) || 'OpenClaw could not record that decision.' }))
+        case 'tool': case 'tool_detail': case 'approval': case 'approval_auto': case 'approval_resolved': case 'approval_error':
+          handleClawEvent(event, patch)
           break
         case 'error':
           if (event.code !== 'aborted') throw new Error(text(event.message) || 'OpenClaw request failed.')
@@ -481,6 +491,11 @@ function handleAgentEvent(event: StreamEvent, patch: TurnOptions['patch'], pushT
   if (type.startsWith('approval_') && type !== 'approval_requested' && event.approval_id) {
     const outcome = type.replace('approval_', '')
     patch((message) => setApprovalStatus(message, text(event.approval_id), outcome === 'approved' ? 'approved' : outcome === 'rejected' ? 'rejected' : 'expired'))
+    return
+  }
+  if (type.startsWith('openclaw_')) {
+    if (type === 'openclaw_step') patch((message) => addStep(message, { label: text(event.message) || 'OpenClaw is doing this step', status: 'running' }, false))
+    else handleClawEvent(event, patch)
     return
   }
   switch (type) {

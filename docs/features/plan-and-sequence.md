@@ -176,7 +176,47 @@ returns `approved_plan_hash` only. `POST /api/agents/run-sequence` with
   partial`) when a step cannot be finished; then a `token` with the reply and
   `done` with the `SequenceRunResult`.
 
-### OpenClaw subtask mode (implemented in the Node helper, not wired up)
+### OpenClaw steps: `openclaw_agent` (since 0.2.16)
+
+PockPock plans and checks; OpenClaw does the steps that the step model's tools cannot: running or building a
+project (`npm install`, `flutter create`, `pytest`), installing tools, or acting in a browser or app.
+
+- **Offered only when possible.** The gateway sends `openclaw_available` to the planner (OpenClaw is
+  installed and its bridge can start). The planner offers `openclaw_agent` only then, and not in Default
+  permission. The prompt says to use it as a step's only tool, never for writing, reading or editing files,
+  and with a concrete done-condition. `validate_sequence_plan` accepts the name and makes it the step's only
+  tool.
+- **Carried out by OpenClaw.** For such a step the runner does not call the step model. It calls its
+  `delegate` (`openclaw_bridge/step_delegate.py`) with `build_openclaw_prompt`: the whole task for context,
+  this step's goal, the capsule, and the exact check ("PockPock checks afterwards that the file
+  pubspec.yaml exists"). On a retry the message also says what the check found.
+- **The turn.** It is a normal OpenClaw turn in the run's folder (the open folder, or the task folder), in
+  one session per run (`pockpock-steps-<run id>`), so OpenClaw's long prompt stays cached in Ollama from
+  step to step. It uses the run's executor model (`ollama/<model>`, so one model serves both; a cloud
+  executor uses OpenClaw's default). Permission: Full access → `full`, Auto-review → `auto`.
+- **What the app sees.** OpenClaw's tool lines, command details and approval cards appear in the run as
+  `openclaw_step`, `openclaw_tool`, `openclaw_tool_detail`, `openclaw_approval` and
+  `openclaw_approval_resolved` events, handled like an OpenClaw chat (`handleClawEvent` in
+  `desktop/src/lib/engines.ts`). Approvals are answered through `/api/openclaw/approvals`. The step's clock
+  stops while an approval waits.
+- **Checked in code.** The step result has one entry per OpenClaw action, the exit code of the **last**
+  command only (so an early failure that OpenClaw then fixed does not fail a `command_exit_0` check), and an
+  error only when the turn itself failed. The done-condition is then verified as for any step, with up to
+  two retries. An OpenClaw step may take up to 900 seconds per attempt; the run's 15-minute limit still
+  applies.
+- **When OpenClaw cannot run** (not installed, busy with another chat, Default permission), the step fails
+  with that reason and the run asks for a replan.
+- **Live run fixes (2026-11-28).** OpenClaw knows local models by their bare name (`qwen3.5:9b`). A new
+  attempt waits up to 20 s for the previous turn to release OpenClaw. A turn that could not start reports its
+  reason instead of "no command result recorded". On Windows the step is told to save output as UTF-8, and
+  checks read UTF-16 files too (PowerShell's `>` writes UTF-16). Check fields a condition does not have are
+  dropped instead of rejecting the plan, and a step that runs tests to see them fail is checked by
+  `no_error`, not `command_exit_0`.
+
+### OpenClaw subtask mode (implemented in the Node helper, not used)
+
+The `openclaw_agent` steps above use a normal OpenClaw turn, not this mode: subtask mode needs OpenClaw tool
+names to pin, which the plan does not know.
 
 `backend/projects/openclaw_bridge/turn_helpers.mjs`:
 `validateSubtask` (id non-empty ≤128 chars, goal non-empty ≤500 chars,
@@ -282,6 +322,8 @@ without retry (see Failure states).
 | Plan mistakes from a small planner (since 0.2.15) | Live runs with `qwen3.5:9b` planning (2026-11-27) finished 0 of 4 tasks, every failure from the plan. `repair_plan_mistakes` (`plan_sequence/contracts.py`) now runs before validation: web tools are dropped when the request names no website (`names_a_website`: a URL or host name, not a file name such as notes.md), the image generator is dropped unless the step's file is an image, a step left with no tool gets the file-writing tool, a read-only step's "contains" check becomes "file exists", and inputs that name no earlier step are dropped instead of rejecting the plan. With a folder open (and a permission that may change it) every text file is written into the folder (`repair_folder_writes`; before, only when the request said "in this folder"). Each step prompt says what it is checked against ("This step is done when the file menu.txt exists. Use exactly that file name."). |
 | Checks too literal (since 0.2.15) | A pattern that is one HTML tag (`<html>`) also matches the tag with attributes (`<html lang="en">`); a pattern that lists tags or words (`<html><head><body>`, `home menu about contact`) passes when each is in the file. A failed check reports the folder that has the file. |
 | Step time and file limits (since 0.2.15) | A step gets at least 180 s whatever the plan says (`MIN_STEP_SECONDS`), the first step 120 s more for the model to load. A task may propose 30 file changes (was 5). `propose_project_patch` no longer needs a summary. |
+| Documents in the wrong format (fixed in 0.2.16) | A requested format that no step produces ("a PDF report" planned as a .docx) takes over a document step whose format was not asked for (`repair_requested_formats`). Steps for .docx, .pdf, .xlsx and .pptx files always get `create_office_document`, which also writes PDF; there is no converter tool, so a "convert to PDF" step planned with a text writer could never pass. |
+| Reading an empty folder (fixed in 0.2.16) | Steps that only read or search the open folder are left out when it has no files (`repair_empty_folder`), as long as two steps remain: in an empty folder a planner added steps to search and read invented documents, which failed three times. |
 | Steps that pass without doing their work (fixed in 0.2.15) | A step whose only check is "no error" but which may write a file must write one (`step_must_write`): a "fix the code" step passed with only a read while the tests still failed. A validation step fails when the Validator service is not running instead of passing unchecked, and Full access lets Plan in steps run the project's checks and tests (`allow_execution`), as one-model runs do. A retry may replace a file the task saved itself in the task folder, and a "does not contain" retry names the exact text to include. |
 | Image steps without an image engine (since 0.2.15) | The planner offers `generate_local_image` only when ComfyUI or Stable Diffusion WebUI answers locally; otherwise image-only steps are left out of the plan. |
 | Tool errors lost (fixed in 0.2.15) | The gateway's step tool handler listed `ToolError` (a record, not an exception) in `except`, so every tool failure became "catching classes that do not inherit from BaseException". |
