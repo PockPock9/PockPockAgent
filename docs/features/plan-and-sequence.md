@@ -176,7 +176,41 @@ returns `approved_plan_hash` only. `POST /api/agents/run-sequence` with
   partial`) when a step cannot be finished; then a `token` with the reply and
   `done` with the `SequenceRunResult`.
 
-### OpenClaw subtask mode (implemented in the Node helper, not wired up)
+### OpenClaw steps: `openclaw_agent` (since 0.2.16)
+
+PockPock plans and checks; OpenClaw does the steps that the step model's tools cannot: running or building a
+project (`npm install`, `flutter create`, `pytest`), installing tools, or acting in a browser or app.
+
+- **Offered only when possible.** The gateway sends `openclaw_available` to the planner (OpenClaw is
+  installed and its bridge can start). The planner offers `openclaw_agent` only then, and not in Default
+  permission. The prompt says to use it as a step's only tool, never for writing, reading or editing files,
+  and with a concrete done-condition. `validate_sequence_plan` accepts the name and makes it the step's only
+  tool.
+- **Carried out by OpenClaw.** For such a step the runner does not call the step model. It calls its
+  `delegate` (`openclaw_bridge/step_delegate.py`) with `build_openclaw_prompt`: the whole task for context,
+  this step's goal, the capsule, and the exact check ("PockPock checks afterwards that the file
+  pubspec.yaml exists"). On a retry the message also says what the check found.
+- **The turn.** It is a normal OpenClaw turn in the run's folder (the open folder, or the task folder), in
+  one session per run (`pockpock-steps-<run id>`), so OpenClaw's long prompt stays cached in Ollama from
+  step to step. It uses the run's executor model (`ollama/<model>`, so one model serves both; a cloud
+  executor uses OpenClaw's default). Permission: Full access → `full`, Auto-review → `auto`.
+- **What the app sees.** OpenClaw's tool lines, command details and approval cards appear in the run as
+  `openclaw_step`, `openclaw_tool`, `openclaw_tool_detail`, `openclaw_approval` and
+  `openclaw_approval_resolved` events, handled like an OpenClaw chat (`handleClawEvent` in
+  `desktop/src/lib/engines.ts`). Approvals are answered through `/api/openclaw/approvals`. The step's clock
+  stops while an approval waits.
+- **Checked in code.** The step result has one entry per OpenClaw action, the exit code of the **last**
+  command only (so an early failure that OpenClaw then fixed does not fail a `command_exit_0` check), and an
+  error only when the turn itself failed. The done-condition is then verified as for any step, with up to
+  two retries. An OpenClaw step may take up to 900 seconds per attempt; the run's 15-minute limit still
+  applies.
+- **When OpenClaw cannot run** (not installed, busy with another chat, Default permission), the step fails
+  with that reason and the run asks for a replan.
+
+### OpenClaw subtask mode (implemented in the Node helper, not used)
+
+The `openclaw_agent` steps above use a normal OpenClaw turn, not this mode: subtask mode needs OpenClaw tool
+names to pin, which the plan does not know.
 
 `backend/projects/openclaw_bridge/turn_helpers.mjs`:
 `validateSubtask` (id non-empty ≤128 chars, goal non-empty ≤500 chars,

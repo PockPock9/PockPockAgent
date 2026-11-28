@@ -145,6 +145,14 @@ The task shows a step such as "Offered OpenClaw 4 of 22 skills that fit this req
 
 **What it saves.** On this PC, the 22 usable skills take about 1,100 tokens of the roughly 21,000; offering 6 saves about 800 tokens (about 4%) per uncached turn. The saving grows with MCP servers: each tool definition is a few hundred tokens, so a server with dozens of tools adds thousands. Most of OpenClaw's prompt (its built-in tools and instructions) is unchanged; OpenClaw's global tool profile (`tools.profile`, set to `full` by Setup) is the only control over that part.
 
+## Steps in Plan in steps (`openclaw_agent`)
+
+Since 0.2.16, a Plan-in-steps plan can hand a step to OpenClaw: running or building a project, installing
+tools, or using a browser or app. PockPock still writes the plan and checks every step in code; OpenClaw only
+does that step, in one session per run, with the run's model and permission. Its actions and approval cards
+appear in the run as in an OpenClaw chat. See
+[Plan-and-Sequence: OpenClaw steps](plan-and-sequence.md#openclaw-steps-openclaw_agent-since-0216).
+
 ## Subtask mode (Plan-and-Sequence P4)
 
 OpenClaw mode is demoted to tool provider under the Plan-and-Sequence design (`~/workspace/pockpock-test/wiki/Plan-and-Sequence.md`): instead of planning, it executes one subtask at a time, handed to it by the sequenced runner with a small prompt and pinned tools. This is what makes OpenClaw usable with small local models — the ~21K-token system prompt that made `qwen3.5:2b` turns never complete is replaced by a step message of well under ~1,500 tokens by construction.

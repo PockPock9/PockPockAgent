@@ -46,6 +46,7 @@ from projects.agent_tools.tool_retriever import estimate_tokens
 from .capsule import build_capsule
 from .contracts import (
     MAX_STEP_RETRIES,
+    OPENCLAW_STEP_TOOL,
     SEQUENCE_CONTRACT_VERSION,
     CapsuleEntry,
     SequenceRunResult,
@@ -64,6 +65,9 @@ __all__ = ["SequenceRunner", "build_step_prompt"]
 MIN_STEP_SECONDS = 180
 #: Extra time for the first step: the executor may have to load (after a large planner was unloaded).
 FIRST_STEP_LOAD_SECONDS = 120
+#: An OpenClaw step (shell, browser, apps) may take longer than a one-tool step; time waiting for an
+#: approval does not count.
+OPENCLAW_STEP_SECONDS = 900
 
 #: Executor turns in one attempt at a step (a step may need to read before it writes).
 MAX_TURNS_PER_ATTEMPT = 3
@@ -258,6 +262,28 @@ def build_step_prompt(
     return "\n".join(lines)
 
 
+def build_openclaw_prompt(*, task: str, step: dict, capsule_text: str, retry: str = "") -> str:
+    """The message an OpenClaw step sends: the whole task for context, but only this step to do, and the
+    exact check it must pass (verified in code afterwards, never on OpenClaw's word)."""
+    done_when = describe_done_condition(step.get("done_condition"))
+    lines = [
+        "You are doing ONE step of a larger plan that PockPock is running. Do this step only, with your own tools, then stop and reply in one or two sentences with what you did.",
+        "",
+        f"Whole task (for context): {task}",
+        f"This step: {step.get('goal', '')}",
+        "",
+        "Results of earlier steps (re-read files instead of trusting this summary):",
+        capsule_text.strip() if capsule_text and capsule_text.strip() else "(none)",
+        "",
+    ]
+    if done_when:
+        lines.append(f"PockPock checks afterwards that {done_when}. Make sure that is true, with exactly that file name.")
+    lines.append("Work in the current folder. Do not do the other steps of the plan.")
+    if retry:
+        lines += ["", retry.strip()]
+    return "\n".join(lines)
+
+
 def _extract_values(tool_calls: list[dict]) -> dict[str, str]:
     """Pull ``values`` out of tool outputs for ``value_equals`` checks.
 
@@ -296,8 +322,11 @@ class SequenceRunner:
         retriever: Any | None = None,
         on_event: Callable | None = None,
         record_event: Callable | None = None,
+        delegate: Callable | None = None,
     ):
         self._chat = chat
+        # Carries out OpenClaw steps: async delegate(step=, prompt=, run_id=, attempt=, waiting=) -> step result.
+        self._delegate = delegate
         self._execute_tool = execute_tool
         self._retriever = retriever
         self._on_event = on_event
@@ -654,16 +683,27 @@ class SequenceRunner:
                     {"role": "user", "content": attempt_prompt},
                 ]
                 try:
-                    step_result, call_arguments = await self._within_budget(
-                        self._execute_attempt(
-                            step=step, messages=messages, tool_specs=tool_specs,
-                            executor_model=executor_model,
-                            is_done=lambda result, condition=step["done_condition"]: verify_done_condition(
-                                condition, workspace=workspace, step_result=result, artifact_dir=artifact_dir,
-                            )["passed"],
-                        ),
-                        step_seconds,
-                    )
+                    if OPENCLAW_STEP_TOOL in step.get("tools_allowed", []):
+                        if self._delegate is None:
+                            raise RuntimeError("OpenClaw is not available for this run, so this step cannot be carried out")
+                        retry = retry_instruction(step, last_detail) if attempts > 1 else ""
+                        openclaw_prompt = build_openclaw_prompt(task=task, step=step, capsule_text=capsule_text, retry=retry)
+                        step_result = await self._within_budget(
+                            self._delegate(step=step, prompt=openclaw_prompt, run_id=run_id, attempt=attempts, waiting=self.waiting_for_user),
+                            max(step_seconds, OPENCLAW_STEP_SECONDS),
+                        )
+                        call_arguments = []
+                    else:
+                        step_result, call_arguments = await self._within_budget(
+                            self._execute_attempt(
+                                step=step, messages=messages, tool_specs=tool_specs,
+                                executor_model=executor_model,
+                                is_done=lambda result, condition=step["done_condition"]: verify_done_condition(
+                                    condition, workspace=workspace, step_result=result, artifact_dir=artifact_dir,
+                                )["passed"],
+                            ),
+                            step_seconds,
+                        )
                 except asyncio.TimeoutError:
                     last_detail = f"step timed out after {step_seconds} seconds"
                     last_evidence = ""

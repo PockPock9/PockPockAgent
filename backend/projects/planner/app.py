@@ -20,7 +20,7 @@ from planner.contracts import normalized_plan_steps, normalized_subtask_plan, no
 from planner.routing import choose_candidate
 from projects.agent_tools import registered_tool_contracts
 from projects.model_router import ChatCompletionRequest, ModelProviderError, OllamaChatCompletionAdapter
-from projects.plan_sequence.contracts import SEQUENCE_CONTRACT_VERSION, repair_artifact_tools, repair_folder_writes, repair_plan_mistakes, repair_read_tools, validate_sequence_plan
+from projects.plan_sequence.contracts import OPENCLAW_STEP_TOOL, SEQUENCE_CONTRACT_VERSION, repair_artifact_tools, repair_folder_writes, repair_plan_mistakes, repair_read_tools, validate_sequence_plan
 from projects.plan_sequence.routing import choose_executor_model, choose_planner_model
 from projects.model_router.cloud import OpenAICompatibleAdapter, RoutingChatCompletionProvider
 
@@ -231,6 +231,9 @@ class SequencePlanRequest(BaseModel):
     planner_model: str | None = Field(default=None, max_length=120)
     # The model the user chose for the steps (the composer's model); used when it is available.
     executor_model: str | None = Field(default=None, max_length=120)
+    # The gateway sets this when the OpenClaw agent can run steps (installed, and the permission allows
+    # changing things): the planner may then give a step the openclaw_agent tool.
+    openclaw_available: bool = False
 
     @field_validator("task")
     @classmethod
@@ -267,7 +270,7 @@ def build_execution_prompt(task: str, plan: list[str], model_prompt: object) -> 
     )[:4_000]
 
 
-def build_sequence_plan_prompt(task: str, tool_names: list[str], workspace_path: str | None, permission_mode: str) -> str:
+def build_sequence_plan_prompt(task: str, tool_names: list[str], workspace_path: str | None, permission_mode: str, openclaw: bool = False) -> str:
     """Ask the planner model for a validated sequence plan (Plan-and-Sequence P3)."""
     tools = ", ".join(tool_names)
     return (
@@ -287,6 +290,14 @@ def build_sequence_plan_prompt(task: str, tool_names: list[str], workspace_path:
             "A folder is open: to create or change a file in that folder (for example when the request says 'in this folder'), "
             "use propose_project_patch with the path relative to it; the change is shown to the user for approval. "
             if workspace_path else ""
+        )
+        + (
+            "openclaw_agent hands a whole step to the OpenClaw agent, which can run any shell command, install packages, "
+            "use a real browser (sign in, click, fill forms), open apps and use the user's accounts. Use it as a step's only tool, "
+            "and only for a step the other tools cannot do: running or building a project (npm install, flutter create, pytest), "
+            "installing tools, or acting in a browser or app. Writing, reading and editing files never need it. Give it a concrete "
+            "done_condition (a file it must create, or a command that must exit 0), because its result is checked like any step. "
+            if openclaw else ""
         )
         + "Each step's model sees only a short summary of earlier steps, not their full output, so a step that writes "
         "something based on what an earlier step read must also list that reading tool (for example read_project_file) "
@@ -514,7 +525,10 @@ async def plan_sequence(payload: SequencePlanRequest):
     # three times with "No local image-generation engine is running" (live run 2026-11-27).
     image_available = await image_engine_running()
     tool_names = sorted(name for name in registered_tool_contracts() if image_available or name != "generate_local_image")
-    prompt = build_sequence_plan_prompt(task, tool_names, payload.workspace_path, payload.permission_mode)
+    openclaw = payload.openclaw_available and payload.permission_mode != "default"
+    if openclaw:
+        tool_names.append(OPENCLAW_STEP_TOOL)
+    prompt = build_sequence_plan_prompt(task, tool_names, payload.workspace_path, payload.permission_mode, openclaw=openclaw)
     timeout = planning_timeout(payload.model_profiles, planner_model)
     try:
         raw = await _request_sequence_plan_json(

@@ -153,6 +153,7 @@ from projects.nemoclaw_bridge.api import create_router as create_nemoclaw_router
 from projects.nemoclaw_bridge.bridge import NemoClawBridge, NemoClawConfig
 from projects.openclaw_bridge.api import create_router as create_openclaw_router
 from projects.openclaw_bridge.bridge import OpenClawBridge, OpenClawConfig
+from projects.openclaw_bridge.step_delegate import make_openclaw_delegate
 from projects.openclaw_bridge.tool_selection import OpenClawToolSelector
 from projects.agent_tools.tool_retriever import OllamaEmbedder
 
@@ -1593,6 +1594,8 @@ async def plan_sequence_agent_task(payload: AgentPlanPayload, request: Request):
                 "default_model": default_model,
                 "workspace_path": payload.workspace_path,
                 "permission_mode": payload.permission_mode,
+                # OpenClaw can take steps that need a shell, installs or the browser (openclaw_agent).
+                "openclaw_available": OPENCLAW_BRIDGE.available()[0],
               }, headers={"X-PockPock-Internal-Token": os.environ.get("POCKPOCK_INTERNAL_TOKEN", "")}) as response:
                 result = await response.json()
                 if response.status >= 400:
@@ -2286,6 +2289,11 @@ async def run_sequence_agent_task(payload: AgentSequenceRunPayload, request: Req
                 chat=chat,
                 execute_tool=execute_tool,
                 on_event=on_runner_event,
+                # Steps planned with openclaw_agent are done by OpenClaw and then checked like any step.
+                delegate=make_openclaw_delegate(
+                    OPENCLAW_BRIDGE, run_id=run_id, folder=workspace, permission_mode=ticket["permission_mode"],
+                    executor_model=ticket["executor_model"], emit=events.put_nowait,
+                ),
             )
             run_task = asyncio.create_task(runner.run(
                 ticket["sequence_plan"],

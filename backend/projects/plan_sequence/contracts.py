@@ -45,6 +45,10 @@ SEQUENCE_CONTRACT_VERSION = 1
 
 #: The original request is always available to every step under this key.
 TASK_INPUT_KEY = "task"
+#: A step whose only tool is this is carried out by the OpenClaw agent (shell, browser, apps, skills, MCP)
+#: instead of the step model; its done-condition is still verified in code. Not an agent tool: the runner
+#: hands the step to its ``delegate``. The planner offers it only when OpenClaw is available.
+OPENCLAW_STEP_TOOL = "openclaw_agent"
 
 
 def _present(value: str | None) -> bool:
@@ -402,7 +406,12 @@ def validate_sequence_plan(raw: object, *, allowed_tools: set[str] | None = None
     id, invalid done-condition, or a dangling input.
     """
     if allowed_tools is None:
-        allowed_tools = set(registered_tool_contracts())
+        allowed_tools = set(registered_tool_contracts()) | {OPENCLAW_STEP_TOOL}
+    if isinstance(raw, dict) and isinstance(raw.get("steps"), list):
+        for step in raw["steps"]:
+            # OpenClaw does the whole step with its own tools, so it is the step's only tool.
+            if isinstance(step, dict) and isinstance(step.get("tools_allowed"), list) and OPENCLAW_STEP_TOOL in step["tools_allowed"]:
+                step["tools_allowed"] = [OPENCLAW_STEP_TOOL]
     try:
         plan = SequencePlan.model_validate(raw)
     except ValidationError as exc:
