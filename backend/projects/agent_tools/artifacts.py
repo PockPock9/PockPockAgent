@@ -59,58 +59,27 @@ def create_office_artifact(
     if not isinstance(title, str) or not title.strip() or len(title) > 200:
         raise AgentToolError("Document title must be between 1 and 200 characters")
 
-    if not isinstance(kind, str):
-        raise AgentToolError("Choose a Word document, spreadsheet, or presentation")
-    extension = {"word": ".docx", "spreadsheet": ".xlsx", "presentation": ".pptx"}.get(kind)
-    if extension is None:
-        raise AgentToolError("Choose a Word document, spreadsheet, or presentation")
+    from .documents import WRITERS
+
+    if not isinstance(kind, str) or kind not in WRITERS:
+        # The extension in the filename says what was meant when the kind is missing or wrong.
+        kind = {".docx": "word", ".pdf": "pdf", ".xlsx": "spreadsheet", ".pptx": "presentation"}.get(Path(str(filename or "")).suffix.lower(), kind)
+    if kind not in WRITERS:
+        raise AgentToolError("Choose a Word document, PDF, spreadsheet, or presentation")
+    extension, writer = WRITERS[kind]
     path = context.output_dir / _safe_filename(filename, extension)
-    if path.exists():
+    # A file this task created may be written again (a retry fixing it); others are never overwritten.
+    if path.exists() and not any(item.get("path") == str(path) for item in context.artifacts):
         raise AgentToolError("That filename already exists in this task; choose another name")
 
     try:
-        if kind == "word":
-            from docx import Document
-
-            document = Document()
-            document.add_heading(title, level=0)
-            for paragraph in content.splitlines():
-                if paragraph.strip():
-                    document.add_paragraph(paragraph[:4000])
-            document.save(path)
-        elif kind == "spreadsheet":
-            from openpyxl import Workbook
-
-            workbook = Workbook()
-            sheet = workbook.active
-            sheet.title = "Task output"
-            for row in csv.reader(io.StringIO(content), strict=False):
-                sheet.append([cell[:2000] for cell in row[:30]])
-                if sheet.max_row >= 1000:
-                    break
-            workbook.save(path)
-        else:
-            from pptx import Presentation
-            from pptx.util import Pt
-
-            presentation = Presentation()
-            paragraphs = [part.strip() for part in re.split(r"\n\s*\n", content) if part.strip()]
-            chunks = paragraphs[:20] or [content]
-            for index, chunk in enumerate(chunks):
-                layout = presentation.slide_layouts[0 if index == 0 else 1]
-                slide = presentation.slides.add_slide(layout)
-                slide.shapes.title.text = title if index == 0 else f"{title} · {index + 1}"
-                body = slide.placeholders[1].text_frame
-                body.clear()
-                for line in chunk.splitlines()[:16]:
-                    paragraph = body.paragraphs[0] if not body.text else body.add_paragraph()
-                    paragraph.text = line[:500]
-                    paragraph.font.size = Pt(18)
-            presentation.save(path)
+        writer(path, title.strip(), content)
     except ImportError as err:
         raise AgentToolError(f"The {kind} document writer is unavailable in this installation") from err
     except (OSError, ValueError, csv.Error) as err:
         raise AgentToolError(f"Could not create the requested document: {err}") from err
+    if any(item.get("path") == str(path) for item in context.artifacts):
+        return {"name": path.name, "path": str(path), "kind": kind, "replaced": "true"}
     return _record_artifact(context, path, kind)
 
 async def image_backend_status() -> dict[str, Any]:

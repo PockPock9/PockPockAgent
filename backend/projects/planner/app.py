@@ -282,7 +282,7 @@ def build_sequence_plan_prompt(task: str, tool_names: list[str], workspace_path:
         f"{tools}. "
         "Use no other tool names: the plan is validated and rejected if a step names a tool that does not exist. "
         "To create a .txt, .md, .csv, .json or .html file use save_text_artifact; create_office_document makes only "
-        ".docx, .xlsx and .pptx files. Those two save into the task's own output folder. "
+        ".docx, .pdf, .xlsx and .pptx files (one file per call: a Word and a PDF version are two calls). Those two save into the task's own output folder. "
         + (
             "A folder is open: to create or change a file in that folder (for example when the request says 'in this folder'), "
             "use propose_project_patch with the path relative to it; the change is shown to the user for approval. "

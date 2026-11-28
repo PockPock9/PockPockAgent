@@ -211,9 +211,9 @@ class SequenceRunResult(BaseModel):
 
 
 # Which artifact tool can write a file of each kind. save_text_artifact writes the text and code files
-# in TEXT_ARTIFACT_EXTENSIONS; create_office_document writes .docx/.xlsx/.pptx.
+# in TEXT_ARTIFACT_EXTENSIONS; create_office_document writes .docx/.pdf/.xlsx/.pptx.
 _TEXT_EXTENSIONS = TEXT_ARTIFACT_EXTENSIONS
-_OFFICE_EXTENSIONS = {".docx", ".xlsx", ".pptx"}
+_OFFICE_EXTENSIONS = {".docx", ".pdf", ".xlsx", ".pptx"}
 
 
 def repair_artifact_tools(raw: object) -> object:
