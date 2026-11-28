@@ -12,6 +12,34 @@ pockpock-code -p "explain src/app.py" # answer once and exit (scripts, CI)
 pockpock-code --resume                # continue the last session in this folder
 ```
 
+## Engines
+
+PockPock Code can do the work itself or hand a request to PockPock's other agents, which then report in the
+same terminal: one line per tool call, step checks, approvals asked in the terminal.
+
+| `--engine` | Who does the work | Best for |
+|---|---|---|
+| `code` (default) | The built-in coding loop, straight to Ollama | Code questions, fixes, features, tests. Its prompt is small (a few thousand tokens), so it is the fastest on local models |
+| `pockpock` | PockPock Agent through the app's gateway. With `--planner <model>` it is Plan in steps (a checked step plan, every step verified in code); without, one model plans and works | New multi-part deliverables: a website, a resume in Word and PDF, a report |
+| `openclaw` | OpenClaw through the app's gateway, in one session per folder (`pockpock-code-<hash>`), so its long prompt stays cached in Ollama between requests | Work on the PC: the browser, apps, accounts, skills and MCP servers |
+| `auto` | Chosen per request: coding in a project with code goes to `code`; the browser, apps, email or URLs to `openclaw`; "build/create/make a website, app, resume, report…" to `pockpock`; anything else to `code`. Without the app running, always `code` | Mixed sessions |
+
+`pockpock` and `openclaw` need the PockPock app (or its services) running; the gateway URL is
+`http://127.0.0.1:8766` or `POCKPOCK_BACKEND_URL` (`--gateway`). Each engine uses the session's model, so one
+model serves all of them and nothing is swapped in and out of memory. The three modes map to each engine's
+permissions:
+
+| `--mode` | code | pockpock | openclaw |
+|---|---|---|---|
+| `suggest` | asks before edits and commands | Auto-review (asks before each change) | Ask first |
+| `auto-edit` | asks before commands | Auto-review | Auto-approve safe |
+| `full-auto` | asks for nothing | Full access | Full access |
+
+A PockPock Agent plan is shown and asked about before it runs (approved automatically with `-p`). After
+another engine answers, the coding loop keeps a note of the request and the answer, so a follow-up such as
+"now add tests for it" has the context. `/engine` and `/planner` switch engines and the planner inside a
+session; both are remembered.
+
 ## Install
 
 The desktop app installs the command:
@@ -29,6 +57,8 @@ when it changed). Development builds never install it. From a checkout, run
 
 | Option | Meaning |
 |---|---|
+| `-e, --engine` | `code`, `pockpock`, `openclaw` or `auto` (see Engines). Also `POCKPOCK_CODE_ENGINE`. |
+| `--planner` | The Plan in steps planner for the `pockpock` engine, for example `qwen3.8:27b`. |
 | `-m, --model` | Ollama model. Default: the last one chosen with `/model`, otherwise the first installed of `qwen3.5:9b`, `qwen3.8:27b`, `qwen3.5:27b`, `qwen3.6:35b-a3b`, `qwen2.5-coder:14b`… Also `POCKPOCK_CODE_MODEL`. |
 | `--mode` | `suggest`: ask before every edit and command. `auto-edit` (default): edit freely, ask before commands. `full-auto`: ask for nothing. |
 | `-p, --print` | One request, no questions: commands are declined unless `--mode full-auto`. The request can also come from stdin. |
@@ -38,7 +68,7 @@ when it changed). Development builds never install it. From a checkout, run
 | `--ctx` | Context window in tokens (default 32768). |
 | `--ollama` | Ollama URL (default `http://127.0.0.1:11434`; also `OLLAMA_HOST_URL`). |
 
-Commands inside a session: `/model [name]`, `/mode [suggest|auto-edit|full-auto]`, `/think`, `/undo` (restore
+Commands inside a session: `/engine [code|pockpock|openclaw|auto]`, `/planner [name|off]`, `/model [name]`, `/mode [suggest|auto-edit|full-auto]`, `/think`, `/undo` (restore
 the files the last request changed), `/diff` (git diff), `/todo`, `/compact`, `/clear`, `/init` (write an
 `AGENTS.md` for the project) and `/exit`. End a line with `\` to type more lines. Ctrl+C stops the current
 request; the changes made so far stay, and `/undo` restores them.
@@ -58,6 +88,7 @@ Modules in [`backend/projects/coding_cli/`](../../backend/projects/coding_cli/):
 | `tools.py` | The tools and the project-folder boundary, edit snapshots for `/undo`. |
 | `context.py` | The system prompt: working rules, a project overview and the project's instruction files. |
 | `ui.py` | Terminal output (uses `rich` when installed, plain text otherwise). |
+| `engines.py` | The `pockpock` and `openclaw` engines over the gateway's `/api/agents/plan(-sequence)`, `/api/agents/run(-sequence)`, `/api/runs/{id}/approvals/{id}`, `/api/openclaw/chat` and `/api/openclaw/approvals`, and the `auto` choice. |
 
 **Context the model starts with:** the operating system and shell (PowerShell on Windows, `sh` elsewhere);
 the number and types of files; the top-level folders; manifests (`package.json`, `pyproject.toml`,
@@ -106,10 +137,12 @@ messages and the to-do list). Settings chosen with `/model` and `/mode` are save
 ## Verified
 
 - Unit tests: `backend/projects/coding_cli/test_coding_cli.py` (21: tools, text tool calls, approvals, the
-  loop with a scripted model, compaction) and `desktop/electron/cli-command.test.cjs` (the launcher).
+  loop with a scripted model, compaction), `test_engines.py` (7: the auto choice, following scripted Plan in
+  steps and OpenClaw events, answering their approvals) and `desktop/electron/cli-command.test.cjs` (the launcher).
 - Live with `qwen3.5:9b` on Windows (2026-11-28):
   - fixed a Python module so its unit tests pass (206 s);
   - added discount codes to a JavaScript cart, with tests, `npm test` passing (20 s);
   - answered "How does Plan in steps check that a step is done?" on this repository with correct files,
     functions and line numbers (20 s).
-- Not verified yet: macOS, long sessions near the context limit with a real model, cloud models.
+- Not verified yet: the `pockpock` and `openclaw` engines live (only with scripted gateway events), macOS,
+  long sessions near the context limit with a real model, cloud models.
