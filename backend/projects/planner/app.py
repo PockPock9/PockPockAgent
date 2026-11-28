@@ -20,7 +20,7 @@ from planner.contracts import normalized_plan_steps, normalized_subtask_plan, no
 from planner.routing import choose_candidate
 from projects.agent_tools import registered_tool_contracts
 from projects.model_router import ChatCompletionRequest, ModelProviderError, OllamaChatCompletionAdapter
-from projects.plan_sequence.contracts import OPENCLAW_STEP_TOOL, SEQUENCE_CONTRACT_VERSION, repair_artifact_tools, repair_folder_writes, repair_plan_mistakes, repair_read_tools, validate_sequence_plan
+from projects.plan_sequence.contracts import OPENCLAW_STEP_TOOL, SEQUENCE_CONTRACT_VERSION, repair_artifact_tools, repair_empty_folder, repair_folder_writes, repair_plan_mistakes, repair_requested_formats, repair_read_tools, validate_sequence_plan
 from projects.plan_sequence.routing import choose_executor_model, choose_planner_model
 from projects.model_router.cloud import OpenAICompatibleAdapter, RoutingChatCompletionProvider
 
@@ -127,6 +127,19 @@ def without_user_waits(items: list[str]) -> list[str]:
     ambiguities", checked by "None pending user clarification"). Keeps the list when that would empty it."""
     kept = [item for item in items if not _USER_WAIT.search(item or "")]
     return kept or items
+
+
+def open_folder_has_files(workspace_path: str | None) -> bool | None:
+    """Whether the open folder holds any file (None when no folder is open or it cannot be read)."""
+    if not workspace_path:
+        return None
+    try:
+        for path in Path(workspace_path).rglob("*"):
+            if path.is_file() and not any(part.startswith(".") for part in path.relative_to(workspace_path).parts):
+                return True
+        return False
+    except OSError:
+        return None
 
 
 async def image_engine_running() -> bool:
@@ -524,6 +537,7 @@ async def plan_sequence(payload: SequencePlanRequest):
     # The image tool is offered only when a local image engine runs: a 27B plan's hero-image step failed
     # three times with "No local image-generation engine is running" (live run 2026-11-27).
     image_available = await image_engine_running()
+    folder_has_files = open_folder_has_files(payload.workspace_path)
     tool_names = sorted(name for name in registered_tool_contracts() if image_available or name != "generate_local_image")
     openclaw = payload.openclaw_available and payload.permission_mode != "default"
     if openclaw:
@@ -542,7 +556,7 @@ async def plan_sequence(payload: SequencePlanRequest):
             detail=f"Planner returned unusable JSON for the sequence plan: {err}",
         ) from err
     try:
-        validated = validate_sequence_plan(repair_read_tools(repair_folder_writes(repair_artifact_tools(repair_plan_mistakes(raw, task=task, folder_open=bool(payload.workspace_path), permission_mode=payload.permission_mode, image_available=image_available)), task=task, folder_open=bool(payload.workspace_path), permission_mode=payload.permission_mode)), allowed_tools=set(tool_names))
+        validated = validate_sequence_plan(repair_read_tools(repair_folder_writes(repair_artifact_tools(repair_requested_formats(repair_empty_folder(repair_plan_mistakes(raw, task=task, folder_open=bool(payload.workspace_path), permission_mode=payload.permission_mode, image_available=image_available), folder_has_files=folder_has_files), task=task)), task=task, folder_open=bool(payload.workspace_path), permission_mode=payload.permission_mode)), allowed_tools=set(tool_names))
     except ValueError as err:
         fixup_prompt = build_sequence_plan_fixup_prompt(str(err), raw, tool_names)
         try:
@@ -555,7 +569,7 @@ async def plan_sequence(payload: SequencePlanRequest):
                 detail=f"Planner returned unusable JSON for the sequence plan: {retry_err}",
             ) from retry_err
         try:
-            validated = validate_sequence_plan(repair_read_tools(repair_folder_writes(repair_artifact_tools(repair_plan_mistakes(raw_retry, task=task, folder_open=bool(payload.workspace_path), permission_mode=payload.permission_mode, image_available=image_available)), task=task, folder_open=bool(payload.workspace_path), permission_mode=payload.permission_mode)), allowed_tools=set(tool_names))
+            validated = validate_sequence_plan(repair_read_tools(repair_folder_writes(repair_artifact_tools(repair_requested_formats(repair_empty_folder(repair_plan_mistakes(raw_retry, task=task, folder_open=bool(payload.workspace_path), permission_mode=payload.permission_mode, image_available=image_available), folder_has_files=folder_has_files), task=task)), task=task, folder_open=bool(payload.workspace_path), permission_mode=payload.permission_mode)), allowed_tools=set(tool_names))
         except ValueError as retry_err:
             raise HTTPException(
                 status_code=502,
