@@ -20,7 +20,7 @@ from planner.contracts import normalized_plan_steps, normalized_subtask_plan, no
 from planner.routing import choose_candidate
 from projects.agent_tools import registered_tool_contracts
 from projects.model_router import ChatCompletionRequest, ModelProviderError, OllamaChatCompletionAdapter
-from projects.plan_sequence.contracts import SEQUENCE_CONTRACT_VERSION, repair_artifact_tools, repair_folder_writes, repair_read_tools, validate_sequence_plan
+from projects.plan_sequence.contracts import SEQUENCE_CONTRACT_VERSION, repair_artifact_tools, repair_folder_writes, repair_plan_mistakes, repair_read_tools, validate_sequence_plan
 from projects.plan_sequence.routing import choose_executor_model, choose_planner_model
 from projects.model_router.cloud import OpenAICompatibleAdapter, RoutingChatCompletionProvider
 
@@ -60,7 +60,8 @@ async def _request_model_json(
         parts = [token async for token in MODEL_CLIENT.stream_tokens(request, timeout=timeout)]
     except ModelProviderError as err:
         status = f" (HTTP {err.status_code})" if err.status_code is not None else ""
-        raise HTTPException(status_code=502, detail=f"The {role} model failed{status}.") from err
+        reason = " ".join(str(err).split())[:300]
+        raise HTTPException(status_code=502, detail=f"The {role} model failed{status}: {reason}" if reason else f"The {role} model failed{status}.") from err
     content = "".join(parts)
     if not content.strip():
         raise ValueError(f"{role.capitalize()} model returned no JSON content")
@@ -111,6 +112,32 @@ async def _plan_json(model: str, prompt: str, *, timeout: aiohttp.ClientTimeout)
     if not steps:
         raise ValueError("Planner returned no usable plan steps")
     return parsed, steps
+
+
+_USER_WAIT = re.compile(
+    r"\b(clarif\w*|wait(ing)? for (the )?user|ask (the )?user|user (input|confirmation|feedback|answers?)|"
+    r"confirm with the user|questions? (for|to) the user|pending (user )?clarification)\b",
+    re.IGNORECASE,
+)
+
+
+def without_user_waits(items: list[str]) -> list[str]:
+    """Drops steps or checks that wait for the user or ask questions: the plan card asks them, and the run cannot
+    wait mid-way, so such a step can never finish (live run 2026-11-27: "Wait for user input to resolve
+    ambiguities", checked by "None pending user clarification"). Keeps the list when that would empty it."""
+    kept = [item for item in items if not _USER_WAIT.search(item or "")]
+    return kept or items
+
+
+async def image_engine_running() -> bool:
+    """Whether ComfyUI or Stable Diffusion WebUI answers locally (the image tool needs one)."""
+    try:
+        from projects.agent_tools.artifacts import image_backend_status
+
+        status = await image_backend_status()
+        return bool(status.get("available"))
+    except Exception:  # A failed probe never blocks planning; the tool reports a missing engine itself.
+        return True
 
 
 MAX_STEP_DETAILS = 5
@@ -404,6 +431,7 @@ async def plan(payload: PlanRequest):
     timeout = planning_timeout(payload.model_profiles, selected)
     try:
         parsed, plan_steps = await _plan_json(selected, prompt, timeout=timeout)
+        plan_steps = without_user_waits(plan_steps)
         task_brief = normalized_task_brief(
             parsed.get("task_brief"),
             original_request=task,
@@ -414,6 +442,7 @@ async def plan(payload: PlanRequest):
         async def generate_critic_json(messages: list[dict[str, str]]) -> dict:
             return await _request_model_json(selected, messages, timeout=timeout, role="critic", temperature=0)
 
+        task_brief["success_checks"] = without_user_waits(list(task_brief.get("success_checks") or []))
         reviewed = await review_plan(
             task=task,
             task_brief=task_brief,
@@ -481,7 +510,10 @@ async def plan_sequence(payload: SequencePlanRequest):
             )
     except ValueError as err:
         raise HTTPException(status_code=503, detail=str(err)) from err
-    tool_names = sorted(registered_tool_contracts())
+    # The image tool is offered only when a local image engine runs: a 27B plan's hero-image step failed
+    # three times with "No local image-generation engine is running" (live run 2026-11-27).
+    image_available = await image_engine_running()
+    tool_names = sorted(name for name in registered_tool_contracts() if image_available or name != "generate_local_image")
     prompt = build_sequence_plan_prompt(task, tool_names, payload.workspace_path, payload.permission_mode)
     timeout = planning_timeout(payload.model_profiles, planner_model)
     try:
@@ -496,7 +528,7 @@ async def plan_sequence(payload: SequencePlanRequest):
             detail=f"Planner returned unusable JSON for the sequence plan: {err}",
         ) from err
     try:
-        validated = validate_sequence_plan(repair_read_tools(repair_folder_writes(repair_artifact_tools(raw), task=task, folder_open=bool(payload.workspace_path), permission_mode=payload.permission_mode)), allowed_tools=set(tool_names))
+        validated = validate_sequence_plan(repair_read_tools(repair_folder_writes(repair_artifact_tools(repair_plan_mistakes(raw, task=task, folder_open=bool(payload.workspace_path), permission_mode=payload.permission_mode, image_available=image_available)), task=task, folder_open=bool(payload.workspace_path), permission_mode=payload.permission_mode)), allowed_tools=set(tool_names))
     except ValueError as err:
         fixup_prompt = build_sequence_plan_fixup_prompt(str(err), raw, tool_names)
         try:
@@ -509,7 +541,7 @@ async def plan_sequence(payload: SequencePlanRequest):
                 detail=f"Planner returned unusable JSON for the sequence plan: {retry_err}",
             ) from retry_err
         try:
-            validated = validate_sequence_plan(repair_read_tools(repair_folder_writes(repair_artifact_tools(raw_retry), task=task, folder_open=bool(payload.workspace_path), permission_mode=payload.permission_mode)), allowed_tools=set(tool_names))
+            validated = validate_sequence_plan(repair_read_tools(repair_folder_writes(repair_artifact_tools(repair_plan_mistakes(raw_retry, task=task, folder_open=bool(payload.workspace_path), permission_mode=payload.permission_mode, image_available=image_available)), task=task, folder_open=bool(payload.workspace_path), permission_mode=payload.permission_mode)), allowed_tools=set(tool_names))
         except ValueError as retry_err:
             raise HTTPException(
                 status_code=502,

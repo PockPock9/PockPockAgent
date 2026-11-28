@@ -95,6 +95,19 @@ class FileExistsTests(unittest.TestCase):
 
 
 class FileContainsTests(unittest.TestCase):
+    def test_an_html_tag_pattern_matches_the_tag_with_attributes(self):
+        # Runs 2026-11-27: "<html>" failed three times on a page that starts <html lang="en">.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "index.html").write_text('<!DOCTYPE html>\n<html lang="en">\n<body><nav class="top"></nav></body>\n</html>\n')
+            for pattern in ("<html>", "<NAV>", "<body>"):
+                result = verify_done_condition({"type": "file_contains", "path": "index.html", "pattern": pattern}, workspace=root, step_result=_result())
+                self.assertTrue(result["passed"], pattern)
+            missing = verify_done_condition({"type": "file_contains", "path": "index.html", "pattern": "<footer>"}, workspace=root, step_result=_result())
+            self.assertFalse(missing["passed"])
+            prefix = verify_done_condition({"type": "file_contains", "path": "index.html", "pattern": "<na>"}, workspace=root, step_result=_result())
+            self.assertFalse(prefix["passed"], "<na> must not match <nav")
+
     def test_passes_and_evidences_first_matching_line(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

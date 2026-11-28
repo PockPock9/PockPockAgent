@@ -10,7 +10,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import readline from 'node:readline'
-import { buildSubtaskMessage, cleanToolError, DEFAULT_STALL_SECONDS, explainTurnError, grantKey, isStalled, readsUntrustedContent, sanitizeToolOverrides, subtaskTimeoutSeconds, toolDetailFromStream, validateSubtask } from './turn_helpers.mjs'
+import { buildSubtaskMessage, cleanToolError, countFailedActions, DEFAULT_STALL_SECONDS, MAX_FAILED_ACTIONS_IN_A_ROW, explainTurnError, grantKey, isStalled, readsUntrustedContent, sanitizeToolOverrides, subtaskTimeoutSeconds, toolDetailFromStream, validateSubtask } from './turn_helpers.mjs'
 
 const DEBUG = process.env.POCKPOCK_OPENCLAW_DEBUG === '1'
 const STATE_DIR = process.env.OPENCLAW_STATE_DIR || path.join(os.homedir(), '.openclaw')
@@ -229,11 +229,14 @@ async function run(start) {
     }
     try { await gateway.call('chat.abort', runId ? { sessionKey, runId } : { sessionKey }, 5_000) } catch { /* The run may already be over. */ }
     if (reason === 'timeout') fail('timeout', `OpenClaw did not finish within ${timeoutSeconds} seconds, so the turn was stopped.`)
+    else if (reason === 'failing') fail('failing', `OpenClaw stopped after ${failedInARow} actions in a row failed (the last: ${lastFailedAction || 'a tool call'}). Look at the failed steps, then ask again with a clearer or smaller request, or a larger model.`)
     else if (reason === 'stalled') fail('stalled', `OpenClaw made no progress for ${Math.round(stallSeconds / 60)} minutes (no reply, tool activity or approval request), so the turn was stopped. Try again, or ask for a smaller step; a smaller model or a new chat can also help when the conversation is long.`)
     else finish({ type: 'error', code: 'aborted', message: 'The OpenClaw turn was stopped.' }, 0)
   }
 
   const heldTerminal = []
+  let failedInARow = 0
+  let lastFailedAction = ''
   let runKnown = false
   gateway.onEvent = (event, payload) => {
     debug('EVT', event, JSON.stringify(payload).slice(0, 1500))
@@ -286,6 +289,10 @@ async function run(start) {
         const detail = toolDetailFromStream(data)
         if (detail) emit(detail)
       }
+      if (payload.stream === 'item' && data.kind === 'tool' && !nested && data.phase === 'end') {
+        failedInARow = countFailedActions(failedInARow, String(data.status ?? ''))
+        if (failedInARow > 0) lastFailedAction = String(data.title ?? data.name ?? '').slice(0, 120)
+      }
       if (payload.stream === 'item' && data.kind === 'tool' && !nested && (data.phase === 'start' || data.phase === 'end')) {
         emit({
           type: 'tool',
@@ -296,6 +303,7 @@ async function run(start) {
           status: String(data.status ?? ''),
           error: cleanToolError(data.error),
         })
+        if (data.phase === 'end' && failedInARow >= MAX_FAILED_ACTIONS_IN_A_ROW) void abort('failing')
       }
       return
     }

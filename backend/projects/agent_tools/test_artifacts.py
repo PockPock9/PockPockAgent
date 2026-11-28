@@ -47,8 +47,14 @@ class ArtifactToolTests(unittest.TestCase):
                 artifact = save_text_artifact(context, "summary.md", "# Result")
                 self.assertEqual(Path(artifact["path"]).parent, output_dir)
                 self.assertEqual(Path(artifact["path"]).read_text(encoding="utf-8"), "# Result")
+                # The task may replace a file it saved itself (a retry fixing its own output) ...
+                replaced = save_text_artifact(context, "summary.md", "replacement")
+                self.assertEqual(Path(replaced["path"]).read_text(encoding="utf-8"), "replacement")
+                self.assertEqual(len(context.artifacts), 1, "a replaced file is listed once")
+                # ... but never a file it did not create.
+                (output_dir / "existing.md").write_text("keep", encoding="utf-8")
                 with self.assertRaises(AgentToolError):
-                    save_text_artifact(context, "summary.md", "replacement")
+                    save_text_artifact(context, "existing.md", "replacement")
                 with self.assertRaises(AgentToolError):
                     save_text_artifact(context, "..\\outside.md", "outside")
 

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildSubtaskMessage, cleanToolError, explainTurnError, grantKey, isStalled, readsUntrustedContent, toolDetailFromStream, sanitizeToolOverrides, subtaskTimeoutSeconds, validateSubtask, DEFAULT_STALL_SECONDS, OLLAMA_TIMEOUT_KEY } from './turn_helpers.mjs'
+import { buildSubtaskMessage, cleanToolError, countFailedActions, MAX_FAILED_ACTIONS_IN_A_ROW, explainTurnError, grantKey, isStalled, readsUntrustedContent, toolDetailFromStream, sanitizeToolOverrides, subtaskTimeoutSeconds, validateSubtask, DEFAULT_STALL_SECONDS, OLLAMA_TIMEOUT_KEY } from './turn_helpers.mjs'
 
 test('a turn is stalled only after the limit with no approval waiting', () => {
   const stallMs = DEFAULT_STALL_SECONDS * 1000
@@ -127,4 +127,13 @@ test('a tool call becomes a detail: the command, inputs without secrets or bulk 
   assert.deepEqual(result, { type: 'tool_detail', id: 'c1', name: 'exec', output: '1 test failed', exitCode: 1, durationMs: 2346, cwd: 'C:/work', failed: true })
   assert.equal(toolDetailFromStream({ phase: 'update', name: 'exec', toolCallId: 'c1' }), null)
   assert.equal(toolDetailFromStream({ phase: 'start', name: 'exec' }), null)
+})
+
+test('failed actions in a row are counted, and a working action resets the count', () => {
+  let count = 0
+  for (const status of ['failed', 'blocked', 'failed']) count = countFailedActions(count, status)
+  assert.equal(count, 3)
+  assert.equal(countFailedActions(count, 'running'), 3, 'a start or an unknown status changes nothing')
+  assert.equal(countFailedActions(count, 'completed'), 0)
+  assert.ok(MAX_FAILED_ACTIONS_IN_A_ROW >= 5 && MAX_FAILED_ACTIONS_IN_A_ROW <= 8)
 })

@@ -78,6 +78,8 @@ _PROJECT_EXTENSIONS = {
     ".bat", ".cjs", ".cmd", ".conf", ".css", ".example", ".gitignore", ".html", ".ini",
     ".js", ".json", ".jsx", ".md", ".mjs", ".ps1", ".py", ".sh", ".sql",
     ".toml", ".ts", ".tsx", ".txt", ".xml", ".yaml", ".yml",
+    # Plain data files (a sales.csv could not be read, live run 2026-11-27).
+    ".csv", ".tsv", ".log", ".htm", ".svg", ".env.example",
 }
 
 # One read covers a typical source file (a 455-line stylesheet took three 160-line reads, and the
@@ -92,7 +94,10 @@ _PROJECT_SEARCH_MAX_MATCHES = 40
 
 _PROJECT_SEARCH_MAX_LINE_CHARS = 240
 
-_PROJECT_PATCH_LIMIT = 5
+# File changes one task may propose. 5 made a website that needs more files impossible to finish (live
+# run 2026-11-27: step 4 of 9 refused with "at most 5 file changes"); 30 still bounds a runaway task, and
+# in Auto-review every change still waits for approval.
+_PROJECT_PATCH_LIMIT = 30
 
 _PROJECT_PATCH_TTL = 30 * 60
 

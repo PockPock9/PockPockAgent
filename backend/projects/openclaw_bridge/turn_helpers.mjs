@@ -6,6 +6,20 @@
  * a big prompt on the CPU; far shorter than the 30-minute turn timeout. */
 export const DEFAULT_STALL_SECONDS = 480
 
+/**
+ * Failed or blocked actions in a row after which a turn is stopped. In two owner chats (2026-11-22) a
+ * small model tried one invented plugin name after another, 10 and 11 failed actions, and then reported
+ * it had finished. A working action resets the count.
+ */
+export const MAX_FAILED_ACTIONS_IN_A_ROW = 6
+
+/** Counts failed actions in a row from tool item ends; returns the count after this action. */
+export function countFailedActions(previous, status) {
+  if (status === 'failed' || status === 'blocked') return previous + 1
+  if (status === 'completed') return 0
+  return previous
+}
+
 /** True when the turn has made no progress for longer than `stallMs`. Time spent waiting for the
  * user to answer an approval never counts: that is the user's wait, not a hang. */
 export function isStalled({ now, lastActivity, pendingApprovals, stallMs }) {

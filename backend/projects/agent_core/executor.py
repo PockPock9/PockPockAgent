@@ -128,8 +128,21 @@ def tool_call_budget(plan_steps: int) -> int:
     return min(MAX_TOOL_CALLS, BASE_TOOL_CALLS + TOOL_CALLS_PER_EXTRA_STEP * max(0, plan_steps - 3))
 
 
+def names_folder_file(request: str, folder: Path | None) -> bool:
+    """Whether the request names a file that is in the open folder ("Turn resume.txt into resume.html")."""
+    if folder is None:
+        return False
+    for name in re.findall(r"[\w.-]+\.[A-Za-z0-9]{1,5}\b", request or ""):
+        try:
+            if (folder / name).is_file():
+                return True
+        except (OSError, ValueError):
+            continue
+    return False
+
+
 def effective_task_capabilities(
-    planned: list[str], *, requires_tool: bool, has_files: bool, own_task_folder: bool = False
+    planned: list[str], *, requires_tool: bool, has_files: bool, own_task_folder: bool = False, reads_folder_file: bool = False
 ) -> list[str]:
     """The planned capabilities, plus low-risk ones a tool-requiring task cannot run without.
 
@@ -148,6 +161,10 @@ def effective_task_capabilities(
     # created. Reading it lets the agent check what it saved; without it a plan check such as "read
     # the file back" could only end INCOMPLETE (R&D validation 2026-11-21).
     if own_task_folder and "artifact_creation" in capabilities and "workspace_read" not in capabilities:
+        capabilities.append("workspace_read")
+    # The request names a file in the open folder: reading the folder is needed even when the planner called
+    # the file "attached" (live run 2026-11-27: resume.txt could not be read, the run had no folder tools).
+    if reads_folder_file and "workspace_read" not in capabilities:
         capabilities.append("workspace_read")
     return capabilities
 
@@ -1265,6 +1282,7 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                     requires_tool=requires_tool,
                     has_files=bool(payload.files),
                     own_task_folder=workspace_root is None,
+                    reads_folder_file=names_folder_file(payload.source_task or payload.task, workspace_root),
                 )
                 needs_no_tools = not task_capabilities and not payload.files
                 if needs_no_tools:
@@ -2094,6 +2112,15 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                             yield sse({"type": "error", "message": tool_limit_message, "status": "partial"})
                             return
                         call_count += 1
+                        # A model that reads a file of the open folder with the attachment tool ("the attached
+                        # resume.txt") gets the folder's file instead of "No file is attached" (live run 2026-11-27).
+                        if (
+                            name == "read_selected_file" and project_context is not None and "read_project_file" in tool_contracts
+                            and isinstance(arguments, dict) and isinstance(arguments.get("name"), str)
+                            and arguments["name"] not in context.attachments
+                            and (project_context.project_root / arguments["name"]).is_file()
+                        ):
+                            name, arguments = "read_project_file", {"path": arguments["name"]}
                         contract = tool_contracts.get(name)
                         safe_arguments = {str(key): ("[redacted]" if name == "browser_action" and key == "value" else str(value)[:400] + ("…" if len(str(value)) > 400 else "")) for key, value in arguments.items() if key not in {"content", "text", "data"}} if isinstance(arguments, dict) else {}
                         yield sse({"type": "tool_start", "contract_version": 1, "call_id": call_id, "tool": name, "message": f"Running {name.replace('_', ' ')}", "input": safe_arguments, "contract": contract.as_dict() if contract else None})

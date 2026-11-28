@@ -59,6 +59,12 @@ logger = logging.getLogger(__name__)
 
 __all__ = ["SequenceRunner", "build_step_prompt"]
 
+#: The least time a step gets, whatever the plan says: a local model writing a file needs more than a
+#: minute, and a planner's 60 s made step 1 time out three times (run 2026-11-27).
+MIN_STEP_SECONDS = 180
+#: Extra time for the first step: the executor may have to load (after a large planner was unloaded).
+FIRST_STEP_LOAD_SECONDS = 120
+
 #: Executor turns in one attempt at a step (a step may need to read before it writes).
 MAX_TURNS_PER_ATTEMPT = 3
 
@@ -138,6 +144,18 @@ def retry_instruction(step: dict, detail: str) -> str:
             f'{path_key} "{condition["path"]}" and {content_key} set to the complete file. '
             "Do not answer with the file as text: only a tool call saves it."
         )
+    if (
+        isinstance(condition, dict) and condition.get("type") == "file_contains" and isinstance(condition.get("path"), str)
+        and isinstance(condition.get("pattern"), str) and tool and "does not contain" in detail
+    ):
+        # The file exists but lacks the checked text: say the exact text to include (a summary without the
+        # word "key" failed three times on "Fix only that", live run 2026-11-27).
+        path_key, content_key = _WRITE_TOOL_ARGS[tool]
+        return (
+            f"\n\nThe previous attempt failed: {detail}. Save {condition['path']} again with {tool} "
+            f'({path_key} "{condition["path"]}"), with {content_key} set to the complete file, and make sure it '
+            f'contains the exact text "{condition["pattern"][:80]}".'
+        )
     return f"\n\nThe previous attempt failed: {detail}. Fix only that."
 
 
@@ -168,6 +186,29 @@ def _one_line(spec: dict) -> str:
         param_names = f" Params: {param_names}."
     first_line = str(description).splitlines()[0] if description else ""
     return f"- {name}: {first_line}{param_names}"
+
+
+def step_must_write(step: dict) -> bool:
+    """A step whose only check is "no error" but which may write a file is meant to change something."""
+    condition = step.get("done_condition") if isinstance(step, dict) else None
+    tools = set(step.get("tools_allowed") or []) if isinstance(step, dict) else set()
+    return isinstance(condition, dict) and condition.get("type") == "no_error" and bool(tools & FILE_WRITING_TOOLS - {"generate_local_image"})
+
+
+def wrote_something(step_result: dict) -> bool:
+    return any(call.get("ok") and call.get("tool") in FILE_WRITING_TOOLS for call in step_result.get("tool_calls", []) if isinstance(call, dict))
+
+
+def describe_done_condition(condition: object) -> str:
+    """The step's check in words, for its prompt ("the file menu.txt exists")."""
+    if not isinstance(condition, dict):
+        return ""
+    kind, path, pattern = condition.get("type"), condition.get("path"), condition.get("pattern")
+    if kind == "file_exists" and isinstance(path, str) and path:
+        return f"the file {path} exists"
+    if kind == "file_contains" and isinstance(path, str) and path and isinstance(pattern, str) and pattern:
+        return f"the file {path} exists and contains \"{pattern[:80]}\""
+    return ""
 
 
 def build_step_prompt(
@@ -208,6 +249,11 @@ def build_step_prompt(
         lines.append(json.dumps(spec, sort_keys=True))
         lines.append("```")
     lines.append("")
+    done_when = describe_done_condition(step.get("done_condition") if isinstance(step, dict) else None)
+    if done_when:
+        # Say what the step is checked against: a model told "write the menu" wrote menu.md while the
+        # check wanted menu.txt, and the step failed (live run 2026-11-27).
+        lines.append(f"This step is done when {done_when}. Use exactly that file name.")
     lines.append("Call the tools needed for this step, then stop. Do not do work for other steps.")
     return "\n".join(lines)
 
@@ -596,6 +642,7 @@ class SequenceRunner:
             call_arguments: list[dict] = []
             while attempts <= MAX_STEP_RETRIES:
                 attempts += 1
+                step_seconds = max(int(step["budget_seconds"]), MIN_STEP_SECONDS) + (FIRST_STEP_LOAD_SECONDS if index == 0 and attempts == 1 else 0)
                 if attempts == 1:
                     attempt_prompt = prompt
                 else:
@@ -615,10 +662,10 @@ class SequenceRunner:
                                 condition, workspace=workspace, step_result=result, artifact_dir=artifact_dir,
                             )["passed"],
                         ),
-                        step["budget_seconds"],
+                        step_seconds,
                     )
                 except asyncio.TimeoutError:
-                    last_detail = f"step timed out after {step['budget_seconds']} seconds"
+                    last_detail = f"step timed out after {step_seconds} seconds"
                     last_evidence = ""
                     step_result = {"tool_calls": [], "values": {}, "errors": [last_detail]}
                     call_arguments = []
@@ -633,6 +680,10 @@ class SequenceRunner:
                     verification = verify_done_condition(
                         step["done_condition"], workspace=workspace, step_result=step_result, artifact_dir=artifact_dir
                     )
+                    # A step meant to change files ("fix the code") that changed none has not done its work, even
+                    # if nothing errored: it passed with only a read while the bug stayed (live run 2026-11-27).
+                    if verification["passed"] and step_must_write(step) and not wrote_something(step_result):
+                        verification = {"passed": False, "evidence": "", "detail": "the step changed no file"}
                     last_detail = verification["detail"]
                     last_evidence = verification["evidence"]
                 await self._emit(self._event(

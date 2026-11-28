@@ -13,6 +13,7 @@ condition, path, or step result is reported as ``passed=False`` with a
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -98,11 +99,16 @@ def verify_done_condition(
         if not roots:
             return _verify(condition, workspace=None, step_result=step_result)
         result: dict = {}
+        best: dict = {}
         for root in dict.fromkeys(Path(item).resolve() for item in roots):
             result = _verify(condition, workspace=root, step_result=step_result)
             if result.get("passed"):
                 return result
-        return result
+            # Report the folder where the file is ("does not contain ...") rather than another folder's
+            # "file does not exist" (resume.txt existed but the check said it did not, 2026-11-27).
+            if not best or (str(best.get("detail", "")).startswith("file does not exist") and not str(result.get("detail", "")).startswith("file does not exist")):
+                best = result
+        return best or result
     except Exception as exc:  # Defensive: the verifier must never raise.
         return _fail(f"verifier error: {exc}")
 
@@ -145,13 +151,29 @@ def _verify(condition: Any, *, workspace: Path | None, step_result: dict | None)
         # Case is ignored: the planner writes the pattern before the text exists, and a step that wrote
         # "Release date: Friday" for the pattern "release date" did the work (live validation 2026-11-22).
         wanted = pattern.casefold()
+        # A pattern that is one HTML opening tag ("<html>", "<nav>") also matches the tag with attributes
+        # (<html lang="en">): a page written correctly failed its check three times (runs 2026-11-27).
+        tag = re.fullmatch(r"<([a-z][a-z0-9-]*)>", wanted.strip())
+        tag_re = re.compile(rf"<{re.escape(tag.group(1))}[\s>/]", re.IGNORECASE) if tag else None
         for line in text.splitlines():
-            if wanted in line.casefold():
+            if wanted in line.casefold() or (tag_re is not None and tag_re.search(line)):
                 return {
                     "passed": True,
                     "evidence": line[:200],
                     "detail": f"file contains pattern: {path}",
                 }
+        # A planner writes the pattern before the file exists and often lists what should be in it
+        # ("home menu about contact", "<html><head><body>"). Such a pattern passes when every tag, or
+        # every word of 3+ letters, is somewhere in the file (live runs 2026-11-27).
+        parts = re.findall(r"<[a-z][a-z0-9-]*>", wanted) or [word for word in re.findall(r"[^\W_]{3,}", wanted)]
+        if len(parts) > 1:
+            lowered = text.casefold()
+            missing = [part for part in parts if not (
+                re.search(rf"<{re.escape(part[1:-1])}[\s>/]", lowered) if part.startswith("<") else re.search(rf"\b{re.escape(part)}", lowered)
+            )]
+            if not missing:
+                return {"passed": True, "evidence": f"contains {', '.join(parts)}"[:200], "detail": f"file contains every part of the pattern: {path}"}
+            return _fail(f"{path} does not contain {', '.join(f'“{part}”' for part in missing[:5])}")
         return _fail(f"{path} does not contain “{pattern[:80]}”")
 
     if cond_type == "command_exit_0":

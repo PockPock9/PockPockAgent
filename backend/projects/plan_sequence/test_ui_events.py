@@ -43,11 +43,15 @@ class FolderWriteTests(unittest.TestCase):
         plan = repair_folder_writes(self.plan(), task="Write summary.md in this folder", folder_open=True, permission_mode="auto-review")
         self.assertEqual(plan["steps"][1]["tools_allowed"], ["propose_project_patch"])
 
-    def test_left_alone_without_a_folder_in_default_mode_or_when_not_asked(self):
+    def test_left_alone_without_a_folder_or_in_default_mode(self):
         for kwargs in ({"task": "Write summary.md in this folder", "folder_open": False, "permission_mode": "auto-review"},
-                       {"task": "Write summary.md in this folder", "folder_open": True, "permission_mode": "default"},
-                       {"task": "Write a summary of notes.md", "folder_open": True, "permission_mode": "auto-review"}):
+                       {"task": "Write summary.md in this folder", "folder_open": True, "permission_mode": "default"}):
             self.assertEqual(repair_folder_writes(self.plan(), **kwargs)["steps"][1]["tools_allowed"], ["save_text_artifact"], kwargs)
+
+    def test_an_open_folder_is_written_to_even_when_the_request_does_not_name_it(self):
+        # The user chose Work in <folder>; a website asked for without "in this folder" belongs there too (runs 2026-11-27).
+        plan = repair_folder_writes(self.plan(), task="Build a website for my restaurant", folder_open=True, permission_mode="auto-review")
+        self.assertEqual(plan["steps"][1]["tools_allowed"], ["propose_project_patch"])
 
 
 class EventTests(unittest.TestCase):
