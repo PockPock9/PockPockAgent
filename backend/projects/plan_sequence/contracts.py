@@ -45,6 +45,12 @@ SEQUENCE_CONTRACT_VERSION = 1
 
 #: The original request is always available to every step under this key.
 TASK_INPUT_KEY = "task"
+#: A step whose only tool is this is carried out by the OpenClaw agent (shell, browser, apps, skills, MCP)
+#: instead of the step model; its done-condition is still verified in code. Not an agent tool: the runner
+#: hands the step to its ``delegate``. The planner offers it only when OpenClaw is available.
+OPENCLAW_STEP_TOOL = "openclaw_agent"
+_CONDITION_FIELDS = {"type", "path", "pattern", "field", "expected"}
+_EXPECTS_FAILURE = re.compile(r"\b(?:fail(?:s|ing|ure|ures)?|reproduce|see the (?:error|bug)|confirm the (?:bug|error))\b(?!.*\b(?:now pass|pass(?:es)? now|all (?:tests )?pass|verify (?:that )?(?:all )?(?:tests )?pass))", re.I)
 
 
 def _present(value: str | None) -> bool:
@@ -211,9 +217,9 @@ class SequenceRunResult(BaseModel):
 
 
 # Which artifact tool can write a file of each kind. save_text_artifact writes the text and code files
-# in TEXT_ARTIFACT_EXTENSIONS; create_office_document writes .docx/.xlsx/.pptx.
+# in TEXT_ARTIFACT_EXTENSIONS; create_office_document writes .docx/.pdf/.xlsx/.pptx.
 _TEXT_EXTENSIONS = TEXT_ARTIFACT_EXTENSIONS
-_OFFICE_EXTENSIONS = {".docx", ".xlsx", ".pptx"}
+_OFFICE_EXTENSIONS = {".docx", ".pdf", ".xlsx", ".pptx"}
 
 
 def repair_artifact_tools(raw: object) -> object:
@@ -235,9 +241,29 @@ def repair_artifact_tools(raw: object) -> object:
         tools = step["tools_allowed"]
         if extension in _TEXT_EXTENSIONS and "create_office_document" in tools and "save_text_artifact" not in tools:
             step["tools_allowed"] = ["save_text_artifact" if tool == "create_office_document" else tool for tool in tools]
-        elif extension in _OFFICE_EXTENSIONS and "save_text_artifact" in tools and "create_office_document" not in tools:
-            step["tools_allowed"] = ["create_office_document" if tool == "save_text_artifact" else tool for tool in tools]
+        elif extension in _OFFICE_EXTENSIONS and "create_office_document" not in tools and _TEXT_WRITERS & set(tools):
+            # Only create_office_document writes Word, PDF, Excel and PowerPoint files. A "convert to PDF" step
+            # given propose_project_patch failed three times with "file does not exist: resume.pdf" (scenario
+            # run 2026-11-28): the text writers swap for it.
+            swapped, kept = False, []
+            for tool in tools:
+                if tool in _TEXT_WRITERS:
+                    if not swapped:
+                        kept.append("create_office_document")
+                        swapped = True
+                else:
+                    kept.append(tool)
+            step["tools_allowed"] = kept
     return raw
+
+
+_TEXT_WRITERS = {"save_text_artifact", "propose_project_patch", "propose_project_edit"}
+
+
+def _office_step(step: dict) -> bool:
+    condition = step.get("done_condition") if isinstance(step.get("done_condition"), dict) else {}
+    path = str(condition.get("path") or "").lower()
+    return "." in path and path[path.rfind("."):] in _OFFICE_EXTENSIONS
 
 
 _READ_TOOLS = ("read_project_file", "read_selected_file", "scrape_public_page", "search_project")
@@ -288,6 +314,75 @@ _HOST = re.compile(r"\b(?:https?://)?((?:[a-z0-9-]+\.)+([a-z]{2,24}))\b", re.IGN
 def names_a_website(task: str) -> bool:
     """Whether the request names a website: a URL or a host name (not a file name such as notes.md)."""
     return any(match.group(2).lower() not in _FILE_SUFFIXES for match in _HOST.finditer(task or ""))
+
+
+_FORMAT_WORDS = (
+    (".pdf", re.compile(r"\bpdf\b", re.I)),
+    (".docx", re.compile(r"\b(?:word|docx)\b", re.I)),
+    (".xlsx", re.compile(r"\b(?:excel|xlsx|spreadsheet|workbook)\b", re.I)),
+    (".pptx", re.compile(r"\b(?:powerpoint|pptx|slides?|slide deck|presentation)\b", re.I)),
+)
+_FOLDER_READ_TOOLS = {"read_project_file", "search_project", "list_project_files"}
+
+
+def _step_path(step: dict) -> str:
+    condition = step.get("done_condition") if isinstance(step.get("done_condition"), dict) else {}
+    return condition.get("path") if isinstance(condition.get("path"), str) else ""
+
+
+def repair_requested_formats(raw: object, *, task: str) -> object:
+    """Make the document steps produce the formats the request asks for.
+
+    Asked for "a PDF report from sales.csv", a planner wrote a step for sales_report.docx; the run passed
+    and no PDF existed (scenario run 2026-11-28). A requested format that no step produces takes over a
+    document step whose format was not asked for.
+    """
+    if not isinstance(raw, dict) or not isinstance(raw.get("steps"), list):
+        return raw
+    requested = [ext for ext, pattern in _FORMAT_WORDS if pattern.search(task)]
+    if not requested:
+        return raw
+    office_steps = [s for s in raw["steps"] if isinstance(s, dict) and _step_path(s).lower().endswith(tuple(_OFFICE_EXTENSIONS))]
+    produced = {_step_path(s).lower()[_step_path(s).rfind("."):] for s in office_steps}
+    for ext in requested:
+        if ext in produced:
+            continue
+        spare = next((s for s in office_steps if _step_path(s).lower()[_step_path(s).rfind("."):] not in requested), None)
+        if spare is None:
+            continue
+        old_path = _step_path(spare)
+        new_path = old_path[:old_path.rfind(".")] + ext
+        spare["done_condition"]["path"] = new_path
+        if isinstance(spare.get("goal"), str):
+            spare["goal"] = spare["goal"].replace(old_path, new_path)
+        produced.discard(old_path.lower()[old_path.rfind("."):])
+        produced.add(ext)
+    return raw
+
+
+def repair_empty_folder(raw: object, *, folder_has_files: bool | None) -> object:
+    """Leave out steps that only read or search the open folder when it has no files.
+
+    In an empty folder a planner added "search for safety guidelines" and "read the found documents"
+    steps; they failed three times with "The requested project file does not exist" and the run never
+    reached the slides (scenario run 2026-11-28). A plan keeps at least two steps.
+    """
+    if folder_has_files is not False or not isinstance(raw, dict) or not isinstance(raw.get("steps"), list):
+        return raw
+    steps = [s for s in raw["steps"] if isinstance(s, dict)]
+    reading = {s.get("id") for s in steps if s.get("tools_allowed") and set(s["tools_allowed"]) <= _FOLDER_READ_TOOLS}
+    kept = [s for s in steps if s.get("id") not in reading]
+    if not reading or len(kept) < MIN_STEPS:
+        return raw
+    for step in kept:
+        if isinstance(step.get("inputs"), list):
+            step["inputs"] = [item for item in step["inputs"] if item not in reading] or ["task"]
+        # A writer that was also told to re-read the (missing) sources keeps only its writing tools.
+        tools = step.get("tools_allowed") or []
+        if any(tool not in _FOLDER_READ_TOOLS for tool in tools):
+            step["tools_allowed"] = [tool for tool in tools if tool not in ("read_project_file", "search_project")] or tools
+    raw["steps"] = kept
+    return raw
 
 
 def repair_plan_mistakes(raw: object, *, task: str, folder_open: bool, permission_mode: str, image_available: bool = True) -> object:
@@ -368,7 +463,7 @@ def repair_folder_writes(raw: object, *, task: str, folder_open: bool, permissio
     if not isinstance(raw, dict) or not isinstance(raw.get("steps"), list):
         return raw
     for step in raw["steps"]:
-        if isinstance(step, dict) and isinstance(step.get("tools_allowed"), list) and "save_text_artifact" in step["tools_allowed"]:
+        if isinstance(step, dict) and isinstance(step.get("tools_allowed"), list) and "save_text_artifact" in step["tools_allowed"] and not _office_step(step):
             step["tools_allowed"] = ["propose_project_patch" if tool == "save_text_artifact" else tool for tool in step["tools_allowed"]]
     return raw
 
@@ -382,7 +477,20 @@ def validate_sequence_plan(raw: object, *, allowed_tools: set[str] | None = None
     id, invalid done-condition, or a dangling input.
     """
     if allowed_tools is None:
-        allowed_tools = set(registered_tool_contracts())
+        allowed_tools = set(registered_tool_contracts()) | {OPENCLAW_STEP_TOOL}
+    if isinstance(raw, dict) and isinstance(raw.get("steps"), list):
+        for step in raw["steps"]:
+            # OpenClaw does the whole step with its own tools, so it is the step's only tool.
+            if isinstance(step, dict) and isinstance(step.get("tools_allowed"), list) and OPENCLAW_STEP_TOOL in step["tools_allowed"]:
+                step["tools_allowed"] = [OPENCLAW_STEP_TOOL]
+            # Fields a check does not have are dropped instead of rejecting the plan: a planner gave a
+            # "command exits 0" check a "command" field and the whole plan failed (2026-11-28).
+            if isinstance(step, dict) and isinstance(step.get("done_condition"), dict):
+                step["done_condition"] = {key: value for key, value in step["done_condition"].items() if key in _CONDITION_FIELDS}
+                # "Run the tests to capture the current failure" checked by "exits 0" could pass only by fixing
+                # the bug early (live run 2026-11-28): a step that expects a failure is checked by "no error".
+                if step["done_condition"].get("type") == "command_exit_0" and _EXPECTS_FAILURE.search(str(step.get("goal", ""))):
+                    step["done_condition"] = {"type": "no_error"}
     try:
         plan = SequencePlan.model_validate(raw)
     except ValidationError as exc:

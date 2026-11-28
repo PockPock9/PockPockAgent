@@ -20,7 +20,7 @@ from planner.contracts import normalized_plan_steps, normalized_subtask_plan, no
 from planner.routing import choose_candidate
 from projects.agent_tools import registered_tool_contracts
 from projects.model_router import ChatCompletionRequest, ModelProviderError, OllamaChatCompletionAdapter
-from projects.plan_sequence.contracts import SEQUENCE_CONTRACT_VERSION, repair_artifact_tools, repair_folder_writes, repair_plan_mistakes, repair_read_tools, validate_sequence_plan
+from projects.plan_sequence.contracts import OPENCLAW_STEP_TOOL, SEQUENCE_CONTRACT_VERSION, repair_artifact_tools, repair_empty_folder, repair_folder_writes, repair_plan_mistakes, repair_requested_formats, repair_read_tools, validate_sequence_plan
 from projects.plan_sequence.routing import choose_executor_model, choose_planner_model
 from projects.model_router.cloud import OpenAICompatibleAdapter, RoutingChatCompletionProvider
 
@@ -129,6 +129,19 @@ def without_user_waits(items: list[str]) -> list[str]:
     return kept or items
 
 
+def open_folder_has_files(workspace_path: str | None) -> bool | None:
+    """Whether the open folder holds any file (None when no folder is open or it cannot be read)."""
+    if not workspace_path:
+        return None
+    try:
+        for path in Path(workspace_path).rglob("*"):
+            if path.is_file() and not any(part.startswith(".") for part in path.relative_to(workspace_path).parts):
+                return True
+        return False
+    except OSError:
+        return None
+
+
 async def image_engine_running() -> bool:
     """Whether ComfyUI or Stable Diffusion WebUI answers locally (the image tool needs one)."""
     try:
@@ -231,6 +244,9 @@ class SequencePlanRequest(BaseModel):
     planner_model: str | None = Field(default=None, max_length=120)
     # The model the user chose for the steps (the composer's model); used when it is available.
     executor_model: str | None = Field(default=None, max_length=120)
+    # The gateway sets this when the OpenClaw agent can run steps (installed, and the permission allows
+    # changing things): the planner may then give a step the openclaw_agent tool.
+    openclaw_available: bool = False
 
     @field_validator("task")
     @classmethod
@@ -267,7 +283,7 @@ def build_execution_prompt(task: str, plan: list[str], model_prompt: object) -> 
     )[:4_000]
 
 
-def build_sequence_plan_prompt(task: str, tool_names: list[str], workspace_path: str | None, permission_mode: str) -> str:
+def build_sequence_plan_prompt(task: str, tool_names: list[str], workspace_path: str | None, permission_mode: str, openclaw: bool = False) -> str:
     """Ask the planner model for a validated sequence plan (Plan-and-Sequence P3)."""
     tools = ", ".join(tool_names)
     return (
@@ -282,12 +298,23 @@ def build_sequence_plan_prompt(task: str, tool_names: list[str], workspace_path:
         f"{tools}. "
         "Use no other tool names: the plan is validated and rejected if a step names a tool that does not exist. "
         "To create a .txt, .md, .csv, .json or .html file use save_text_artifact; create_office_document makes only "
-        ".docx, .xlsx and .pptx files. Those two save into the task's own output folder. "
+        ".docx, .pdf, .xlsx and .pptx files (one file per call: a Word and a PDF version are two calls, each written from the content; there is no converter, so a PDF step uses create_office_document with kind pdf). Those two save into the task's own output folder. "
         + (
             "A folder is open: to create or change a file in that folder (for example when the request says 'in this folder'), "
             "use propose_project_patch with the path relative to it; the change is shown to the user for approval. "
             if workspace_path else ""
         )
+        + (
+            "openclaw_agent hands a whole step to the OpenClaw agent, which can run any shell command, install packages, "
+            "use a real browser (sign in, click, fill forms), open apps and use the user's accounts. Use it as a step's only tool, "
+            "and only for a step the other tools cannot do: running or building a project (npm install, flutter create, pytest), "
+            "installing tools, or acting in a browser or app. Writing, reading and editing files never need it. Give it a concrete "
+            "done_condition (a file it must create, or a command that must exit 0), because its result is checked like any step. "
+            "A step that runs tests only to see them fail is checked with no_error, never command_exit_0. "
+            if openclaw else ""
+        )
+        + "A file_contains pattern is text the finished file really contains (a function name, a heading, a value), "
+        "never a marker such as FIXED or DONE that only exists to pass the check. "
         + "Each step's model sees only a short summary of earlier steps, not their full output, so a step that writes "
         "something based on what an earlier step read must also list that reading tool (for example read_project_file) "
         "to read the source again. "
@@ -513,8 +540,12 @@ async def plan_sequence(payload: SequencePlanRequest):
     # The image tool is offered only when a local image engine runs: a 27B plan's hero-image step failed
     # three times with "No local image-generation engine is running" (live run 2026-11-27).
     image_available = await image_engine_running()
+    folder_has_files = open_folder_has_files(payload.workspace_path)
     tool_names = sorted(name for name in registered_tool_contracts() if image_available or name != "generate_local_image")
-    prompt = build_sequence_plan_prompt(task, tool_names, payload.workspace_path, payload.permission_mode)
+    openclaw = payload.openclaw_available and payload.permission_mode != "default"
+    if openclaw:
+        tool_names.append(OPENCLAW_STEP_TOOL)
+    prompt = build_sequence_plan_prompt(task, tool_names, payload.workspace_path, payload.permission_mode, openclaw=openclaw)
     timeout = planning_timeout(payload.model_profiles, planner_model)
     try:
         raw = await _request_sequence_plan_json(
@@ -528,7 +559,7 @@ async def plan_sequence(payload: SequencePlanRequest):
             detail=f"Planner returned unusable JSON for the sequence plan: {err}",
         ) from err
     try:
-        validated = validate_sequence_plan(repair_read_tools(repair_folder_writes(repair_artifact_tools(repair_plan_mistakes(raw, task=task, folder_open=bool(payload.workspace_path), permission_mode=payload.permission_mode, image_available=image_available)), task=task, folder_open=bool(payload.workspace_path), permission_mode=payload.permission_mode)), allowed_tools=set(tool_names))
+        validated = validate_sequence_plan(repair_read_tools(repair_folder_writes(repair_artifact_tools(repair_requested_formats(repair_empty_folder(repair_plan_mistakes(raw, task=task, folder_open=bool(payload.workspace_path), permission_mode=payload.permission_mode, image_available=image_available), folder_has_files=folder_has_files), task=task)), task=task, folder_open=bool(payload.workspace_path), permission_mode=payload.permission_mode)), allowed_tools=set(tool_names))
     except ValueError as err:
         fixup_prompt = build_sequence_plan_fixup_prompt(str(err), raw, tool_names)
         try:
@@ -541,7 +572,7 @@ async def plan_sequence(payload: SequencePlanRequest):
                 detail=f"Planner returned unusable JSON for the sequence plan: {retry_err}",
             ) from retry_err
         try:
-            validated = validate_sequence_plan(repair_read_tools(repair_folder_writes(repair_artifact_tools(repair_plan_mistakes(raw_retry, task=task, folder_open=bool(payload.workspace_path), permission_mode=payload.permission_mode, image_available=image_available)), task=task, folder_open=bool(payload.workspace_path), permission_mode=payload.permission_mode)), allowed_tools=set(tool_names))
+            validated = validate_sequence_plan(repair_read_tools(repair_folder_writes(repair_artifact_tools(repair_requested_formats(repair_empty_folder(repair_plan_mistakes(raw_retry, task=task, folder_open=bool(payload.workspace_path), permission_mode=payload.permission_mode, image_available=image_available), folder_has_files=folder_has_files), task=task)), task=task, folder_open=bool(payload.workspace_path), permission_mode=payload.permission_mode)), allowed_tools=set(tool_names))
         except ValueError as retry_err:
             raise HTTPException(
                 status_code=502,

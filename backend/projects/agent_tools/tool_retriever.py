@@ -201,6 +201,8 @@ EXAMPLE_PHRASES: dict[str, list[str]] = {
     ],
     "create_office_document": [
         "make a Word document of this report",
+        "save this as a PDF",
+        "make a PDF invoice or resume",
         "create a spreadsheet with these numbers",
         "build a PowerPoint presentation from this outline",
         "make an Excel workbook of the budget",

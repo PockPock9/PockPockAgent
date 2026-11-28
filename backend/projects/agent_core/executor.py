@@ -378,7 +378,7 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
             r"generate (?:an? )?(?:image|picture|illustration)|"
             r"(?:create|make|write|save|export|build|generate)\b.{0,80}\b"
             r"(?:file|document|report|spreadsheet|workbook|presentation|slides|"
-            r"\.docx|\.xlsx|\.pptx|\.md|\.csv|game|website|web app|webpage|"
+            r"\.docx|\.pdf|\bpdf\b|\.xlsx|\.pptx|\.md|\.csv|game|website|web app|webpage|"
             r"interactive demo|application|app|program|script)\b)",
             source_task,
             flags=re.IGNORECASE | re.DOTALL,
@@ -1933,6 +1933,7 @@ def create_agent_runner(services: AgentCoreServices) -> Callable[[Any, Any], Any
                                 })
                                 tool_by_extension = {
                                     ".docx": 'create_office_document with kind "word"',
+                                    ".pdf": 'create_office_document with kind "pdf"',
                                     ".xlsx": 'create_office_document with kind "spreadsheet" and CSV content',
                                     ".pptx": 'create_office_document with kind "presentation"',
                                     ".csv": "save_text_artifact with valid CSV content",

@@ -78,6 +78,60 @@ class MoreRepairTests(unittest.TestCase):
         self.assertFalse(step_must_write(step("read", ["read_project_file"], {"type": "no_error"})))
 
 
+class OfficeFileTests(unittest.TestCase):
+    def test_a_pdf_step_gets_the_document_tool_even_with_a_folder_open(self):
+        from projects.plan_sequence.contracts import repair_artifact_tools, repair_folder_writes
+
+        plan = {"steps": [
+            step("word", ["create_office_document", "read_project_file"], {"type": "file_exists", "path": "resume.docx"}),
+            step("pdf", ["propose_project_patch", "read_project_file"], {"type": "file_exists", "path": "resume.pdf"}),
+            step("deck", ["save_text_artifact"], {"type": "file_exists", "path": "deck.pptx"}),
+        ]}
+        fixed = repair_folder_writes(repair_artifact_tools(plan), task="Resume in Word and PDF", folder_open=True, permission_mode="full-access")
+        self.assertEqual([s["tools_allowed"] for s in fixed["steps"]],
+                         [["create_office_document", "read_project_file"], ["create_office_document", "read_project_file"], ["create_office_document"]])
+
+
+class RequestedFormatAndEmptyFolderTests(unittest.TestCase):
+    def test_a_requested_pdf_takes_over_an_unrequested_word_step(self):
+        from projects.plan_sequence.contracts import repair_requested_formats
+
+        plan = {"steps": [
+            step("read", ["read_project_file"], {"type": "file_exists", "path": "sales.csv"}),
+            step("report", ["create_office_document"], {"type": "file_exists", "path": "sales_report.docx"}),
+        ]}
+        plan["steps"][1]["goal"] = "Write sales_report.docx with the totals"
+        fixed = repair_requested_formats(plan, task="Read sales.csv and make a PDF report with the totals")
+        self.assertEqual(fixed["steps"][1]["done_condition"]["path"], "sales_report.pdf")
+        self.assertEqual(fixed["steps"][1]["goal"], "Write sales_report.pdf with the totals")
+
+    def test_word_and_pdf_both_stay_when_both_are_asked_for(self):
+        from projects.plan_sequence.contracts import repair_requested_formats
+
+        plan = {"steps": [
+            step("word", ["create_office_document"], {"type": "file_exists", "path": "resume.docx"}),
+            step("pdf", ["create_office_document"], {"type": "file_exists", "path": "resume.pdf"}),
+        ]}
+        fixed = repair_requested_formats(plan, task="Create a resume in Word and PDF format")
+        self.assertEqual([s["done_condition"]["path"] for s in fixed["steps"]], ["resume.docx", "resume.pdf"])
+
+    def test_reading_steps_are_left_out_in_an_empty_folder(self):
+        from projects.plan_sequence.contracts import repair_empty_folder
+
+        plan = {"steps": [
+            step("search", ["search_project"], {"type": "no_error"}),
+            step("read", ["read_project_file"], {"type": "no_error"}, inputs=["search"]),
+            step("draft", ["propose_project_patch", "read_project_file"], {"type": "file_exists", "path": "slides.md"}, inputs=["read"]),
+            step("deck", ["create_office_document"], {"type": "file_exists", "path": "deck.pptx"}, inputs=["draft"]),
+        ]}
+        fixed = repair_empty_folder(plan, folder_has_files=False)
+        self.assertEqual([s["id"] for s in fixed["steps"]], ["draft", "deck"])
+        self.assertEqual(fixed["steps"][0]["inputs"], ["task"])
+        self.assertEqual(fixed["steps"][0]["tools_allowed"], ["propose_project_patch"])
+        full = {"steps": [step("read", ["read_project_file"], {"type": "no_error"}), step("write", ["save_text_artifact"], {"type": "file_exists", "path": "a.md"})]}
+        self.assertEqual(len(repair_empty_folder(full, folder_has_files=True)["steps"]), 2, "a folder with files keeps its reading steps")
+
+
 class PatternListTests(unittest.TestCase):
     def check(self, text, pattern):
         with tempfile.TemporaryDirectory() as tmp:
