@@ -87,7 +87,7 @@ class OpenClawEngineTests(unittest.TestCase):
             final = engine.run("run the tests", RecordingUI(answer="no"))
         self.assertEqual(final, "Tests pass.")
         body = stream.call_args.args[2]
-        self.assertEqual((body["model"], body["permission_mode"], body["workspace_path"]), ("ollama/qwen3.5:9b", "auto", "C:/Proj"))
+        self.assertEqual((body["model"], body["permission_mode"], body["workspace_path"]), ("qwen3.5:9b", "auto", "C:/Proj"))
         self.assertTrue(body["session_id"].startswith("pockpock-code-"), "one session per folder keeps the prompt cached")
         self.assertEqual(posted, [{"approval_id": "ap1", "decision": "deny"}])
 

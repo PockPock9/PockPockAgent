@@ -235,7 +235,8 @@ def run_request(agent: Agent, ui: TerminalUI, request: str, router: Router | Non
     finally:
         save_session(agent)
     changed = sorted(set(agent.ws.changed))
-    ui._print(f"\n{time.time() - started:.0f} s · context {agent.usage['prompt']} tokens" + (f" · changed {', '.join(changed[-6:])}" if changed else ""), "dim")
+    context = f" · context {agent.usage['prompt']} tokens" if agent.usage["prompt"] else ""
+    ui._print(f"\n{time.time() - started:.0f} s{context}" + (f" · changed {', '.join(changed[-6:])}" if changed else ""), "dim")
     agent.ws.changed.clear()
     return 0
 

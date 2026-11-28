@@ -197,7 +197,7 @@ class PockPockEngine:
                 answer += str(event.get("content") or "")
                 ui.text(str(event.get("content") or ""))
             elif kind == "replace":
-                answer = str(event.get("content") or "")
+                answer = _show_rest(ui, answer, str(event.get("content") or ""))
             elif kind == "tool_start":
                 ui.end_text()
                 inputs[event.get("call_id")] = event.get("input") or {}
@@ -236,6 +236,19 @@ class PockPockEngine:
         return final or answer.strip()
 
 
+def _show_rest(ui, shown: str, full: str) -> str:
+    """The reply as replaced at the end of a turn; prints the part the stream had not shown, or all of it."""
+    if not full:
+        return shown
+    if full.startswith(shown):
+        if full[len(shown):]:
+            ui.text(full[len(shown):])
+    elif full.strip() != shown.strip():
+        ui.end_text()
+        ui.text(full)
+    return full
+
+
 def _gateway_arguments(arguments: dict) -> dict:
     """Gateway tool inputs use filename/url/query; the UI shows path/command/pattern."""
     shown = dict(arguments)
@@ -269,7 +282,8 @@ class OpenClawEngine:
 
     def run(self, request: str, ui) -> str:
         ui.notice("OpenClaw" + (f" · {self.model}" if self.model else ""))
-        model = self.model if not self.model or "/" in self.model else f"ollama/{self.model}"
+        # OpenClaw knows local models by their bare Ollama name ("ollama/qwen3.5:9b" is refused).
+        model = self.model
         body = {"session_id": self.session, "message": request, "permission_mode": OPENCLAW_PERMISSION.get(self.mode, "auto"), "workspace_path": self.root}
         if model:
             body["model"] = model
@@ -280,7 +294,7 @@ class OpenClawEngine:
                 answer += str(event.get("content") or "")
                 ui.text(str(event.get("content") or ""))
             elif kind == "replace":
-                answer = str(event.get("content") or "")
+                answer = _show_rest(ui, answer, str(event.get("content") or ""))
             elif kind == "tool":
                 ui.end_text()
                 if event.get("phase") == "start":
