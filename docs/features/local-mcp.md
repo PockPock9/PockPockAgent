@@ -9,7 +9,6 @@ It is step 1 of the local MCP plan:
 | 1 | The hub service; servers added in PockPock run in it; existing ones are moved into it; OpenClaw reaches them through it | Done (this page) |
 | 2 | PockPock Agent gets the hub's MCP tools and installed skills, through its tool retrieval and approvals (read-only tools run without asking in the default mode; tools that change things, or are not marked, ask) | Planned |
 | 3 | Smarter use: example requests written at install time for retrieval, skills loaded only when chosen, slimmer tool definitions for small models, the step planner told what is installed, learning from which tools work, `agent_eval` tasks | Planned |
-| 4 | NemoClaw reaches the hub from its sandbox | Planned; depends on the sandbox reaching the PC, not yet verified |
 
 ## What the user sees
 

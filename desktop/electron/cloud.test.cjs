@@ -161,37 +161,6 @@ test('choosing models, reconnecting and disconnecting', async () => {
   done()
 })
 
-test('disconnecting moves NemoClaw off that provider and leaves other providers alone', async () => {
-  let route = { cloud: true, model: 'anthropic/claude-opus-5-5', provider: 'pockpock-cloud' }
-  const both = (url, options) => {
-    if (url === 'http://127.0.0.1:8766/api/nemoclaw/model') {
-      if (options.method === 'PUT') { route = { cloud: false, model: 'qwen3.5:9b', provider: 'ollama-local' }; return { status: 200, json: route } }
-      return { status: 200, json: route }
-    }
-    return url.includes('api.anthropic.com') ? anthropicRoutes(url, options) : openaiRoutes(url, options)
-  }
-  const { cloud, calls, done } = setup(both)
-  await cloud.connect('openai', { key: 'sk-good' })
-  await cloud.connect('anthropic', { key: 'sk-ant-good' })
-  // Connecting removes nothing, so NemoClaw is not asked.
-  assert.equal(calls.filter((call) => call.url.endsWith('/api/nemoclaw/model')).length, 0)
-
-  // Removing a model NemoClaw does not use leaves it alone.
-  await cloud.setModels('openai', [{ id: 'gpt-5.1' }])
-  assert.equal(calls.filter((call) => call.method === 'PUT' && call.url.endsWith('/api/nemoclaw/model')).length, 0)
-
-  await cloud.disconnect('anthropic')
-  const reset = calls.filter((call) => call.method === 'PUT' && call.url.endsWith('/api/nemoclaw/model'))
-  assert.deepEqual(reset.map((call) => call.body), [{ model: '' }])
-  assert.equal(route.cloud, false)
-  // The gateway was told first, so the Claude models were gone before NemoClaw moved.
-  const pushes = calls.filter((call) => call.url.endsWith('/api/cloud/config'))
-  assert.deepEqual(pushes.at(-1).body.providers.map((provider) => provider.id), ['openai'])
-  assert.ok(calls.indexOf(pushes.at(-1)) < calls.indexOf(reset[0]))
-  assert.deepEqual(cloud.chosenModels().map((model) => model.name), ['openai/gpt-5.1'])
-  done()
-})
-
 test('a saved OpenRouter key from 0.2.8 or earlier is deleted at start', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cloud-'))
   const old = { proxyToken: 'p'.repeat(40), providers: { openrouter: { key: crypt.encrypt('sk-or-old').toString('base64'), keyEnding: '-old', region: 'default', models: [{ id: 'qwen/qwen3-coder' }] }, nim: { key: crypt.encrypt('nvapi-x').toString('base64'), region: 'default', models: [] } } }
@@ -202,15 +171,6 @@ test('a saved OpenRouter key from 0.2.8 or earlier is deleted at start', async (
   assert.equal(onDisk.proxyToken, old.proxyToken)
   assert.deepEqual(cloud.list().map((item) => item.id), ['nim', 'openai', 'anthropic', 'alibaba'])
   fs.rmSync(dir, { recursive: true, force: true })
-})
-
-test('NemoClaw that is not installed does not stop a disconnect', async () => {
-  const { cloud, done } = setup((url, options) => (url.endsWith('/api/nemoclaw/model') ? { status: 503, json: { detail: 'NemoClaw is not available on this PC.' } } : openaiRoutes(url, options)))
-  await cloud.connect('openai', { key: 'sk-good' })
-  assert.equal(await cloud.releaseNemoClaw(['openai/gpt-5.1']), 'unavailable')
-  const after = await cloud.disconnect('openai')
-  assert.equal(after.find((item) => item.id === 'openai').connected, false)
-  done()
 })
 
 test('Alibaba uses the chosen region; NVIDIA checks the key with a one-token reply', async () => {

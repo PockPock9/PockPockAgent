@@ -95,12 +95,8 @@ export function ServicesPage({ status, settings, patchSettings, loginItem, setLo
         <h2 className="list-title">Startup</h2>
         <ul className="rows">
           <li className="row">
-            <div className="row__text"><strong>Start services when the app opens</strong><span>Starts Ollama, the backend, OpenClaw and (if switched on below) NemoClaw. Models load only when a message needs them.</span></div>
+            <div className="row__text"><strong>Start services when the app opens</strong><span>Starts Ollama, the backend and OpenClaw. Models load only when a message needs them.</span></div>
             <Toggle checked={serviceSettings.autoStart !== false} label="Start services when the app opens" onChange={(next) => patchSettings({ services: { ...serviceSettings, autoStart: next } })} />
-          </li>
-          <li className="row">
-            <div className="row__text"><strong>Include NemoClaw</strong><span>Also starts Docker Desktop and the NemoClaw sandbox. Uses about 2 GB of memory while running.</span></div>
-            <Toggle checked={serviceSettings.nemoclaw !== false} label="Include NemoClaw" onChange={(next) => patchSettings({ services: { ...serviceSettings, nemoclaw: next } })} />
           </li>
           <li className="row">
             <div className="row__text"><strong>Stop services when the app closes</strong><span>Only services this app started. Turn off to keep agents reachable after closing the window.</span></div>

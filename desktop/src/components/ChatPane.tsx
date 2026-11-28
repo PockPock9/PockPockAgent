@@ -6,8 +6,7 @@ import { ArrowDown, ArrowUp, FileText, Folder, Image as ImageIcon, LoaderCircle,
 import type { Status } from '../lib/status'
 import { hasFailedCard } from '../lib/runState'
 import { ENGINE_LABEL } from '../lib/types'
-import type { AppState, Attachment, Engine, Message, NemoRoute, Session, Settings } from '../lib/types'
-import { getJson, sendJson } from '../lib/api'
+import type { AppState, Attachment, Engine, Message, Session, Settings } from '../lib/types'
 import { ExtensionCard, inspectLink, linkFromMessage } from './ExtensionCard'
 import type { Proposal } from './ExtensionCard'
 import { MessageView } from './MessageView'
@@ -18,7 +17,7 @@ import { RunBar } from './RunBar'
 import { Dot } from './ui'
 import { sendRunNote } from '../lib/engines'
 import { uid } from '../lib/api'
-import { computer, isMac } from '../lib/platform'
+import { computer } from '../lib/platform'
 import { AGENT_PERMISSION, CLAW_PERMISSION } from '../lib/permissions'
 
 const MAX_CLAW_CHARS = 16_000
@@ -65,7 +64,6 @@ function readinessError(engine: Engine, status: Status, settings: Settings, stat
     if (!status.claw?.ready) return status.claw?.detail ? `OpenClaw is not ready: ${status.claw.detail}` : 'OpenClaw is still being checked.'
     if (!['full', 'full-auto'].includes(settings.clawPermission ?? 'ask') && !status.claw.plugin) return 'The PockPock permission plugin is not loaded in OpenClaw, so approvals cannot be enforced. Reinstall it or choose Full access.'
   }
-  if (engine === 'nemoclaw' && !status.nemo?.ready) return status.nemoChecking ? 'The NemoClaw sandbox is still being checked.' : status.nemo?.detail || 'NemoClaw is not ready.'
   return ''
 }
 
@@ -77,23 +75,6 @@ export function ChatPane(props: Props) {
   const [draft, setDraft] = useState('')
   const [menu, setMenu] = useState<Menu>(null)
   const imageRef = useRef<HTMLInputElement>(null)
-  // NemoClaw's model belongs to its sandbox, not to a chat: it is read when NemoClaw is the engine
-  // and changed with one call. `nemoBusy` is the model being switched to ('' = the local model).
-  const [nemoRoute, setNemoRoute] = useState<NemoRoute | null>(null)
-  const [nemoBusy, setNemoBusy] = useState<string | null>(null)
-  const [nemoError, setNemoError] = useState('')
-  const nemoEngine = settings.engine === 'nemoclaw'
-  const nemoAvailable = status.nemo?.available === true
-  useEffect(() => {
-    if (!nemoEngine || !nemoAvailable) return
-    let live = true
-    getJson<NemoRoute>('/api/nemoclaw/model').then((route) => { if (live) setNemoRoute(route) }, () => undefined)
-    return () => { live = false }
-  }, [nemoEngine, nemoAvailable])
-  const chooseNemoModel = async (name: string) => {
-    setNemoBusy(name); setNemoError('')
-    try { setNemoRoute(await sendJson<NemoRoute>('/api/nemoclaw/model', { model: name }, 'PUT')); setMenu(null) } catch (reason) { setNemoError(reason instanceof Error ? reason.message : 'The sandbox model could not be changed.') } finally { setNemoBusy(null) }
-  }
   const [reporting, setReporting] = useState<Message | null>(null)
   const [error, setError] = useState('')
   const [uploading, setUploading] = useState(false)
@@ -184,16 +165,15 @@ export function ChatPane(props: Props) {
     // A not-ready engine may have come up since the last check (a sandbox loading its model, a
     // gateway just started), so check again before refusing.
     let fresh = status
-    if (engine === 'nemoclaw' && !status.nemo?.ready) fresh = { ...status, nemo: await status.refreshNemo(true, true), nemoChecking: false }
     if (engine === 'openclaw' && !status.claw?.ready) fresh = { ...status, claw: await status.refreshClaw(true) }
     const problem = readinessError(engine, fresh, settings, state)
     if (problem) { setError(problem); return }
-    if ((engine === 'openclaw' || engine === 'nemoclaw') && pendingAttachments.some((file) => file.kind === 'image')) {
+    if (engine === 'openclaw' && pendingAttachments.some((file) => file.kind === 'image')) {
       setError(`${ENGINE_LABEL[engine]} accepts text and documents only. Remove the image or switch to Chat.`)
       return
     }
     const size = prompt.length + pendingAttachments.reduce((total, file) => total + (file.text?.length ?? 0) + 40, 0)
-    if ((engine === 'openclaw' || engine === 'nemoclaw') && size > MAX_CLAW_CHARS) {
+    if (engine === 'openclaw' && size > MAX_CLAW_CHARS) {
       setError(`${ENGINE_LABEL[engine]} messages are limited to ${MAX_CLAW_CHARS.toLocaleString()} characters including attached files.`)
       return
     }
@@ -223,17 +203,16 @@ export function ChatPane(props: Props) {
   const shortName = (name: string) => (cloudNames.has(name) ? cloudTitle(name) : name)
   const modelLabel = engine === 'openclaw'
     ? (settings.clawModel && clawAll.includes(settings.clawModel) ? shortName(settings.clawModel) : `${status.claw?.model?.replace('ollama/', '') || 'Default'}`)
-    : engine === 'nemoclaw' ? (nemoRoute?.cloud ? shortName(nemoRoute.model) : nemoRoute?.model || status.nemo?.model || 'Sandbox model')
-      : `${chatModelKnown ? shortName(settings.chatModel as string) : 'Smart route'}${engine === 'agent' && settings.agentPlanner ? ` · steps planned by ${shortName(settings.agentPlanner)}` : ''}`
+    : `${chatModelKnown ? shortName(settings.chatModel as string) : 'Smart route'}${engine === 'agent' && settings.agentPlanner ? ` · steps planned by ${shortName(settings.agentPlanner)}` : ''}`
   const folderName = settings.workspace?.split(/[\\/]/).filter(Boolean).at(-1)
-  const engineTone = engine === 'openclaw' ? (status.claw?.ready ? 'ok' : 'off') : engine === 'nemoclaw' ? (status.nemoChecking ? 'busy' : status.nemo?.ready ? 'ok' : 'off') : (status.state?.connected ? 'ok' : 'off')
+  const engineTone = engine === 'openclaw' ? (status.claw?.ready ? 'ok' : 'off') : (status.state?.connected ? 'ok' : 'off')
 
   const lastLive = Boolean(runningHere && lastReply && running?.messageId === lastReply.id)
   const permissionTitle = engine === 'openclaw' ? CLAW_PERMISSION[clawPermission].title : engine === 'agent' ? AGENT_PERMISSION[agentPermission].title : ''
   const riskyPermission = engine === 'openclaw' ? clawPermission === 'full' : engine === 'agent' && agentPermission === 'full-access'
   const smaller = lastReply && lastLive && (lastReply.engine === 'chat' || lastReply.engine === 'agent') ? smallerModel(lastReply) : undefined
-  const ENGINES: Engine[] = ['chat', 'agent', 'openclaw', 'nemoclaw']
-  const engineUnavailable = (item: Engine) => (item === 'openclaw' && status.claw ? !status.claw.available : item === 'nemoclaw' && status.nemo ? !status.nemo.available : false)
+  const ENGINES: Engine[] = ['chat', 'agent', 'openclaw']
+  const engineUnavailable = (item: Engine) => (item === 'openclaw' && status.claw ? !status.claw.available : false)
 
   return (
     <div className="chat">
@@ -245,7 +224,7 @@ export function ChatPane(props: Props) {
         <div className="segmented" role="radiogroup" aria-label="Engine">
           {ENGINES.map((item) => (
             <button key={item} type="button" role="radio" aria-checked={engine === item} className={engine === item ? 'is-active' : ''} disabled={busy || engineUnavailable(item)}
-              title={engineUnavailable(item) ? (item === 'openclaw' ? status.claw?.detail : status.nemo?.detail) : undefined} onClick={() => chooseEngine(item)}>{ENGINE_LABEL[item]}</button>
+              title={engineUnavailable(item) ? status.claw?.detail : undefined} onClick={() => chooseEngine(item)}>{ENGINE_LABEL[item]}</button>
           ))}
         </div>
         <button type="button" className={`button button--small${inspectorOpen ? ' is-pressed' : ''}`} aria-pressed={inspectorOpen} onClick={onToggleInspector} aria-label="Inspector" title="Context, files and terminal"><PanelRight size={14} /> <span className="chat__inspector-label">Inspector</span></button>
@@ -264,8 +243,7 @@ export function ChatPane(props: Props) {
               <h1>What are we building?</h1>
               <p>{engine === 'chat' ? 'Chat answers directly with the best local model.'
                 : engine === 'agent' ? 'PockPock Agent plans the task, shows you the plan, then runs its tools inside the task folder.'
-                  : engine === 'openclaw' ? 'OpenClaw runs on this PC with no sandbox, using your skills and MCP servers. The permission setting controls what it may do without asking.'
-                    : `NemoClaw runs OpenClaw inside a sandbox${isMac ? '' : ' in WSL'}. It cannot touch files or programs on this ${computer}.`}</p>
+                  : `OpenClaw runs on this ${computer} with no sandbox, using your skills and MCP servers. The permission setting controls what it may do without asking.`}</p>
               <div className="welcome__tips">
                 <button type="button" onClick={() => { setDraft('Summarize the files in this folder and suggest what to work on next.'); inputRef.current?.focus() }}><Folder size={14} /> Explore the open folder</button>
                 <button type="button" onClick={() => { setDraft('Research '); inputRef.current?.focus() }}><Sparkles size={14} /> Research a topic</button>
@@ -293,7 +271,7 @@ export function ChatPane(props: Props) {
           <span className="context-chip"><Monitor size={13} /> This {computer}</span>
           <button type="button" className="context-chip" onClick={onChooseFolder} title={settings.workspace || 'Open a folder'}><Folder size={13} /> {folderName || 'Open folder'}</button>
           {permissionTitle && <span className={`context-chip${riskyPermission ? ' context-chip--warn' : ''}`}><Shield size={13} /> {permissionTitle}</span>}
-          <span className="context-chip"><Dot tone={engineTone} /> Mode: {ENGINE_LABEL[engine]} · {engineTone === 'ok' ? 'ready' : engineTone === 'busy' ? 'checking' : 'not ready'}</span>
+          <span className="context-chip"><Dot tone={engineTone} /> Mode: {ENGINE_LABEL[engine]} · {engineTone === 'ok' ? 'ready' : 'not ready'}</span>
         </div>
         <div className={`composer${busy ? ' is-busy' : ''}`}>
           {pendingAttachments.length > 0 && (
@@ -315,8 +293,7 @@ export function ChatPane(props: Props) {
             </div>
             <div className="composer__right">
               {noteMode && <span className="composer__note"><NotebookPen size={13} aria-hidden="true" /> Notes join at the next step</span>}
-              <ModelPicker menu={menu} onToggle={setMenu} engine={engine} settings={settings} status={status} patchSettings={patchSettings} label={modelLabel}
-                nemo={{ route: nemoRoute, busy: nemoBusy, error: nemoError, choose: (name) => void chooseNemoModel(name) }} />
+              <ModelPicker menu={menu} onToggle={setMenu} engine={engine} settings={settings} status={status} patchSettings={patchSettings} label={modelLabel} />
               {noteMode
                 ? <>
                   <button type="button" className="send" onClick={() => void sendNote()} disabled={!draft.trim()} aria-label="Send note" title="Send the note (Enter)"><ArrowUp size={16} /></button>

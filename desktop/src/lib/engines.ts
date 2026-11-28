@@ -1,6 +1,6 @@
 // Runs one turn on one engine and reports progress by patching the assistant message.
 // Engines: Chat (/api/chat), PockPock Agent (/api/agents/plan + /api/agents/run),
-// OpenClaw (/api/openclaw/chat), NemoClaw (/api/nemoclaw/chat).
+// OpenClaw (/api/openclaw/chat).
 import { sendJson, stream, text, uid } from './api'
 import type { StreamEvent } from './api'
 import { stampTiming } from './timing'
@@ -149,7 +149,6 @@ export async function runTurn(options: TurnOptions): Promise<void> {
   try {
     if (options.engine === 'chat') return await runChat(turn)
     if (options.engine === 'openclaw') return await runOpenClaw(turn)
-    if (options.engine === 'nemoclaw') return await runNemoClaw(turn)
     return await runAgent(turn)
   } finally {
     const endedAt = Date.now()
@@ -263,23 +262,6 @@ async function runOpenClaw({ sessionId, prompt, attachments, signal, patch, claw
   } finally {
     tokens.flush()
     patch((message) => ({ ...settleSteps(message, 'stopped'), approvals: message.approvals?.map((item) => item.status === 'pending' || item.status === 'busy' ? { ...item, status: 'expired' as const } : item) }))
-  }
-}
-
-async function runNemoClaw({ sessionId, prompt, attachments, signal, patch }: TurnOptions) {
-  const tokens = tokenBuffer(patch)
-  try {
-    await stream('/api/nemoclaw/chat', { session_id: `pockpock-${sessionId}`, message: withDocuments(prompt, attachments) }, signal, (event) => {
-      if (event.type !== 'token') tokens.flush()
-      if (event.type === 'token') tokens.push(text(event.content))
-      else if (event.type === 'decision') patch((message) => ({ ...message, model: text(event.model) }))
-      else if (event.type === 'status') patch((message) => addStep(message, { id: 'nemoclaw', label: text(event.message) || 'Working in the sandbox', status: 'running' }))
-      else if (event.type === 'done' && event.truncated === true) patch((message) => ({ ...message, notice: 'The reply was cut off at the model output limit. Ask it to continue.' }))
-      else if (event.type === 'error') throw new Error(text(event.message) || 'NemoClaw request failed.')
-    })
-  } finally {
-    tokens.flush()
-    patch((message) => settleSteps(message, 'done'))
   }
 }
 

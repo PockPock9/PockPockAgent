@@ -15,7 +15,7 @@ const MODEL_CHOICES = [
 const ROUTER_MODEL_GB = 2.7 // qwen3.5:2b (2.0 GB weights + 0.7 GB vision projector)
 
 /** Approximate downloads per component, in GB (the model is counted separately). */
-const COMPONENT_GB = { core: 0.7, ollama: 1.2, openclaw: 0.4, nemoclaw: 8 }
+const COMPONENT_GB = { core: 0.7, ollama: 1.2, openclaw: 0.4 }
 
 const round = (value) => Math.round(value * 10) / 10
 

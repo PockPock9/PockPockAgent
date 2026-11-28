@@ -15,7 +15,6 @@ These directories own workflow services and in-process packages. Services commun
 | [run_store](./run_store/README.md) | Durable run and event persistence | 8773 | `app:app` |
 | [browser_automation](./browser_automation/README.md) | Isolated run-scoped Chromium and read-only navigation | 8774 | `app:app` |
 | [mcp_hub](./mcp_hub/README.md) | Local MCP: runs the MCP servers added in PockPock once and serves each to the agents | 8776 | `app:app` |
-| [nemoclaw_bridge](../../docs/features/nemoclaw-agent.md) | Sends Conversations turns to a NemoClaw sandbox in WSL | Gateway process | `create_router`, `NemoClawBridge` |
 | [agent_extensions](../../docs/features/agent-extensions.md) | Previews a pasted GitHub or MCP link, then installs skills into OpenClaw or tests an MCP server and saves it in Local MCP after approval | Gateway process, plus a short-lived Node helper and one test start of the MCP server | `create_router`, `ExtensionService` |
 | [openclaw_bridge](../../docs/features/openclaw-agent.md) | Sends Conversations turns to a native OpenClaw gateway on this PC, relays approvals, and ships the permission plugin | Gateway process, plus one Node helper per turn | `create_router`, `OpenClawBridge` |
 

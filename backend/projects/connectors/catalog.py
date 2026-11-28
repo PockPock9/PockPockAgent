@@ -1,7 +1,7 @@
 """The connector catalog: external apps the agent can connect to and use as tools.
 
 Only apps outside PockPock belong here (GitHub, email, Telegram, ...). Things that run on this
-computer or have their own page (Ollama, OpenClaw, NemoClaw, cloud models, skills, MCP servers) are
+computer or have their own page (Ollama, OpenClaw, cloud models, skills, MCP servers) are
 not connectors. Every connector is connected with a credential the user creates in that app, which
 PockPock checks with the app before saving, and every connector gives the agent a fixed set of tools.
 """

@@ -3,9 +3,9 @@
 // The user connects a provider with an API key and chooses which of its models to show in the model
 // pickers. Keys are encrypted with the operating system's credential protection (Electron
 // safeStorage) in <userData>/cloud.json and are never sent to the renderer. The gateway receives the
-// connected providers over an internal, token-protected call and keeps them in memory; OpenClaw and
-// NemoClaw reach cloud models only through the gateway's local endpoint, so keys are not written
-// into their configuration.
+// connected providers over an internal, token-protected call and keeps them in memory; OpenClaw
+// reaches cloud models only through the gateway's local endpoint, so keys are not written into its
+// configuration.
 const fs = require('node:fs')
 const path = require('node:path')
 const crypto = require('node:crypto')
@@ -155,7 +155,7 @@ class Cloud {
     fs.renameSync(temp, this.file)
   }
 
-  /** The token OpenClaw and NemoClaw use for the gateway's local cloud endpoint. Not a cloud key. */
+  /** The token OpenClaw uses for the gateway's local cloud endpoint. Not a cloud key. */
   proxyToken() {
     const config = this.read()
     if (typeof config.proxyToken === 'string' && config.proxyToken.length >= 32) return config.proxyToken
@@ -334,15 +334,13 @@ class Cloud {
     if (chosen.length > MAX_CHOSEN) throw new Error(`Choose at most ${MAX_CHOSEN} models per provider.`)
     this.write({ ...config, providers: { ...config.providers, [id]: { ...config.providers[id], models: chosen } } })
     await this.changed()
-    await this.releaseNemoClaw()
     return this.list()
   }
 
   /**
    * Removes the saved key and everything that used the provider's models: the gateway's copy (pushed),
-   * OpenClaw's pockpock-cloud provider (onChange rewrites it from the remaining models), and NemoClaw's
-   * sandbox model, which goes back to its local model. The app's own model choices are cleared by the
-   * page when it hears of the change (src/lib/cloudCleanup.ts).
+   * and OpenClaw's pockpock-cloud provider (onChange rewrites it from the remaining models). The app's
+   * own model choices are cleared by the page when it hears of the change (src/lib/cloudCleanup.ts).
    */
   async disconnect(id) {
     if (!PROVIDERS[id]) throw new Error('Unknown cloud provider.')
@@ -351,27 +349,7 @@ class Cloud {
     delete providers[id]
     this.write({ ...config, providers })
     await this.changed()
-    await this.releaseNemoClaw()
     return this.list()
-  }
-
-  /**
-   * NemoClaw's model belongs to its sandbox, not to a chat. If it is a cloud model that is no longer
-   * chosen, the sandbox goes back to its local model. Best effort: NemoClaw may not be installed or
-   * running, and it is checked again the next time a cloud model is changed. Returns what happened.
-   */
-  async releaseNemoClaw() {
-    const chosen = new Set(this.chosenModels().map((model) => model.name))
-    try {
-      const reply = await this.fetch(`${GATEWAY}/api/nemoclaw/model`, { signal: AbortSignal.timeout(15000) })
-      if (!reply.ok) return 'unavailable'
-      const route = await reply.json()
-      if (!route?.cloud || chosen.has(String(route.model ?? ''))) return 'unchanged'
-      const reset = await this.fetch(`${GATEWAY}/api/nemoclaw/model`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: '' }), signal: AbortSignal.timeout(60000),
-      })
-      return reset.ok ? 'local' : 'failed'
-    } catch { return 'unavailable' }
   }
 
   /** Every chosen model as the engines name it: "<provider>/<model id>". */

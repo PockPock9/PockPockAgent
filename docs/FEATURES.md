@@ -29,10 +29,9 @@ This index points to detailed feature contracts. Every new feature or change to 
 - [Local workflow services](features/local-workflow-services.md)
 - [Isolated browser runtime](features/browser-runtime.md)
 - [Research source and evidence contracts](features/research-provider-contracts.md)
-- [NemoClaw agent mode](features/nemoclaw-agent.md)
 - [OpenClaw agent mode and permission modes](features/openclaw-agent.md)
 - [Agent engines, skills, and MCP servers](features/agent-extensions.md)
-- [Local MCP](features/local-mcp.md): the service that runs the MCP servers added in PockPock once and offers them to the agents; moving earlier servers into it, keys, state, logs, and the planned steps for PockPock Agent and NemoClaw.
+- [Local MCP](features/local-mcp.md): the service that runs the MCP servers added in PockPock once and offers them to the agents; moving earlier servers into it, keys, state, logs, and the planned steps for PockPock Agent.
 - [PockPock Agent desktop app](features/desktop-app.md)
 
 ## Desktop app and setup

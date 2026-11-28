@@ -1,6 +1,6 @@
 # Agent engines, skills, and MCP servers
 
-The PockPock Agent composer has four modes: **Chat**, and three agent engines (**PockPock Agent**, **OpenClaw**, **NemoClaw**). Skills and MCP servers can be added to the OpenClaw engine by pasting a link; PockPock shows what the link would install and waits for approval before anything is installed or run.
+The PockPock Agent composer has three modes: **Chat**, and two agent engines (**PockPock Agent** and **OpenClaw**). Skills and MCP servers can be added to the OpenClaw engine by pasting a link; PockPock shows what the link would install and waits for approval before anything is installed or run.
 
 ## Agent engines
 
@@ -8,10 +8,9 @@ The PockPock Agent composer has four modes: **Chat**, and three agent engines (*
 |---|---|---|---|
 | **PockPock** | The PockPock gateway on this PC | A task workspace and the built-in agent tools | [Agent runs](agent-runs.md) |
 | **OpenClaw** | An OpenClaw gateway on this PC, no sandbox | Anything your Windows account can, limited by the permission mode | [OpenClaw agent mode](openclaw-agent.md) |
-| **NemoClaw** | OpenClaw inside a sandbox in WSL | Only the sandbox | [NemoClaw agent mode](nemoclaw-agent.md) |
 
-1. Open the mode picker in the composer and choose **Chat**, **PockPock Agent**, **OpenClaw** or **NemoClaw**. An engine that is not installed is disabled and its line gives the reason.
-2. The controls next to it change with the engine: permission (with the task-folder choice) and model pickers for PockPock Agent; the Ask first / Auto-approve safe / Full access picker and model picker for OpenClaw; none for NemoClaw. The chip above the composer shows the engine with a status dot.
+1. Open the mode picker in the composer and choose **Chat**, **PockPock Agent** or **OpenClaw**. An engine that is not installed is disabled and its line gives the reason.
+2. The controls next to it change with the engine: permission (with the task-folder choice) and model pickers for PockPock Agent; the Ask first / Auto-approve safe / Full access picker and model picker for OpenClaw. The chip above the composer shows the engine with a status dot.
 
 The choice is saved in the app's settings file (`engine`, `agentPermission`, `clawPermission`, `chatModel`, `clawModel`). Each engine keeps its own memory of a chat: turns sent with one engine are not copied to another.
 
@@ -20,7 +19,7 @@ The choice is saved in the app's settings file (`engine`, `agentPermission`, `cl
 - A **skill** is a folder with a `SKILL.md` file: instructions the agent follows for a kind of task, sometimes with scripts it can run.
 - An **MCP server** gives the agent extra tools. It is either a program started on this PC (for example with `npx`) or a remote address.
 
-Skills are installed into **OpenClaw**. MCP servers added in PockPock run in **[Local MCP](local-mcp.md)**, a PockPock service that starts each server once and offers it to the agents; OpenClaw reaches them through it. Both are used only by the OpenClaw engine so far: the PockPock engine and the NemoClaw sandbox do not see them yet (Local MCP steps 2 and 4).
+Skills are installed into **OpenClaw**. MCP servers added in PockPock run in **[Local MCP](local-mcp.md)**, a PockPock service that starts each server once and offers it to the agents; OpenClaw reaches them through it. Both are used only by the OpenClaw engine so far: the PockPock engine does not see them yet (Local MCP step 2).
 
 ### User flow
 
@@ -179,7 +178,7 @@ Status codes: `400` invalid link or input, `404` not found on GitHub or not inst
 
 ## Limits
 
-- Skills and MCP servers apply to the OpenClaw engine only (the PockPock engine and NemoClaw are Local MCP steps 2 and 4).
+- Skills and MCP servers apply to the OpenClaw engine only (the PockPock engine is Local MCP step 2).
 - Skill requirements (programs a skill expects, such as Python packages) are not installed.
 - OAuth sign-in for remote MCP servers, and private GitHub repositories, are not supported.
 - Servers using the older SSE transport are saved without a test connection.

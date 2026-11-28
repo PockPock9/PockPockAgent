@@ -1,7 +1,7 @@
 """One running MCP server behind the hub: a local process (stdio) or a remote address (streamable HTTP).
 
 Clients never talk to the server directly. The hub sends their requests on with its own request ids,
-so any number of clients (OpenClaw today; PockPock Agent and NemoClaw later) share one process.
+so any number of clients (OpenClaw today; PockPock Agent later) share one process.
 
 Stdio: the process is started on first use and kept running. It is restarted on the next request
 after it stops, unless it stopped three times within a minute; then it waits for a manual restart

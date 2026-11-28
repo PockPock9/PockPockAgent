@@ -1,12 +1,6 @@
-// Operating-system specific process control and the shell NemoClaw runs in. Windows: taskkill,
-// netstat, and NemoClaw inside WSL. macOS: process groups, lsof, and NemoClaw in a login shell.
-const fs = require('node:fs')
-const os = require('node:os')
-const path = require('node:path')
-const { execFile, spawn, spawnSync } = require('node:child_process')
+// Operating-system specific process control. Windows: taskkill and netstat. macOS: process groups and lsof.
+const { execFile, spawnSync } = require('node:child_process')
 const paths = require('./paths.cjs')
-
-const NEMO_PATH_PREFIX = 'export PATH="$HOME/.local/bin:$PATH"; '
 
 function run(file, args, options = {}) {
   return new Promise((resolve) => {
@@ -64,67 +58,4 @@ async function stopOllamaApp() {
   }
 }
 
-// ---------- NemoClaw host ----------
-
-/** Whether this computer can run NemoClaw at all (before anything is installed). */
-function nemoSupported() {
-  if (paths.IS_WIN) return { supported: true, reason: '' }
-  if (paths.IS_MAC) return os.arch() === 'arm64' ? { supported: true, reason: '' } : { supported: false, reason: 'NemoClaw needs a Mac with Apple silicon.' }
-  return { supported: false, reason: 'NemoClaw is set up by PockPock only on Windows and macOS.' }
-}
-
-/** Whether the shell NemoClaw runs in exists (WSL on Windows, bash on macOS). */
-function nemoHostReady() {
-  if (paths.IS_WIN) return Boolean(paths.findExecutable(['wsl.exe']))
-  return paths.IS_MAC && os.arch() === 'arm64' && fs.existsSync('/bin/bash')
-}
-
-/** Runs a bash script where NemoClaw lives: inside WSL on Windows, a login shell on macOS. */
-function nemoShell(script, timeout = 180000) {
-  if (paths.IS_WIN) return run('wsl.exe', ['-e', 'bash', '-lc', NEMO_PATH_PREFIX + script], { timeout })
-  return run('/bin/bash', ['-lc', NEMO_PATH_PREFIX + script], { timeout })
-}
-
-/** Spawn arguments for a long NemoClaw command whose output setup streams to its log. */
-function nemoSpawn(script, distro) {
-  if (paths.IS_WIN) return { file: 'wsl.exe', args: [...(distro ? ['-d', distro] : []), '-e', 'bash', '-lc', NEMO_PATH_PREFIX + script] }
-  return { file: '/bin/bash', args: ['-lc', NEMO_PATH_PREFIX + script] }
-}
-
-// ---------- Docker ----------
-
-async function dockerReady() {
-  const docker = paths.dockerCli()
-  if (!docker) return false
-  return (await run(docker, ['info', '--format', '{{.ServerVersion}}'], { timeout: 15000 })).ok
-}
-
-function dockerDesktopApp() {
-  if (paths.IS_WIN) {
-    const file = path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Docker', 'Docker', 'Docker Desktop.exe')
-    return fs.existsSync(file) ? file : null
-  }
-  return ['/Applications/Docker.app', path.join(paths.HOME, 'Applications', 'Docker.app')].find((dir) => fs.existsSync(dir)) || null
-}
-
-/** Starts Docker (Docker Desktop, or Colima on a Mac that uses it) and waits up to 3 minutes. */
-async function ensureDocker() {
-  if (await dockerReady()) return
-  const desktop = dockerDesktopApp()
-  const colima = paths.IS_MAC ? paths.findExecutable(['colima']) : null
-  if (desktop) {
-    if (paths.IS_WIN) spawn(desktop, [], { detached: true, stdio: 'ignore', windowsHide: true }).unref()
-    else await run('/usr/bin/open', ['-g', '-a', desktop], { timeout: 30000 })
-  } else if (colima) {
-    await run(colima, ['start', '--cpu', '4', '--memory', '8'], { timeout: 300000 })
-  } else {
-    throw new Error('Docker Desktop is not installed. NemoClaw needs it.')
-  }
-  for (let attempt = 0; attempt < 60; attempt += 1) {
-    await sleep(3000)
-    if (await dockerReady()) return
-  }
-  throw new Error('Docker did not start within 3 minutes. Open Docker Desktop, finish any prompt it shows, then try again.')
-}
-
-module.exports = { run, sleep, pidsOnPort, killTree, killTreeSync, stopOllamaApp, nemoSupported, nemoHostReady, nemoShell, nemoSpawn, dockerReady, dockerDesktopApp, ensureDocker }
+module.exports = { run, sleep, pidsOnPort, killTree, killTreeSync, stopOllamaApp }

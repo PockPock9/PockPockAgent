@@ -206,10 +206,6 @@ function openclawLog() {
   return files.find((file) => fs.existsSync(file)) || files[0]
 }
 
-function dockerCli() {
-  return findExecutable([exe('docker')], IS_WIN ? [path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Docker', 'Docker', 'resources', 'bin')] : [])
-}
-
 /** Environment for child processes: tool folders on PATH, and on Windows without Git's Unix tools,
  * which would otherwise shadow Windows programs such as notepad. */
 function cleanEnv(extra = {}) {
@@ -232,5 +228,5 @@ module.exports = {
   IS_WIN, IS_MAC, HOME, LOCAL, exe, getElectronApp,
   repoRoot, backendRoot, runtimeRoot, venvRoot, venvPython, basePython, dataRoot, migrateLegacyData, logsRoot,
   runtimeNodeBin, npmPrefix, npmPrefixBin, toolDirs, fixPath, findExecutable,
-  ollamaAppDirs, ollamaExe, ollamaServerLog, nodeExe, npmCmd, openclawCmd, openclawEntry, openclawLog, dockerCli, cleanEnv,
+  ollamaAppDirs, ollamaExe, ollamaServerLog, nodeExe, npmCmd, openclawCmd, openclawEntry, openclawLog, cleanEnv,
 }

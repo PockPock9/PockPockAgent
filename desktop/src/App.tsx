@@ -68,7 +68,7 @@ export default function App() {
   const updates = useUpdates()
   const sessions = useSessions()
   const engine = settings.engine ?? 'agent'
-  const status = useStatus(engine === 'nemoclaw')
+  const status = useStatus()
   const [page, setPage] = useState<Page | 'setup'>('chat')
   const [workshopPage, setWorkshopPage] = useState<Page>('skills')
   const [running, setRunning] = useState<Running | null>(null)

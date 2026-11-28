@@ -4,7 +4,7 @@ One entry per server: how to start it (``stdio``: command, arguments, environmen
 (``streamable-http``: address, headers), whether it is switched on, and where it came from.
 Environment values and headers are sealed with ``protect.seal`` before they are written; nothing
 else in the file is secret. The file also holds the hub's client token, which clients (OpenClaw,
-later PockPock Agent and NemoClaw) send to reach ``/mcp/<name>``. It is a local token, not a
+later PockPock Agent) send to reach ``/mcp/<name>``. It is a local token, not a
 third-party key.
 """
 

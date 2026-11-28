@@ -2,9 +2,9 @@
 
 - ``PUT /api/cloud/config`` (internal token): the desktop app pushes the connected providers and keys.
 - ``GET /api/cloud/models``: the chosen cloud models, without keys, for the pickers.
-- ``/cloud/v1``: a local OpenAI-compatible endpoint for OpenClaw, NemoClaw and the planner. They send
+- ``/cloud/v1``: a local OpenAI-compatible endpoint for OpenClaw and the planner. They send
   ``<provider>/<model>`` names with a local token; the gateway adds the real key. So API keys are
-  never written into OpenClaw's or NemoClaw's configuration.
+  never written into OpenClaw's configuration.
 """
 
 from __future__ import annotations

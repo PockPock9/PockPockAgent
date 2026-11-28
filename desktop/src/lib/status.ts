@@ -1,19 +1,16 @@
-// Live status of the backend, Ollama, OpenClaw and NemoClaw for the status bar and pickers.
-// Nothing here makes a model load: the NemoClaw sandbox check (which tests inference) runs only
-// when NemoClaw is the selected engine.
+// Live status of the backend, Ollama and OpenClaw for the status bar and pickers.
+// Nothing here makes a model load.
 import { useCallback, useEffect, useState } from 'react'
 import { getJson } from './api'
 import { bridge } from './types'
-import type { AppState, BackendPhase, ClawStatus, NemoStatus, ServiceState } from './types'
+import type { AppState, BackendPhase, ClawStatus, ServiceState } from './types'
 
 export type ExtensionCounts = { skills: number; mcp: number }
 
-export function useStatus(nemoSelected: boolean) {
+export function useStatus() {
   const [backend, setBackend] = useState<BackendPhase>({ phase: 'checking', detail: 'Checking the PockPock backend…', startedByApp: false })
   const [state, setState] = useState<AppState | null>(null)
   const [claw, setClaw] = useState<ClawStatus | null>(null)
-  const [nemo, setNemo] = useState<NemoStatus | null>(null)
-  const [nemoChecking, setNemoChecking] = useState(false)
   const [counts, setCounts] = useState<ExtensionCounts | null>(null)
   const [services, setServices] = useState<ServiceState[]>([])
 
@@ -43,19 +40,6 @@ export function useStatus(nemoSelected: boolean) {
     setClaw(next)
     return next
   }, [])
-  const refreshNemo = useCallback(async (probe: boolean, force = false): Promise<NemoStatus> => {
-    if (probe) setNemoChecking(true)
-    let next: NemoStatus
-    try {
-      next = await getJson<NemoStatus>(`/api/nemoclaw/status${force ? '?refresh=1' : probe ? '' : '?probe=0'}`)
-    } catch {
-      next = { available: false, ready: false, detail: 'The PockPock backend is not reachable.' }
-    } finally {
-      if (probe) setNemoChecking(false)
-    }
-    setNemo(next)
-    return next
-  }, [])
   const refreshCounts = useCallback(async () => {
     try {
       const list = await getJson<{ skills: unknown[]; builtin_skills: Array<{ enabled: boolean; ready: boolean }>; mcp: Array<{ enabled: boolean }> }>('/api/extensions')
@@ -77,18 +61,11 @@ export function useStatus(nemoSelected: boolean) {
     return () => { window.clearInterval(fast); window.clearInterval(slow) }
   }, [ready, refreshState, refreshClaw, refreshCounts])
 
-  useEffect(() => {
-    if (!ready) return
-    void refreshNemo(nemoSelected)
-  }, [ready, nemoSelected, refreshNemo])
-
-  // When OpenClaw or NemoClaw come up after the app started, their status follows without waiting for the next poll.
+  // When OpenClaw comes up after the app started, its status follows without waiting for the next poll.
   const clawUp = services.find((item) => item.id === 'openclaw')?.status === 'running'
-  const nemoUp = services.find((item) => item.id === 'nemoclaw')?.status === 'running'
   useEffect(() => { if (ready) void refreshClaw(true) }, [ready, clawUp, refreshClaw])
-  useEffect(() => { if (ready && nemoSelected) void refreshNemo(true) }, [ready, nemoUp, nemoSelected, refreshNemo])
 
-  return { backend, state, claw, nemo, nemoChecking, counts, services, refreshState, refreshClaw, refreshNemo, refreshCounts }
+  return { backend, state, claw, counts, services, refreshState, refreshClaw, refreshCounts }
 }
 
 export type Status = ReturnType<typeof useStatus>

@@ -26,12 +26,24 @@ function isSession(value: unknown): value is Session {
   return Boolean(item && typeof item === 'object' && typeof item.id === 'string' && Array.isArray(item.messages) && item.messages.every((message) => message && typeof message === 'object'))
 }
 
+/** NemoClaw was removed in 0.2.17. Its replies are shown as OpenClaw's (NemoClaw ran OpenClaw in a sandbox). */
+function knownEngine(engine: Message['engine']): Message['engine'] {
+  return (engine as string) === 'nemoclaw' ? 'openclaw' : engine
+}
+
+/** Settings saved before 0.2.17 may still choose NemoClaw: PockPock Agent takes its place. */
+export function migrateSettings(stored: Settings): Settings {
+  const { nemoclaw: _nemoclaw, ...services } = (stored.services ?? {}) as Settings['services'] & { nemoclaw?: boolean }
+  return { ...stored, engine: (stored.engine as string) === 'nemoclaw' ? 'agent' : stored.engine, ...(stored.services ? { services } : {}) }
+}
+
 /** Image bytes and partial streaming state are not worth saving. */
 function forStorage(sessions: Session[]): Session[] {
   return sessions.slice(0, MAX_SESSIONS).map((session) => ({
     ...session,
     messages: session.messages.map((message) => ({
       ...message,
+      engine: knownEngine(message.engine),
       status: message.status === 'streaming' ? 'stopped' : message.status,
       attachments: message.attachments?.map(({ data: _data, ...rest }) => rest),
       approvals: message.approvals?.map((approval) => approval.status === 'pending' || approval.status === 'busy' ? { ...approval, status: 'expired' as const } : approval),
@@ -110,7 +122,7 @@ export function useSettings() {
 
   useEffect(() => {
     void load<Settings>('settings').then((stored) => {
-      setSettings(stored && typeof stored === 'object' ? stored : {})
+      setSettings(stored && typeof stored === 'object' ? migrateSettings(stored) : {})
       setLoaded(true)
     })
   }, [])

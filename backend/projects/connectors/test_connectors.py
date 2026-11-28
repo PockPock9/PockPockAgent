@@ -43,7 +43,7 @@ class CatalogTest(unittest.TestCase):
     def test_only_external_apps_and_every_tool_has_a_handler(self):
         ids = [connector.id for connector in CATALOG]
         self.assertEqual(ids, ["github", "email", "telegram", "slack", "discord", "notion"])
-        for internal in ("ollama", "openclaw", "nemoclaw", "cloud", "skills", "mcp"):
+        for internal in ("ollama", "openclaw", "cloud", "skills", "mcp"):
             self.assertNotIn(internal, ids)
         self.assertEqual(set(TOOLS), set(clients.HANDLERS))
         self.assertEqual(set(ids), set(clients.VERIFY))

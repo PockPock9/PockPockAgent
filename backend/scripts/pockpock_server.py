@@ -149,8 +149,6 @@ from projects.run_store.delegation_scheduler import (
 )
 from projects.agent_extensions.api import create_router as create_extensions_router
 from projects.agent_extensions.service import ExtensionService
-from projects.nemoclaw_bridge.api import create_router as create_nemoclaw_router
-from projects.nemoclaw_bridge.bridge import NemoClawBridge, NemoClawConfig
 from projects.openclaw_bridge.api import create_router as create_openclaw_router
 from projects.openclaw_bridge.bridge import OpenClawBridge, OpenClawConfig
 from projects.openclaw_bridge.step_delegate import make_openclaw_delegate
@@ -662,8 +660,6 @@ MAX_API_BODY_BYTES = 32 * 1024 * 1024
 RATE_LIMITS = {
     ("GET", "/api/state"): (180, 60),
     ("POST", "/api/chat"): (8, 60),
-    ("POST", "/api/nemoclaw/chat"): (8, 60),
-    ("GET", "/api/nemoclaw/status"): (60, 60),
     ("POST", "/api/openclaw/chat"): (12, 60),
     ("POST", "/api/openclaw/approvals"): (120, 60),
     ("GET", "/api/openclaw/status"): (60, 60),
@@ -881,22 +877,6 @@ def require_local_agent_request(request) -> None:
         raise HTTPException(status_code=403, detail="Agent tasks are disabled on the remote dashboard")
 
 
-try:
-    NEMOCLAW_CONFIG = NemoClawConfig.from_env()
-except ValueError as err:
-    logger.warning("NemoClaw integration disabled: %s", err)
-    NEMOCLAW_CONFIG = NemoClawConfig(enabled=False)
-NEMOCLAW_BRIDGE = NemoClawBridge(
-    NEMOCLAW_CONFIG,
-    load_state=lambda: read_setting("nemoclaw_local_route", ""),
-    save_state=lambda value: write_setting("nemoclaw_local_route", value),
-)
-api.include_router(create_nemoclaw_router(
-    NEMOCLAW_BRIDGE,
-    require_local_agent_request,
-    cloud_models=lambda: [item["name"] for item in CLOUD_REGISTRY.models()],
-    cloud_token=lambda: CLOUD_REGISTRY.proxy_token,
-))
 
 try:
     OPENCLAW_CONFIG = OpenClawConfig.from_env()

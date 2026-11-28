@@ -1,7 +1,7 @@
 // First-run setup: installs and configures everything PockPock needs, skipping what is already
 // there, then starts every service and checks it works. Components: core (Python backend), ollama
-// (+ default models), openclaw (+ skills choice), nemoclaw (sandbox + Docker). The operating-system
-// specific parts live in setup-win.cjs and setup-mac.cjs. Progress streams to the renderer; a plan
+// (+ default models), openclaw (+ skills choice). The operating-system specific parts live in
+// setup-win.cjs and setup-mac.cjs. Progress streams to the renderer; a plan
 // that needs a restart or a user action is saved and resumed on the next run.
 const crypto = require('node:crypto')
 const fs = require('node:fs')
@@ -22,12 +22,11 @@ const { run } = platform
 
 // The default model is chosen per computer (hardware.cjs) and remembered in setup.json.
 const ROUTER_MODEL = 'qwen3.5:2b' // the Smart Router's classifier
-const nemoclawEnv = (model) => `NEMOCLAW_NO_EXPRESS=1 NEMOCLAW_NON_INTERACTIVE=1 NEMOCLAW_PROVIDER=ollama NEMOCLAW_MODEL=${model} NEMOCLAW_SANDBOX_NAME=pockpock NEMOCLAW_CONTEXT_WINDOW=32768 NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1`
 const OPENCLAW_HOME = path.join(os.homedir(), '.openclaw')
 const BUNDLED_SKILLS = require('./openclaw-skills.json').skills
-const COMPONENTS = ['core', 'ollama', 'openclaw', 'nemoclaw']
-// What "Set up PockPock" installs. NemoClaw is left out: it needs administrator approval, Docker,
-// and on Windows a restart and an Ubuntu account, so it is offered under Customize instead.
+// A plan saved by an older version may still name 'nemoclaw' (removed in 0.2.17): it is ignored.
+const COMPONENTS = ['core', 'ollama', 'openclaw']
+// What "Set up PockPock" installs.
 const RECOMMENDED = ['core', 'ollama', 'openclaw']
 const hasModel = (installed, name) => Boolean(installed?.some((item) => item === name || item === `${name}:latest`))
 
@@ -68,7 +67,7 @@ class Setup {
 
   /** Helpers handed to the operating-system installers. */
   get context() {
-    return { download, SetupError, NEMOCLAW_ENV: nemoclawEnv(this.model || this.readState().defaultModel || 'qwen3.5:9b'), services: this.services }
+    return { download, SetupError, services: this.services }
   }
 
   readState() {
@@ -137,12 +136,6 @@ class Setup {
     return Array.isArray(reply?.json?.models) ? reply.json.models.map((model) => model.name) : null
   }
 
-  async nemoInstalled() {
-    if (!platform.nemoHostReady()) return false
-    const listing = await platform.nemoShell('command -v nemoclaw >/dev/null 2>&1 && nemoclaw list --json 2>/dev/null', 30000)
-    try { return JSON.parse(listing.stdout.split(String.fromCharCode(0)).join('')).sandboxes.some((sandbox) => sandbox.name === 'pockpock') } catch { return false }
-  }
-
   /** Skills OpenClaw reports as usable on this computer, or the bundled list before it is installed. */
   async skills() {
     if (this.liveSkills) return this.liveSkills
@@ -168,13 +161,12 @@ class Setup {
   async status() {
     const models = await this.ollamaModels()
     const state = this.readState()
-    const nemoSupport = platform.nemoSupported()
     const core = await this.coreReady()
     const specs = await hardware.detect()
     const recommended = this.chooseModel(state, specs, models)
     const openclawInstalled = Boolean(paths.openclawCmd()) && fs.existsSync(path.join(OPENCLAW_HOME, 'openclaw.json'))
     const missing = [
-      !core && 'core', !paths.ollamaExe() && 'ollama', !openclawInstalled && 'openclaw', 'nemoclaw',
+      !core && 'core', !paths.ollamaExe() && 'ollama', !openclawInstalled && 'openclaw',
       !hasModel(models, recommended.name) && 'model', !hasModel(models, ROUTER_MODEL) && 'router',
     ].filter(Boolean)
     return {
@@ -186,7 +178,6 @@ class Setup {
       core: { installed: core },
       ollama: { installed: Boolean(paths.ollamaExe()), running: models !== null, models: Object.fromEntries([recommended.name, ROUTER_MODEL].map((name) => [name, hasModel(models, name)])) },
       openclaw: { installed: openclawInstalled, cli: Boolean(paths.openclawCmd()), node: Boolean(paths.nodeExe()) },
-      nemoclaw: { supported: nemoSupport.supported, reason: nemoSupport.reason, installed: nemoSupport.supported ? await this.nemoInstalled() : false, docker: Boolean(paths.dockerCli()) },
       winget: paths.IS_WIN ? host.packageManager() : true,
       skills: await this.skills(),
       pending: state.pending ?? null,
@@ -200,8 +191,7 @@ class Setup {
 
   async start(plan) {
     if (this.running) throw new SetupError('Setup is already running.')
-    const nemoSupport = platform.nemoSupported()
-    const components = COMPONENTS.filter((name) => name === 'core' || (plan.components.includes(name) && (name !== 'nemoclaw' || nemoSupport.supported)))
+    const components = COMPONENTS.filter((name) => name === 'core' || plan.components.includes(name))
     const known = new Set([...BUNDLED_SKILLS, ...(this.liveSkills ?? [])].map((skill) => skill.key))
     const disabledSkills = Array.isArray(plan.disabledSkills) ? plan.disabledSkills.filter((key) => known.has(key)) : []
     const state = this.readState()
@@ -223,11 +213,6 @@ class Setup {
         if (component === 'core') await this.installCore()
         if (component === 'ollama') await this.installOllama()
         if (component === 'openclaw') await this.installOpenClaw(disabledSkills)
-        if (component === 'nemoclaw') {
-          const result = await this.installNemoClaw()
-          if (result === 'restart') { outcome = 'restart'; message = this.restartMessage; break }
-          if (result === 'action') { outcome = 'action'; message = this.actionMessage; break }
-        }
       }
       if (outcome === 'done') {
         const problems = await this.verify(components)
@@ -256,7 +241,6 @@ class Setup {
     if (specs.freeDiskGB === null) return
     const missing = [
       !(await this.coreReady()) && 'core', !paths.ollamaExe() && 'ollama', !paths.openclawEntry() && 'openclaw',
-      components.includes('nemoclaw') && !(await this.nemoInstalled()) && 'nemoclaw',
       !hasModel(installed, this.model) && 'model', !hasModel(installed, ROUTER_MODEL) && 'router',
     ].filter(Boolean)
     const { downloadGB, neededGB } = hardware.estimate(components, this.model, missing)
@@ -363,7 +347,7 @@ class Setup {
     const C = 'ollama'
     this.step(C, 'ollama', 'Ollama', 'running')
     await host.ensureOllama(this, this.context)
-    // NemoClaw and long agent turns need a larger context than Ollama's default.
+    // Long agent turns need a larger context than Ollama's default.
     const changed = await host.setUserEnv('OLLAMA_CONTEXT_LENGTH', '32768')
     if (changed && (await this.ollamaModels()) !== null) await this.services.stop('ollama')
     await this.services.start('ollama')
@@ -479,21 +463,6 @@ class Setup {
     syncGuidance(paths.backendRoot(), OPENCLAW_HOME)
   }
 
-  async installNemoClaw() {
-    const C = 'nemoclaw'
-    const prepared = await host.installNemoClaw(this, this.context)
-    if (prepared !== 'installed') return prepared
-    if (!(await this.nemoInstalled())) {
-      // Onboarding builds the sandbox image and points its inference at Ollama on this computer.
-      if ((await this.ollamaModels()) === null) await this.services.start('ollama')
-      const { file, args } = platform.nemoSpawn(`env ${nemoclawEnv(this.model)} nemoclaw onboard --non-interactive --yes --yes-i-accept-third-party-software`, host.DISTRO)
-      await this.must(file, args, 'NemoClaw onboarding')
-    }
-    this.services.nemoInstalled = null
-    this.step(C, 'install', 'NemoClaw', 'done')
-    return 'done'
-  }
-
   // ---------- final check ----------
 
   /** Starts every installed service and checks each one answers, then runs one tiny model reply.
@@ -501,14 +470,11 @@ class Setup {
   async verify(components) {
     const C = 'verify'
     const problems = []
-    const includeNemo = components.includes('nemoclaw') || (platform.nemoSupported().supported && (await this.nemoInstalled()))
     this.step(C, 'start', 'Starting all services', 'running')
-    this.services.nemoInstalled = null
-    await this.services.startAll({ includeNemo })
+    await this.services.startAll()
     this.step(C, 'start', 'Starting all services', 'done')
     const list = await this.services.refresh()
     for (const definition of DEFINITIONS) {
-      if (definition.id === 'nemoclaw' && !includeNemo) continue
       const state = list.find((item) => item.id === definition.id)
       if (!state || state.status === 'unavailable') {
         // Optional engines that were not chosen are skipped; the core services must exist.

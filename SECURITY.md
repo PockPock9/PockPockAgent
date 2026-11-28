@@ -24,7 +24,7 @@ Security fixes go into `main` and the next release. Older releases are not patch
 Examples of issues we want to hear about:
 
 - an agent acting without the approval its permission mode requires;
-- escaping the task folder, the open folder, or the NemoClaw sandbox;
+- escaping the task folder or the open folder;
 - the local API or internal services accepting requests from another computer or another local origin;
 - secrets, prompts or private content written to logs or telemetry;
 - installer or setup steps that run unverified downloads or can be hijacked.

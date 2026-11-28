@@ -15,7 +15,7 @@ PockPock is a local AI workspace for Windows and macOS. Its desktop app, **PockP
 
 ## Highlights
 
-**Four ways to work, one window.** Chat with the best local model for each message, or hand a task to an agent: **PockPock Agent** (plans first, works in a task folder), **OpenClaw** (works directly on your computer) or **NemoClaw** (OpenClaw inside a sandbox).
+**Three ways to work, one window.** Chat with the best local model for each message, or hand a task to an agent: **PockPock Agent** (plans first, works in a task folder) or **OpenClaw** (works directly on your computer).
 
 **You approve the plan before anything runs.** PockPock Agent writes a plan with steps, success checks and the files it will deliver, and a reviewer checks it. You can approve it, edit it, or decline it.
 
@@ -55,7 +55,7 @@ PockPock is a local AI workspace for Windows and macOS. Its desktop app, **PockP
 |---|---|
 | ![The Skills page](docs/images/skills.png) | ![The Services page](docs/images/services.png) |
 
-**Setup installs everything, then proves it works.** One setup screen installs Python, Ollama and the models, OpenClaw and NemoClaw. It then starts every service, checks each one, and asks a model for a test reply.
+**Setup installs everything, then proves it works.** One setup screen installs Python, Ollama and the models, and OpenClaw. It then starts every service, checks each one, and asks a model for a test reply.
 
 ![Setup finished: every service running and checked](docs/images/setup-done.png)
 
@@ -99,18 +99,16 @@ PockPock runs on **Windows 10/11 (64-bit)** and **macOS 12 or later** (Apple sil
 | PockPock backend (always) | Python 3.12 (Windows: from python.org or winget; Mac: through uv, into PockPock's own folder), the PockPock services, an isolated browser for agent web tasks | about 600–700 MB |
 | Ollama and models | Ollama plus the AI model (`qwen3.5:4b`, `qwen3.5:9b` or `qwen3.5:27b`) and `qwen3.5:2b` (Smart Router classifier) | about 7 GB with `4b`, 10 GB with `9b` |
 | OpenClaw engine | Node.js (if needed), OpenClaw, the PockPock permission plugin, and a list of OpenClaw skills you can untick | about 400 MB |
-| NemoClaw engine (only with **Customize**) | Windows: WSL with Ubuntu, Docker Desktop and a NemoClaw sandbox. Mac (Apple silicon only): Apple's Command Line Tools, Docker Desktop and a NemoClaw sandbox | about 8 GB |
 
 3. When the installs finish, setup **starts every service and checks it**: each service must answer its health check, Ollama must produce a short test reply, and the PockPock API must respond. Only then does it say "PockPock is ready". If a check fails, setup names the service; open **Services** to read its log and press **Try again**.
 
 Setup skips anything already installed, so running it again repairs a broken install. What it may ask you for:
 
-- **Windows:** NemoClaw needs administrator approval, may need a Windows restart, and asks you to create an Ubuntu username once.
-- **Mac:** nothing for the backend, Ollama or OpenClaw (they install into your user folders without a password). NemoClaw asks for your password once (to install Docker Desktop) and may ask you to install Apple's Command Line Tools.
+- **Mac:** nothing for the backend, Ollama or OpenClaw (they install into your user folders without a password).
 
 Setup resumes where it stopped when you reopen the app or press **Continue setup**.
 
-**Requirements:** 16 GB RAM (32 GB recommended) and 20 GB free disk space (30 GB with NemoClaw). For speed: on Windows an NVIDIA GPU with 8 GB or more of video memory (CPU-only works but is slow); on a Mac, Apple silicon (Intel Macs run models on the CPU, slowly). NemoClaw on a Mac needs Apple silicon; NVIDIA lists macOS support as "tested with limitations". An internet connection is needed during setup only.
+**Requirements:** 16 GB RAM (32 GB recommended) and 20 GB free disk space. For speed: on Windows an NVIDIA GPU with 8 GB or more of video memory (CPU-only works but is slow); on a Mac, Apple silicon (Intel Macs run models on the CPU, slowly). An internet connection is needed during setup only.
 
 ---
 
@@ -125,7 +123,6 @@ The window (**Agent Studio**) has an icon rail on the far left (Tasks, Workshop,
   - **Chat** answers directly with the best local model.
   - **PockPock Agent** proposes a plan, checked first against the folder and the permission (files found, tools allowed, anything unclear). If it has questions, a dialog asks them one per page, with suggested answers and one **Submit answers** at the end. You can edit, reorder or add steps, then **Approve and run** or **Decline**. It works in a task folder (the open folder, or a new temporary one) and shows each step, changed files, sources it read, and files it produced. While it works, the composer takes a **note** that the agent reads at its next step. A failed run can **Retry from step N**. **Plan in steps** (the model menu's Planning section) lets a stronger model, such as a connected NVIDIA NIM model, write a checked step plan that a local model carries out one step at a time; see [Plan-and-Sequence](docs/features/plan-and-sequence.md).
   - **OpenClaw** is an agent that runs directly on this PC: commands, files, the browser, mouse and keyboard. It works in the open folder (or, with none, in its own workspace). Its permission picker sets what it may do without asking: **Ask first**, **Auto-approve safe**, **Full access**, or **Full auto** (Full access that keeps going on its own, without stopping to ask, for up to 4 hours). Its model menu can also download an optional **uncensored** Qwen 3.5 9B (refusals removed).
-  - **NemoClaw** runs OpenClaw inside a sandbox, so it cannot touch this PC.
 - **Theme**: **Settings → Theme** switches between **PockPock Dark** (the default), **Volt**, **Storm**, **Feather** (light) and **System** (follows your computer's light or dark mode). Every theme meets WCAG AA contrast. While an agent works, the PockPock mark's bolt pulses next to what it is doing.
 - **Approvals** appear as cards in the conversation with **Allow once**, **Allow for this task** (the same kind of action for the rest of the task: any file change, the same browser action, or in OpenClaw the same command or tool) and **Deny**.
 - **Report** (the flag under a reply) records a reply that hung, failed or was wrong, with an optional description. Personal details such as your user folder and email are hidden first, and you see exactly what is saved. Reports stay on your PC; review, change or delete them on the **Maintenance** page.
@@ -138,9 +135,9 @@ The window (**Agent Studio**) has an icon rail on the far left (Tasks, Workshop,
 - **Activity** shows which model handled each request and how long it took (no prompt text is stored).
 - **Models**, **Memory** and **Research** control which local models are used, learned preferences, and whether agents may read public websites. **Research** also lists the pages you chose to watch: turn on **Watch for changes** on a saved source and PockPock re-reads that page in the background (every 6 hours while it runs, only while reading public websites is allowed) and tells you when it changes. Watching is off unless you turn it on for a page.
 - **Connectors**: connect **GitHub**, **email**, **Telegram**, **Slack**, **Discord** or **Notion** with a key you create in that app. PockPock checks the key with the app, stores it encrypted, and gives the OpenClaw agent tools for it (read issues, search mail, read messages; sending, posting and creating ask you first). See [Connectors](docs/features/connectors.md).
-- **Cloud models**: connect **NVIDIA NIM**, **OpenAI**, **Claude (Anthropic)** or **Alibaba Cloud Model Studio** with your own API key (for OpenAI and Claude, a developer-platform API key: a ChatGPT or Claude.ai subscription does not include API use), choose which of their models you want, and pick them in the model menu of Chat, PockPock Agent, OpenClaw or NemoClaw. Disconnecting a service, or switching one of its models off, also puts every model choice that used it back to its default. A cloud model is used only when you pick it; **Smart route** keeps choosing local models. A chat that uses a cloud model sends its messages, files and tool results to that service. See [Cloud models](docs/features/cloud-models.md).
+- **Cloud models**: connect **NVIDIA NIM**, **OpenAI**, **Claude (Anthropic)** or **Alibaba Cloud Model Studio** with your own API key (for OpenAI and Claude, a developer-platform API key: a ChatGPT or Claude.ai subscription does not include API use), choose which of their models you want, and pick them in the model menu of Chat, PockPock Agent or OpenClaw. Disconnecting a service, or switching one of its models off, also puts every model choice that used it back to its default. A cloud model is used only when you pick it; **Smart route** keeps choosing local models. A chat that uses a cloud model sends its messages, files and tool results to that service. See [Cloud models](docs/features/cloud-models.md).
 - **Updates** (Windows): new versions download in the background and install when you press **Restart to update** or quit PockPock; your chats, settings and caches are kept. Installing from a downloaded installer over an earlier version asks whether to **Repair** (keep the caches) or do a **Clean install** (remove the caches); either way it first stops PockPock's background services, and your chats, settings, keys and models are kept. On a Mac, PockPock tells you when a new version is available and links to its download.
-- **Services** starts, stops and restarts everything (Ollama, the backend services including Local MCP, OpenClaw, NemoClaw) all at once or one by one, shows their logs, and sets startup options. All services start when the app opens; a model loads into memory only when a message uses it.
+- **Services** starts, stops and restarts everything (Ollama, the backend services including Local MCP, OpenClaw) all at once or one by one, shows their logs, and sets startup options. All services start when the app opens; a model loads into memory only when a message uses it.
 
 Full guide: [PockPock Agent desktop app](docs/features/desktop-app.md).
 
@@ -164,7 +161,6 @@ PockPock Agent is an Electron app that talks to a local API (the **gateway**, `1
 | Local MCP | 8776 | Runs the MCP servers you added, once, for the agents |
 | Ollama | 11434 | Runs the models |
 | OpenClaw gateway | 18810 | The OpenClaw engine (optional) |
-| NemoClaw sandbox | 18789 | The NemoClaw engine in WSL (optional) |
 
 ### Smart Router
 
@@ -192,7 +188,7 @@ Typical roles on the reference PC (any installed models can be used):
 
 - Agent requests are accepted only from this PC. The desktop app reaches the gateway through its own loopback origin.
 - **PockPock Agent** works only on attached files, public websites named in the task (private and local addresses are blocked), and its task folder. It has no general shell. **Default** permission is read-only; **Auto-review** asks before each file change; **Full access** applies changes inside the task folder without asking and allows the project's own build and test scripts.
-- **OpenClaw** has no sandbox; its permission mode is enforced by the PockPock permission plugin inside OpenClaw, and unknown tools always ask. **NemoClaw** is confined to its sandbox.
+- **OpenClaw** has no sandbox; its permission mode is enforced by the PockPock permission plugin inside OpenClaw, and unknown tools always ask.
 - Skills and MCP servers are third-party content. PockPock shows the source, commit and exact command before installing, but does not review the code.
 
 Details: [Architecture](docs/ARCHITECTURE.md) and the [feature index](docs/FEATURES.md).
@@ -210,7 +206,7 @@ PockPockAgent/
 │   ├── scripts/        gateway (pockpock_server.py), Smart Router, telemetry, pockpock.py, run_tests.py
 │   └── projects/       services: planner, validator, run_store, browser_automation, mcp_hub (Local MCP)
 │                       in the gateway: agent_core, agent_tools, agent_skills, plan_sequence, agent_extensions,
-│                       connectors, openclaw_bridge, nemoclaw_bridge, model_router, local_memory, observability
+│                       connectors, openclaw_bridge, coding_cli, model_router, local_memory, observability
 │                       tools: agent_eval, agent_verifier
 ├── docs/               architecture, roadmap, task tracker, feature pages
 ├── design-system/      desktop design tokens and rules
@@ -285,10 +281,9 @@ Uninstalling the app keeps this data; delete the folders to remove it.
 | A cloud model is refused | Check the key on **Cloud models** (OpenAI and Claude need an API key from their developer platforms; a ChatGPT or Claude.ai subscription does not include API use). |
 | Mac: "PockPock Agent cannot be opened" or "cannot verify the developer" | The app is not notarized yet. **System Settings → Privacy & Security → Open Anyway**, once. |
 | Mac: "is damaged and can't be opened" | The download was altered or only partly copied. Download the `.dmg` again and drag the app to Applications. |
-| Mac: NemoClaw is not offered | It needs Apple silicon. Intel Macs can use Chat, PockPock Agent and OpenClaw. |
 | A large model is very slow | Expected when it does not fit in video memory; use it for hard tasks and start a new chat for it. |
 
-More: [desktop app](docs/features/desktop-app.md), [OpenClaw](docs/features/openclaw-agent.md), [NemoClaw](docs/features/nemoclaw-agent.md), [skills and MCP](docs/features/agent-extensions.md), [Local MCP](docs/features/local-mcp.md), [cloud models](docs/features/cloud-models.md).
+More: [desktop app](docs/features/desktop-app.md), [OpenClaw](docs/features/openclaw-agent.md), [skills and MCP](docs/features/agent-extensions.md), [Local MCP](docs/features/local-mcp.md), [cloud models](docs/features/cloud-models.md).
 
 ---
 

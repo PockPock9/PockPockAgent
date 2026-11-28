@@ -2,7 +2,7 @@
 // that fits this computer. Customize (and later runs from Settings): choose components, the model and
 // OpenClaw skills. Either way everything is installed in one go, then started and checked.
 import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, Box, Check, ChevronDown, ChevronRight, CircleDashed, Cpu, HardDrive, LoaderCircle, MemoryStick, Puzzle, RotateCcw, Server, Settings2, Sparkles, Terminal, X } from 'lucide-react'
+import { AlertTriangle, Check, ChevronDown, ChevronRight, CircleDashed, Cpu, HardDrive, LoaderCircle, MemoryStick, Puzzle, RotateCcw, Server, Settings2, Sparkles, Terminal, X } from 'lucide-react'
 import { bridge } from '../lib/types'
 import { computer, isMac } from '../lib/platform'
 import type { SetupComponent, SetupEvent, SetupStatus } from '../lib/types'
@@ -35,13 +35,11 @@ const COMPONENTS: ComponentInfo[] = isMac
       { id: 'core', title: 'PockPock backend', icon: <Server size={16} />, detail: 'Python 3.12 (installed into PockPock’s own folder, no password needed), the PockPock services and an isolated browser for agent web tasks.', size: 'about 700 MB', locked: true },
       { id: 'ollama', title: 'Ollama and models', icon: <Cpu size={16} />, detail: 'Runs AI models on this Mac. Installs Ollama in Applications and downloads the model chosen below plus qwen3.5:2b, a small model that routes requests.', size: 'about 1 GB plus the model' },
       { id: 'openclaw', title: 'OpenClaw engine', icon: <Terminal size={16} />, detail: 'An agent that works directly on this Mac, with skills, MCP servers and the Ask first / Auto-approve / Full access permissions. Installs Node.js into PockPock’s folder if needed.', size: 'about 400 MB' },
-      { id: 'nemoclaw', title: 'NemoClaw engine', icon: <Box size={16} />, detail: 'OpenClaw inside a Docker sandbox, so it cannot touch this Mac. Installs Docker Desktop and Apple’s Command Line Tools if missing.', size: 'about 8 GB', warning: 'macOS asks for your password once (to install Docker Desktop) and may ask to install the Command Line Tools. Takes 20 to 40 minutes.' },
     ]
   : [
       { id: 'core', title: 'PockPock backend', icon: <Server size={16} />, detail: 'Python 3.12, the PockPock services and an isolated browser for agent web tasks.', size: 'about 600 MB', locked: true },
       { id: 'ollama', title: 'Ollama and models', icon: <Cpu size={16} />, detail: 'Runs AI models on this PC. Downloads the model chosen below plus qwen3.5:2b, a small model that routes requests.', size: 'about 2 GB plus the model' },
       { id: 'openclaw', title: 'OpenClaw engine', icon: <Terminal size={16} />, detail: 'An agent that works directly on this PC, with skills, MCP servers and the Ask first / Auto-approve / Full access permissions. Installs Node.js if needed.', size: 'about 400 MB' },
-      { id: 'nemoclaw', title: 'NemoClaw engine', icon: <Box size={16} />, detail: 'OpenClaw inside a sandbox, so it cannot touch this PC. Installs WSL with Ubuntu and Docker Desktop.', size: 'about 8 GB', warning: 'Windows asks for administrator permission, may need a restart, and Ubuntu asks you to create a username once. Takes 20 to 40 minutes.' },
     ]
 
 export function SetupPage({ onDone }: { onDone: () => void }) {
@@ -63,13 +61,13 @@ export function SetupPage({ onDone }: { onDone: () => void }) {
     setStatus(current)
     setModel((value) => value || current.pending?.model || current.model.name)
     if (current.pending) {
-      setChosen(new Set(current.pending.components))
+      // A plan saved before 0.2.17 may still name NemoClaw, which was removed.
+      setChosen(new Set(current.pending.components.filter((id) => COMPONENTS.some((item) => item.id === id))))
       setDisabledSkills(new Set(current.pending.disabledSkills))
     } else if (current.needsSetup) {
       setChosen(new Set(current.recommended.components))
     } else {
-      // Repair: tick what is missing. NemoClaw is never ticked for you: it needs administrator
-      // approval, Docker and (on Windows) a restart.
+      // Repair: tick what is missing.
       setChosen(new Set((['core', 'ollama', 'openclaw'] as SetupComponent[]).filter((id) => id === 'core' || !current[id].installed || (id === 'ollama' && Object.values(current.ollama.models).some((ok) => !ok)))))
     }
   })
@@ -97,7 +95,6 @@ export function SetupPage({ onDone }: { onDone: () => void }) {
     setPhase('running')
     void desktop?.setup.start({ components: plan?.components ?? [...chosen], disabledSkills: [...disabledSkills], model: model || undefined })
   }
-  const unsupported = (id: SetupComponent) => id === 'nemoclaw' && status !== null && !status.nemoclaw.supported
   const installed = (id: SetupComponent) => Boolean(status?.[id].installed) && !(id === 'ollama' && status && Object.values(status.ollama.models).some((ok) => !ok))
 
   const checking = steps.some((step) => step.component === 'verify' || /check/i.test(step.id))
@@ -119,14 +116,13 @@ export function SetupPage({ onDone }: { onDone: () => void }) {
             {status.platform === 'win32' && !status.winget && <div className="banner" role="status"><span>The Windows package manager (winget) is not available, so installers are downloaded directly instead.</span></div>}
             <ul className="setup-components">
               {COMPONENTS.map((component) => (
-                <li key={component.id} className={`setup-component${chosen.has(component.id) ? ' is-chosen' : ''}${unsupported(component.id) ? ' is-unsupported' : ''}`}>
+                <li key={component.id} className={`setup-component${chosen.has(component.id) ? ' is-chosen' : ''}`}>
                   <label>
-                    <input type="checkbox" checked={chosen.has(component.id)} disabled={component.locked || unsupported(component.id)} onChange={(event) => setChosen((current) => { const next = new Set(current); if (event.target.checked) next.add(component.id); else next.delete(component.id); return next })} />
+                    <input type="checkbox" checked={chosen.has(component.id)} disabled={component.locked} onChange={(event) => setChosen((current) => { const next = new Set(current); if (event.target.checked) next.add(component.id); else next.delete(component.id); return next })} />
                     <span className="setup-component__icon">{component.icon}</span>
                     <span className="setup-component__text">
                       <strong>{component.title} {installed(component.id) && <small className="badge badge--ok">Installed</small>}</strong>
                       <span>{component.detail}</span>
-                      {unsupported(component.id) && <em><AlertTriangle size={12} /> {status.nemoclaw.reason}</em>}
                       <small>{installed(component.id) ? 'Checked and repaired if needed' : `Download: ${component.size}`}</small>
                       {component.warning && chosen.has(component.id) && !installed(component.id) && <em><AlertTriangle size={12} /> {component.warning}</em>}
                     </span>

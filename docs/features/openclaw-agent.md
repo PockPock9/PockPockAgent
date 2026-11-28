@@ -1,6 +1,6 @@
 # OpenClaw agent mode
 
-OpenClaw mode lets the PockPock Agent desktop app talk to an [OpenClaw](https://docs.openclaw.ai) agent that runs **directly on this Windows PC, with no sandbox**. It is one of the four modes in the composer, next to **Chat**, **PockPock Agent** and **NemoClaw**. The agent can run shell commands, read and change files anywhere your Windows account can, and use OpenClaw's other tools. What it may do without asking is set by a three-option permission picker in the composer.
+OpenClaw mode lets the PockPock Agent desktop app talk to an [OpenClaw](https://docs.openclaw.ai) agent that runs **directly on this Windows PC, with no sandbox**. It is one of the three modes in the composer, next to **Chat** and **PockPock Agent**. The agent can run shell commands, read and change files anywhere your Windows account can, and use OpenClaw's other tools. What it may do without asking is set by a three-option permission picker in the composer.
 
 In the composer it is the **OpenClaw** entry of the mode picker. Setup installs and configures it (Node.js, OpenClaw, onboarding against Ollama, the permission plugin, the skills you chose, and the gateway login item); the **Services** page starts and stops its gateway.
 
@@ -12,10 +12,9 @@ PockPock does not install OpenClaw or its gateway. It connects to an existing lo
 | --- | --- | --- |
 | Chat | Smart Router picks a local Ollama model | No tools |
 | Agent | PockPock planner, critic, and `agent_core` | PockPock's scoped tools in a task workspace, with plan approval |
-| NemoClaw | OpenClaw inside the NemoClaw sandbox in WSL | The Linux sandbox and its network policy; cannot see Windows files |
 | OpenClaw | OpenClaw on Windows | None except the permission mode you choose |
 
-Use NemoClaw when the agent should be contained. Use OpenClaw when it must work on real files and programs on this PC.
+Use OpenClaw when the agent must work on real files and programs on this PC. Use PockPock Agent when it should stay in a task folder and show a plan first. (The sandboxed NemoClaw mode was removed in 0.2.17.)
 
 ## Permission modes
 
@@ -76,7 +75,7 @@ Full access means what it says: the agent can delete files, install software, an
   openclaw config set agents.defaults.thinkingDefault low
   ```
 
-  `thinkingDefault low` matters with `qwen3.5:9b`: with reasoning off it often replied without calling any tool. Port 18810 avoids the NemoClaw dashboard on 18789. The gateway listens on `127.0.0.1` only and requires its token.
+  `thinkingDefault low` matters with `qwen3.5:9b`: with reasoning off it often replied without calling any tool. The gateway listens on `127.0.0.1` only and requires its token.
 - Enough model context. OpenClaw's native prompt is about 21K tokens. Set the model's `contextTokens` to `65536` so tool output fits (`openclaw config set "models.providers.ollama.models[0].contextTokens" 65536 --strict-json`, using the index of your model). With `qwen3.5:9b` this uses about 7.7 GB of GPU memory. OpenClaw requests this size per call, so Ollama reloads the model when you switch between OpenClaw and other PockPock modes.
 - The PockPock permission plugin installed in OpenClaw:
 
@@ -126,7 +125,7 @@ PockPock's own per-turn limit (`POCKPOCK_OPENCLAW_TIMEOUT_SECONDS`) defaults to 
 
 Switching model in the middle of a long conversation makes the new model read the whole history first. Start a new chat for a task meant for the large model.
 
-Each PockPock conversation maps to one OpenClaw session (`pockpock-<conversation id>`), so the agent remembers earlier turns in the thread. Turns sent in Chat, Agent, or NemoClaw mode are not copied into it. The model picker is hidden because OpenClaw uses its own configured model. Images are not accepted; text and document attachments are.
+Each PockPock conversation maps to one OpenClaw session (`pockpock-<conversation id>`), so the agent remembers earlier turns in the thread. Turns sent in Chat or Agent mode are not copied into it. The model picker is hidden because OpenClaw uses its own configured model. Images are not accepted; text and document attachments are.
 
 ## Tool retrieval: skills and MCP servers per turn
 
