@@ -78,6 +78,20 @@ class MoreRepairTests(unittest.TestCase):
         self.assertFalse(step_must_write(step("read", ["read_project_file"], {"type": "no_error"})))
 
 
+class OfficeFileTests(unittest.TestCase):
+    def test_a_pdf_step_gets_the_document_tool_even_with_a_folder_open(self):
+        from projects.plan_sequence.contracts import repair_artifact_tools, repair_folder_writes
+
+        plan = {"steps": [
+            step("word", ["create_office_document", "read_project_file"], {"type": "file_exists", "path": "resume.docx"}),
+            step("pdf", ["propose_project_patch", "read_project_file"], {"type": "file_exists", "path": "resume.pdf"}),
+            step("deck", ["save_text_artifact"], {"type": "file_exists", "path": "deck.pptx"}),
+        ]}
+        fixed = repair_folder_writes(repair_artifact_tools(plan), task="Resume in Word and PDF", folder_open=True, permission_mode="full-access")
+        self.assertEqual([s["tools_allowed"] for s in fixed["steps"]],
+                         [["create_office_document", "read_project_file"], ["create_office_document", "read_project_file"], ["create_office_document"]])
+
+
 class PatternListTests(unittest.TestCase):
     def check(self, text, pattern):
         with tempfile.TemporaryDirectory() as tmp:

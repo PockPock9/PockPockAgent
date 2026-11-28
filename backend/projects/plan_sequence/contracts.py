@@ -235,9 +235,29 @@ def repair_artifact_tools(raw: object) -> object:
         tools = step["tools_allowed"]
         if extension in _TEXT_EXTENSIONS and "create_office_document" in tools and "save_text_artifact" not in tools:
             step["tools_allowed"] = ["save_text_artifact" if tool == "create_office_document" else tool for tool in tools]
-        elif extension in _OFFICE_EXTENSIONS and "save_text_artifact" in tools and "create_office_document" not in tools:
-            step["tools_allowed"] = ["create_office_document" if tool == "save_text_artifact" else tool for tool in tools]
+        elif extension in _OFFICE_EXTENSIONS and "create_office_document" not in tools and _TEXT_WRITERS & set(tools):
+            # Only create_office_document writes Word, PDF, Excel and PowerPoint files. A "convert to PDF" step
+            # given propose_project_patch failed three times with "file does not exist: resume.pdf" (scenario
+            # run 2026-11-28): the text writers swap for it.
+            swapped, kept = False, []
+            for tool in tools:
+                if tool in _TEXT_WRITERS:
+                    if not swapped:
+                        kept.append("create_office_document")
+                        swapped = True
+                else:
+                    kept.append(tool)
+            step["tools_allowed"] = kept
     return raw
+
+
+_TEXT_WRITERS = {"save_text_artifact", "propose_project_patch", "propose_project_edit"}
+
+
+def _office_step(step: dict) -> bool:
+    condition = step.get("done_condition") if isinstance(step.get("done_condition"), dict) else {}
+    path = str(condition.get("path") or "").lower()
+    return "." in path and path[path.rfind("."):] in _OFFICE_EXTENSIONS
 
 
 _READ_TOOLS = ("read_project_file", "read_selected_file", "scrape_public_page", "search_project")
@@ -368,7 +388,7 @@ def repair_folder_writes(raw: object, *, task: str, folder_open: bool, permissio
     if not isinstance(raw, dict) or not isinstance(raw.get("steps"), list):
         return raw
     for step in raw["steps"]:
-        if isinstance(step, dict) and isinstance(step.get("tools_allowed"), list) and "save_text_artifact" in step["tools_allowed"]:
+        if isinstance(step, dict) and isinstance(step.get("tools_allowed"), list) and "save_text_artifact" in step["tools_allowed"] and not _office_step(step):
             step["tools_allowed"] = ["propose_project_patch" if tool == "save_text_artifact" else tool for tool in step["tools_allowed"]]
     return raw
 
