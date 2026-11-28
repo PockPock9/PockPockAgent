@@ -1,19 +1,18 @@
 // macOS installers used by setup.cjs. Python (through uv), Node.js and OpenClaw are installed into
 // PockPock's own runtime folder, so they need no Homebrew and no administrator password. Ollama goes
-// to Applications. Only NemoClaw's Docker Desktop asks for the password, once.
+// to Applications.
 const crypto = require('node:crypto')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const paths = require('./paths.cjs')
-const { run, nemoShell, dockerReady, dockerDesktopApp } = require('./platform.cjs')
+const { run } = require('./platform.cjs')
 
 const ARCH = os.arch() === 'arm64' ? 'arm64' : 'x64'
 const UV_TARGET = ARCH === 'arm64' ? 'aarch64-apple-darwin' : 'x86_64-apple-darwin'
 const UV_URL = `https://github.com/astral-sh/uv/releases/latest/download/uv-${UV_TARGET}.tar.gz`
 const OLLAMA_RELEASE = 'https://github.com/ollama/ollama/releases/latest/download'
 const NODE_INDEX = 'https://nodejs.org/dist/latest-v24.x'
-const DOCKER_URL = `https://desktop.docker.com/mac/main/${ARCH === 'arm64' ? 'arm64' : 'amd64'}/Docker.dmg`
 
 const binDir = () => path.join(paths.runtimeRoot(), 'bin')
 const uvPath = () => path.join(binDir(), 'uv')
@@ -143,61 +142,4 @@ function npmInvocation(args) {
   return npm ? { file: npm, args, options: {} } : null
 }
 
-function consoleUser() {
-  return os.userInfo().username
-}
-
-/** Installs Docker Desktop from Docker's disk image. macOS asks for the administrator password once,
- * in its own dialog; the install also accepts Docker's licence so its first-run window is skipped. */
-async function installDockerDesktop(setup, { download, SetupError }) {
-  const image = path.join(os.tmpdir(), 'Docker.dmg')
-  await download(DOCKER_URL, image, (fraction) => setup.step('nemoclaw', 'docker', 'Downloading Docker Desktop', 'running', '', fraction))
-  const mount = fs.mkdtempSync(path.join(os.tmpdir(), 'pockpock-docker-'))
-  await setup.must('/usr/bin/hdiutil', ['attach', image, '-nobrowse', '-readonly', '-mountpoint', mount], 'Opening the Docker Desktop image')
-  try {
-    const installer = path.join(mount, 'Docker.app', 'Contents', 'MacOS', 'install')
-    if (!fs.existsSync(installer)) throw new SetupError('The Docker Desktop image did not contain its installer.')
-    const quote = (value) => `'${value.replace(/'/g, `'\\''`)}'`
-    const shell = `${quote(installer)} --accept-license --user=${quote(consoleUser())}`
-    const script = `do shell script ${JSON.stringify(shell)} with prompt "PockPock Agent needs your password to install Docker Desktop for the NemoClaw engine." with administrator privileges`
-    const result = await setup.exec('/usr/bin/osascript', ['-e', script])
-    if (result.code !== 0) throw new SetupError(/User canceled|-128/.test(result.tail) ? 'Docker Desktop was not installed because the password prompt was cancelled.' : 'Docker Desktop could not be installed. See the setup log.')
-  } finally {
-    await run('/usr/bin/hdiutil', ['detach', mount, '-quiet'], { timeout: 60000 })
-  }
-}
-
-/** Returns 'installed' when NemoClaw's command is present, or 'action' when the user must act. */
-async function installNemoClaw(setup, context) {
-  const { NEMOCLAW_ENV, SetupError, services } = context
-  const C = 'nemoclaw'
-  if (ARCH !== 'arm64') throw new SetupError('NemoClaw needs a Mac with Apple silicon.')
-  setup.step(C, 'tools', 'Xcode Command Line Tools', 'running')
-  if (!(await run('/usr/bin/xcode-select', ['-p'], { timeout: 20000 })).ok) {
-    await run('/usr/bin/xcode-select', ['--install'], { timeout: 20000 })
-    setup.actionMessage = 'macOS opened a window to install the Command Line Tools that NemoClaw needs. Press Install there, wait for it to finish, then press Continue setup.'
-    setup.step(C, 'tools', 'Xcode Command Line Tools', 'waiting', 'Finish the installation in the window macOS opened')
-    return 'action'
-  }
-  setup.step(C, 'tools', 'Xcode Command Line Tools', 'done')
-  setup.step(C, 'docker', 'Docker Desktop', 'running')
-  if (!(await dockerReady())) {
-    if (!dockerDesktopApp() && !paths.findExecutable(['colima'])) await installDockerDesktop(setup, context)
-    try {
-      await services.ensureDocker()
-    } catch {
-      setup.actionMessage = 'Docker Desktop is starting for the first time. If it shows a window, finish it (sign-in is optional), then press Continue setup.'
-      setup.step(C, 'docker', 'Docker Desktop', 'waiting', 'Finish Docker Desktop\'s first start')
-      return 'action'
-    }
-  }
-  setup.step(C, 'docker', 'Docker Desktop', 'done')
-  setup.step(C, 'install', 'NemoClaw', 'running', 'This can take 15 to 30 minutes')
-  const installed = await nemoShell('command -v nemoclaw >/dev/null 2>&1 && echo yes', 30000)
-  if (!installed.stdout.includes('yes')) {
-    await setup.must('/bin/bash', ['-lc', `curl -fsSL https://www.nvidia.com/nemoclaw.sh | env ${NEMOCLAW_ENV} bash`], 'Installing NemoClaw')
-  }
-  return 'installed'
-}
-
-module.exports = { nodeArchive, ollamaArchiveSum, refreshPath, packageManager, ensurePython, ensureOllama, setUserEnv, ensureNode, npmInvocation, installNemoClaw, DISTRO: '' }
+module.exports = { nodeArchive, ollamaArchiveSum, refreshPath, packageManager, ensurePython, ensureOllama, setUserEnv, ensureNode, npmInvocation }

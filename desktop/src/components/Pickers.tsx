@@ -5,7 +5,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { Bot, ChevronDown, Cloud, Download, Flag, Folder, Image as ImageIcon, LoaderCircle, Paperclip, Plug, Plus, Puzzle, Shield, ShieldOff, Sparkles } from 'lucide-react'
 import type { Status } from '../lib/status'
 import { ENGINE_LABEL } from '../lib/types'
-import type { AgentPermission, ClawPermission, Engine, NemoRoute, Settings } from '../lib/types'
+import type { AgentPermission, ClawPermission, Engine, Settings } from '../lib/types'
 import { AGENT_PERMISSION, CLAW_PERMISSION } from '../lib/permissions'
 import { MenuItem, Popover } from './ui'
 
@@ -87,7 +87,7 @@ export function PermissionPicker({ menu, onToggle, engine, settings, status, pat
   )
 }
 
-export function ModelPicker({ menu, onToggle, engine, settings, status, patchSettings, label, nemo }: {
+export function ModelPicker({ menu, onToggle, engine, settings, status, patchSettings, label }: {
   menu: Menu
   onToggle: (id: Menu) => void
   engine: Engine
@@ -95,7 +95,6 @@ export function ModelPicker({ menu, onToggle, engine, settings, status, patchSet
   status: Status
   patchSettings: (change: Partial<Settings>) => void
   label: string
-  nemo: { route: NemoRoute | null; busy: string | null; error: string; choose: (name: string) => void }
 }) {
   // Embedding models (nomic-embed-text, used for tool retrieval) cannot chat, so they are not offered.
   const local = (status.state?.models ?? []).filter((model) => model.enabled && !model.embedding)
@@ -126,22 +125,13 @@ export function ModelPicker({ menu, onToggle, engine, settings, status, patchSet
     }
   }
   const uncensoredReady = clawAll.includes(UNCENSORED_MODEL)
-  if (engine === 'nemoclaw' && !cloudModels.length && !nemo.route?.cloud) return null
   return (
     <div className="anchor">
       <Toggle menu={menu} id="model" label={`Model: ${label}`} className="pill pill--quiet" onToggle={onToggle}>
         <Sparkles size={13} /> <span className="pill__text">{label}</span> <ChevronDown size={12} aria-hidden="true" />
       </Toggle>
       <Popover open={menu === 'model'} onClose={() => onToggle(null)} align="right" className="popover--wide popover--scroll" label="Model">
-        {engine === 'nemoclaw' ? <>
-          <div className="popover__label">Sandbox model · applies to every NemoClaw task</div>
-          {nemo.error && <div className="popover__note" role="alert">{nemo.error}</div>}
-          <MenuItem icon={nemo.busy === '' ? <LoaderCircle size={14} className="spin" /> : <Bot size={14} />} title={nemo.route?.local?.model || status.nemo?.model || 'Local model'} detail="On this PC" disabled={nemo.busy !== null} selected={nemo.route ? !nemo.route.cloud : true} onSelect={() => nemo.choose('')} />
-          {cloudModels.length > 0 && <div className="popover__label">Cloud · sends data to the provider</div>}
-          {cloudModels.map((model) => (
-            <MenuItem key={model.name} icon={nemo.busy === model.name ? <LoaderCircle size={14} className="spin" /> : <Cloud size={14} />} title={cloudTitle(model.name)} detail={model.provider_label} disabled={nemo.busy !== null} selected={nemo.route?.cloud === true && nemo.route.model === model.name} onSelect={() => nemo.choose(model.name)} />
-          ))}
-        </> : engine === 'openclaw' ? <>
+        {engine === 'openclaw' ? <>
           <div className="popover__label">OpenClaw model · loads when used</div>
           <MenuItem icon={<Sparkles size={14} />} title="Default" detail={status.claw?.model?.replace('ollama/', '') || 'OpenClaw default'} selected={!settings.clawModel || !clawAll.includes(settings.clawModel)} onSelect={() => pick({ clawModel: '' })} />
           <div className="popover__label">Uncensored · refusals removed</div>

@@ -1,12 +1,11 @@
 // Shared data shapes for the desktop renderer.
 
-export type Engine = 'chat' | 'agent' | 'openclaw' | 'nemoclaw'
+export type Engine = 'chat' | 'agent' | 'openclaw'
 
 export const ENGINE_LABEL: Record<Engine, string> = {
   chat: 'Chat',
   agent: 'PockPock Agent',
   openclaw: 'OpenClaw',
-  nemoclaw: 'NemoClaw',
 }
 
 /** PockPock agent permission levels, as the backend names them. */
@@ -215,9 +214,6 @@ export type CloudProvider = {
 }
 /** A chosen cloud model in the gateway's state: `name` is "<provider>/<model id>". */
 export type CloudModelRef = { name: string; provider: CloudProviderId; provider_label: string; context_window: number | null }
-/** NemoClaw's sandbox-wide model: a cloud model, or the sandbox's own local model. */
-export type NemoRoute = { cloud: boolean; model: string; provider: string; local: { provider?: string; model?: string }; cloud_models: string[] }
-export type NemoStatus = { available: boolean; ready: boolean; checked?: boolean; detail: string; model?: string; sandbox?: string }
 
 export type BackendPhase = { phase: 'checking' | 'starting' | 'ready' | 'missing' | 'failed' | 'stopped'; detail: string; startedByApp: boolean }
 
@@ -249,14 +245,14 @@ export type Settings = {
   terminal?: boolean
   useWorkspaceForAgent?: boolean
   inspectorTab?: 'context' | 'files' | 'terminal'
-  services?: { autoStart?: boolean; stopOnQuit?: boolean; nemoclaw?: boolean }
+  services?: { autoStart?: boolean; stopOnQuit?: boolean }
   updates?: { autoDownload?: boolean }
   theme?: string // a ThemeId from lib/theme.ts
 }
 
 export type AppInfo = { version: string; electron: string; platform: string; arch: string; repoRoot: string; backendRoot: string; python: string; packaged: boolean; backendUrl: string; terminal: boolean; backend: BackendPhase; loginItem: boolean }
 
-export type SetupComponent = 'core' | 'ollama' | 'openclaw' | 'nemoclaw'
+export type SetupComponent = 'core' | 'ollama' | 'openclaw'
 export type UpdateState = {
   status: 'idle' | 'checking' | 'none' | 'available' | 'downloading' | 'ready' | 'error' | 'unsupported'
   current: string
@@ -313,7 +309,6 @@ export type SetupStatus = {
   core: { installed: boolean }
   ollama: { installed: boolean; running: boolean; models: Record<string, boolean> }
   openclaw: { installed: boolean; cli: boolean; node: boolean }
-  nemoclaw: { installed: boolean; supported: boolean; reason: string; docker: boolean }
   winget: boolean
   skills: Array<{ key: string; name: string; description: string }>
   pending: { components: SetupComponent[]; disabledSkills: string[]; model?: string } | null

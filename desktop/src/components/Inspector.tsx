@@ -52,7 +52,7 @@ export function Inspector({ tab, onTab, overlay, message, settings, status, term
   const modelName = message?.model?.split(' · ')[0] || (settings.chatModel && settings.chatModel !== 'auto' ? settings.chatModel : '')
   const cloud = status.state?.cloud_models?.find((model) => model.name === modelName)
   const local = status.state?.models.find((model) => model.name === modelName || model.name === `${modelName}:latest`)
-  const where = cloud ? `Cloud · ${cloud.provider_label}` : local ? `This PC · ${local.running ? 'loaded' : 'not loaded'}` : engine === 'nemoclaw' ? 'NemoClaw sandbox' : engine === 'openclaw' ? 'OpenClaw on this PC' : '—'
+  const where = cloud ? `Cloud · ${cloud.provider_label}` : local ? `This PC · ${local.running ? 'loaded' : 'not loaded'}` : engine === 'openclaw' ? 'OpenClaw on this PC' : '—'
   const usage = message?.usage
   const permission = engine === 'openclaw' ? CLAW_PERMISSION[settings.clawPermission ?? 'ask'] : engine === 'agent' ? AGENT_PERMISSION[settings.agentPermission ?? 'auto-review'] : null
   const taskFolder = message?.taskFolder || (message?.runId && status.state?.output_directory ? `${status.state.output_directory}${status.state.output_directory.includes('\\') ? '\\' : '/'}${message.runId}` : '')

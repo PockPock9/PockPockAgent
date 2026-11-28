@@ -126,17 +126,6 @@ class RequestValidationTests(unittest.TestCase):
             pockpock_server.AgentPlanPayload(task="   ")
         self.assertEqual(pockpock_server.AgentPlanPayload(task="Plan it").task, "Plan it")
 
-    def test_nemoclaw_refuses_a_bogus_session_before_the_stream(self):
-        # Issue #75: a malformed session id opened a stream and failed later.
-        import asyncio
-
-        from projects.nemoclaw_bridge.api import NemoClawChatPayload, create_router
-
-        route = next(r for r in create_router(None, lambda request: None).routes if r.path == "/api/nemoclaw/chat")
-        with self.assertRaises(pockpock_server.HTTPException) as ctx:
-            asyncio.run(route.endpoint(NemoClawChatPayload(session_id="bogus-123", message="hi")))
-        self.assertEqual(ctx.exception.status_code, 422)
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -26,7 +26,7 @@ export function CloudPage({ status }: { status: Status }) {
 
   const chosen = providers?.reduce((sum, provider) => sum + provider.models.length, 0) ?? 0
   return (
-    <PageFrame eyebrow="Workshop · Models" title="Cloud models" intro="Connect a cloud service to use its models in PockPock Agent, OpenClaw and NemoClaw, next to the models on this PC. You use your own account and pay the service directly.">
+    <PageFrame eyebrow="Workshop · Models" title="Cloud models" intro="Connect a cloud service to use its models in PockPock Agent and OpenClaw, next to the models on this PC. You use your own account and pay the service directly.">
       {error && <div className="banner banner--error" role="alert"><span>{error}</span></div>}
       <div className="banner" role="note"><Cloud size={14} /><span>A cloud model receives the messages, files and tool results of the chats that use it. Cloud models are used only when you pick one in a chat&rsquo;s model menu; <strong>Smart route</strong> keeps choosing local models. Keys are stored encrypted on this PC.</span></div>
       {!desktop && <p className="note">Cloud providers are set up in the desktop app.</p>}
@@ -63,7 +63,7 @@ function ProviderCard({ provider, onChanged }: { provider: CloudProvider; onChan
     } catch (reason) { setError(clean(reason, `${provider.name} could not be connected.`)) } finally { setBusy('') }
   }
   const disconnect = async () => {
-    if (!desktop || !window.confirm(`Disconnect ${provider.name}? Its key is deleted from this PC and its models leave the model menus. Anything set to one of its models (the chat model, OpenClaw's model, the step planner, NemoClaw's sandbox model) goes back to its default.`)) return
+    if (!desktop || !window.confirm(`Disconnect ${provider.name}? Its key is deleted from this PC and its models leave the model menus. Anything set to one of its models (the chat model, OpenClaw's model, the step planner) goes back to its default.`)) return
     setBusy('disconnect'); setError(''); setMessage('')
     try { onChanged(await desktop.cloud.disconnect(provider.id)); setOffered(null) } catch (reason) { setError(clean(reason, 'The provider could not be disconnected.')) } finally { setBusy('') }
   }

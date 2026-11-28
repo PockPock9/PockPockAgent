@@ -1,6 +1,6 @@
 // One message in the conversation: the user's prompt, or an assistant turn with its steps, plan,
 // approvals, reply, sources, changed and produced files, notes, and actions.
-import { AlertTriangle, Box, Bot, CircleCheck, FileText, FolderOpen, Image as ImageIcon, MessageSquare, NotebookPen, Play, Terminal } from 'lucide-react'
+import { AlertTriangle, Bot, CircleCheck, FileText, FolderOpen, Image as ImageIcon, MessageSquare, NotebookPen, Play, Terminal } from 'lucide-react'
 import { relativeTime } from '../lib/api'
 import { bridge, ENGINE_LABEL } from '../lib/types'
 import type { Engine, Message } from '../lib/types'
@@ -12,7 +12,6 @@ import { ApprovalCard, FailedCard, MessageActions, ResearchCard, Steps } from '.
 
 export function EngineIcon({ engine, size = 14 }: { engine: Engine; size?: number }) {
   if (engine === 'openclaw') return <Terminal size={size} />
-  if (engine === 'nemoclaw') return <Box size={size} />
   if (engine === 'agent') return <Bot size={size} />
   return <MessageSquare size={size} />
 }

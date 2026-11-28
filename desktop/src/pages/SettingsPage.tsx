@@ -1,5 +1,5 @@
 // Settings: how PockPock looks, runs and updates. Sections: Theme (a radio grid of the five themes),
-// Smart Router, Ollama, OpenClaw, NemoClaw, Updates and Setup.
+// Smart Router, Ollama, OpenClaw, Updates and Setup.
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, ReactNode } from 'react'
 import { Clock, Cpu, Download, Globe, LoaderCircle, Plug, Power, RefreshCw, Server } from 'lucide-react'
@@ -60,7 +60,6 @@ export function SettingsPage({ status, info, onOpen, updates, settings, patchSet
   const installed = status.services.filter((service) => service.available).length
   const loaded = status.state?.models.filter((model) => model.running && !model.embedding).length ?? 0
   const routerOn = status.state?.router_enabled !== false
-  const nemoLabel = status.nemoChecking ? 'Checking' : status.nemo?.ready ? 'Ready' : status.nemo?.checked === false || !status.nemo ? 'Not checked' : 'Not ready'
   return (
     <PageFrame eyebrow="Settings" title="Settings" intro="How PockPock looks, runs and updates.">
       {message && <div className="banner" role="status"><span>{message}</span></div>}
@@ -95,13 +94,6 @@ export function SettingsPage({ status, info, onOpen, updates, settings, patchSet
         <OpenClawBrowserRow onMessage={setMessage} />
         <OpenClawSlowModelsRow onMessage={setMessage} />
       </Section>
-      <Section title="NemoClaw">
-        <li className="row">
-          <Plug size={16} className="row__icon" aria-hidden="true" />
-          <div className="row__text"><strong>NemoClaw sandbox check {badge(Boolean(status.nemo?.ready), 'Ready', nemoLabel, true)}</strong><span>{status.nemoChecking ? 'Checking the sandbox (this loads its model)…' : status.nemo?.detail || 'Confirms the isolated sandbox is ready. The check loads its model.'}</span></div>
-          <button type="button" className="button" disabled={status.nemoChecking} onClick={() => void status.refreshNemo(true, true)}>{status.nemoChecking ? <LoaderCircle size={13} className="spin" /> : <RefreshCw size={13} />} Check</button>
-        </li>
-      </Section>
       <Section title="Updates">
         {update?.status === 'ready' && (
           <li className="row row--highlight">
@@ -129,7 +121,7 @@ export function SettingsPage({ status, info, onOpen, updates, settings, patchSet
       <Section title="Setup">
         <li className="row">
           <Power size={16} className="row__icon" aria-hidden="true" />
-          <div className="row__text"><strong>Setup</strong><span>Install missing components, repair them, or add OpenClaw and NemoClaw later.</span></div>
+          <div className="row__text"><strong>Setup</strong><span>Install missing components, repair them, or add OpenClaw later.</span></div>
           <button type="button" className="button" onClick={() => onOpen('setup')}>Run setup</button>
         </li>
       </Section>

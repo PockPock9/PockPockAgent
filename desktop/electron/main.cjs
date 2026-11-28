@@ -133,7 +133,7 @@ function backendPhase(list = services.list()) {
 
 function appSettings() {
   const services = readSettings().services
-  return { autoStart: services?.autoStart !== false, stopOnQuit: services?.stopOnQuit !== false, nemoclaw: services?.nemoclaw !== false }
+  return { autoStart: services?.autoStart !== false, stopOnQuit: services?.stopOnQuit !== false }
 }
 const terminals = new Terminals((...args) => send(...args))
 
@@ -224,7 +224,7 @@ function registerIpc() {
 
   handle('setup:status', () => setup.status())
   handle('setup:start', (plan) => {
-    const components = Array.isArray(plan?.components) ? plan.components.filter((name) => ['core', 'ollama', 'openclaw', 'nemoclaw'].includes(name)) : ['core']
+    const components = Array.isArray(plan?.components) ? plan.components.filter((name) => ['core', 'ollama', 'openclaw'].includes(name)) : ['core']
     // The model is checked against the offered choices in setup.start; anything else means "recommended".
     const model = typeof plan?.model === 'string' ? plan.model.slice(0, 64) : undefined
     void setup.start({ components, disabledSkills: Array.isArray(plan?.disabledSkills) ? plan.disabledSkills.map(String) : [], model })
@@ -343,9 +343,9 @@ function registerIpc() {
   handle('updates:check', () => updater.check())
   handle('updates:download', () => updater.download())
   handle('updates:install', () => updater.install(true))
-  handle('backend:retry', () => services.startAll({ includeNemo: false }))
+  handle('backend:retry', () => services.startAll())
   handle('services:list', () => { void services.refresh(); return services.list() })
-  handle('services:start', (id) => id === 'all' ? services.startAll({ includeNemo: true }) : services.start(String(id)))
+  handle('services:start', (id) => id === 'all' ? services.startAll() : services.start(String(id)))
   handle('services:stop', (id) => id === 'all' ? services.stopAll(false) : services.stop(String(id)))
   handle('services:restart', async (id) => { await services.stop(String(id)); return services.start(String(id)) })
   handle('services:logs', (id) => services.logs(String(id)))
@@ -456,7 +456,7 @@ async function createWindow() {
         await setup.refreshBackend()
         startingDetail = ''
       }
-      await services.startAll({ includeNemo: appSettings().nemoclaw })
+      await services.startAll()
     })().finally(() => { autoStarting = false; startingDetail = ''; send('backend:status', backendPhase()) })
   }
   updater.start()
@@ -528,7 +528,7 @@ if (!app.requestSingleInstanceLock()) {
       return
     }
     if (!appSettings().stopOnQuit) { server?.close(); return }
-    // Stop what this app started (OpenClaw and NemoClaw need a command, not just a kill).
+    // Stop what this app started (OpenClaw needs a command, not just a kill).
     event.preventDefault()
     quitting = true
     const done = () => { services.killOwnedSync(); server?.close(); app.exit(0) }

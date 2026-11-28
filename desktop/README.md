@@ -1,6 +1,6 @@
 # PockPock Agent (desktop)
 
-Electron desktop app for PockPock: chats, the four response modes (Chat, PockPock Agent, OpenClaw, NemoClaw), plan review and approvals, skills and MCP servers, a file explorer and a terminal. It uses the local PockPock backend and starts it if needed.
+Electron desktop app for PockPock: chats, the three response modes (Chat, PockPock Agent, OpenClaw), plan review and approvals, skills and MCP servers, a file explorer and a terminal. It uses the local PockPock backend and starts it if needed.
 
 ```powershell
 npm install

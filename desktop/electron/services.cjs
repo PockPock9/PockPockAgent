@@ -14,7 +14,6 @@ const { run } = platform
 
 const CHECK_INTERVAL_MS = 4000
 const STARTUP_TIMEOUT_MS = 60000
-const NEMOCLAW_SANDBOX = process.env.POCKPOCK_NEMOCLAW_SANDBOX || 'pockpock'
 
 /** Ordered as they start; stopping goes in reverse. */
 const DEFINITIONS = [
@@ -26,7 +25,6 @@ const DEFINITIONS = [
   { id: 'mcp-hub', name: 'Local MCP', group: 'Backend', port: 8776, project: 'mcp_hub', description: 'Runs the MCP servers you added, once, for every agent.' },
   { id: 'gateway', name: 'PockPock gateway', group: 'Backend', port: 8766, description: 'The API the app talks to: chat, agents, approvals.' },
   { id: 'openclaw', name: 'OpenClaw gateway', group: 'Agents', port: 18810, description: `Runs the OpenClaw engine on this ${paths.IS_MAC ? 'Mac' : 'PC'}.` },
-  { id: 'nemoclaw', name: 'NemoClaw sandbox', group: 'Agents', port: 18789, description: paths.IS_WIN ? 'OpenClaw in a WSL sandbox (needs Docker Desktop).' : 'OpenClaw in a Docker sandbox (needs Docker Desktop).' },
 ]
 
 function httpJson(url, timeoutMs = 1500) {
@@ -89,7 +87,6 @@ class ServiceManager {
     this.busy = new Map() // id -> 'starting' | 'stopping'
     this.errors = new Map()
     this.state = new Map(DEFINITIONS.map((definition) => [definition.id, { ...definition, status: 'checking', detail: '', startedByApp: false, available: true }]))
-    this.nemoInstalled = null
     this.timer = null
   }
 
@@ -109,21 +106,6 @@ class ServiceManager {
     }
     if (definition.id === 'ollama') return paths.ollamaExe() ? '' : 'Ollama is not installed. Run Setup.'
     if (definition.id === 'openclaw') return paths.openclawEntry() ? '' : 'OpenClaw is not installed. Run Setup.'
-    if (definition.id === 'nemoclaw') {
-      const support = platform.nemoSupported()
-      if (!support.supported) return support.reason
-      if (this.nemoInstalled === null) {
-        if (!platform.nemoHostReady()) this.nemoInstalled = false
-        else {
-          const listing = await platform.nemoShell('nemoclaw list --json 2>/dev/null', 30000)
-          try {
-            const parsed = JSON.parse(listing.stdout.replace(/\0/g, ''))
-            this.nemoInstalled = Array.isArray(parsed.sandboxes) && parsed.sandboxes.some((sandbox) => sandbox.name === NEMOCLAW_SANDBOX)
-          } catch { this.nemoInstalled = false }
-        }
-      }
-      return this.nemoInstalled ? '' : `NemoClaw with a "${NEMOCLAW_SANDBOX}" sandbox is not installed${paths.IS_WIN ? ' in WSL' : ''}. Run Setup.`
-    }
     return ''
   }
 
@@ -254,8 +236,8 @@ class ServiceManager {
     try {
       await this.launch(definition)
       this.started.add(id)
-      const ok = await this.waitUntil(definition, true, id === 'nemoclaw' ? 240000 : STARTUP_TIMEOUT_MS)
-      if (!ok) this.errors.set(id, `Did not start within ${id === 'nemoclaw' ? 4 : 1} minute${id === 'nemoclaw' ? 's' : ''}. See the log.`)
+      const ok = await this.waitUntil(definition, true, STARTUP_TIMEOUT_MS)
+      if (!ok) this.errors.set(id, 'Did not start within 1 minute. See the log.')
     } catch (error) {
       this.errors.set(id, error instanceof Error ? error.message : String(error))
     } finally {
@@ -271,7 +253,7 @@ class ServiceManager {
     } else if (definition.id === 'gateway') {
       this.spawnPython('gateway', ['-u', path.join(paths.backendRoot(), 'scripts', 'pockpock_server.py')], { cwd: path.dirname(paths.backendRoot()), env })
     } else if (definition.id === 'ollama') {
-      // NemoClaw and long agent turns need more context than Ollama's default 4K.
+      // Long agent turns need more context than Ollama's default 4K.
       this.spawnLogged('ollama', paths.ollamaExe(), ['serve'], { cwd: paths.HOME, env: paths.cleanEnv({ OLLAMA_CONTEXT_LENGTH: process.env.OLLAMA_CONTEXT_LENGTH || '32768' }) })
     } else if (definition.id === 'openclaw') {
       const entry = paths.openclawEntry()
@@ -280,28 +262,7 @@ class ServiceManager {
       const result = await run(entry.node, [entry.script, 'gateway', 'start'], { timeout: 120000, cwd: paths.HOME })
       fs.appendFileSync(path.join(paths.logsRoot(), 'openclaw-start.log'), `\n=== ${new Date().toISOString()}\n${result.stdout}${result.stderr}`)
       if (!result.ok && !(await portOpen(definition.port))) throw new Error((result.stderr || result.stdout).trim().split('\n').slice(-3).join(' ') || 'openclaw gateway start failed.')
-    } else if (definition.id === 'nemoclaw') {
-      await this.ensureDocker()
-      // The sandbox reaches models through Ollama on the host, so it must be up first.
-      if (!(await this.healthy(DEFINITIONS[0]))) await this.start('ollama')
-      const logStep = (label, result) => fs.appendFileSync(this.logFile('nemoclaw'), `
-=== ${new Date().toISOString()} ${label}
-${result.stdout.split(String.fromCharCode(0)).join('')}${result.stderr.split(String.fromCharCode(0)).join('')}`)
-      let result = await platform.nemoShell(`nemoclaw ${NEMOCLAW_SANDBOX} start 2>&1`, 300000)
-      logStep('start', result)
-      if (!result.ok || !(await portOpen(definition.port))) {
-        // After a restart the OpenShell gateway is down and start cannot reach it; recover brings it back.
-        result = await platform.nemoShell(`nemoclaw ${NEMOCLAW_SANDBOX} recover 2>&1`, 300000)
-        logStep('recover', result)
-      }
-      // Re-checks the inference route and restarts the host-side helpers without opening a shell.
-      logStep('connect --probe-only', await platform.nemoShell(`nemoclaw ${NEMOCLAW_SANDBOX} connect --probe-only 2>&1`, 300000))
-      if (!(await portOpen(definition.port))) throw new Error('NemoClaw did not start. See the log.')
     }
-  }
-
-  ensureDocker() {
-    return platform.ensureDocker()
   }
 
   async stop(id) {
@@ -314,7 +275,6 @@ ${result.stdout.split(String.fromCharCode(0)).join('')}${result.stderr.split(Str
     this.emit()
     try {
       if (id === 'openclaw') { const entry = paths.openclawEntry(); if (entry) await run(entry.node, [entry.script, 'gateway', 'stop'], { timeout: 60000 }) }
-      else if (id === 'nemoclaw') await platform.nemoShell(`nemoclaw ${NEMOCLAW_SANDBOX} stop 2>&1`, 180000)
       else {
         const child = this.children.get(id)
         if (id === 'ollama') await platform.stopOllamaApp()
@@ -331,7 +291,7 @@ ${result.stdout.split(String.fromCharCode(0)).join('')}${result.stderr.split(Str
     return this.check(definition).then((state) => { this.emit(); return state })
   }
 
-  async startAll({ includeNemo = true } = {}) {
+  async startAll() {
     const results = []
     const step = async (id) => {
       try { results.push(await this.start(id)) } catch (error) { this.errors.set(id, error instanceof Error ? error.message : String(error)) }
@@ -340,7 +300,6 @@ ${result.stdout.split(String.fromCharCode(0)).join('')}${result.stderr.split(Str
     await Promise.all(['planner', 'validator', 'run-store', 'browser-automation', 'mcp-hub'].map(step))
     await step('gateway')
     await step('openclaw')
-    if (includeNemo) await step('nemoclaw')
     await this.refresh()
     return results
   }

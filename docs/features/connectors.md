@@ -1,6 +1,6 @@
 # Connectors
 
-A connector links PockPock to an app outside it, so the agent can read from that app and act in it. The **Connectors** page lists only external apps. Things that run on the computer or have their own page (Ollama, OpenClaw, NemoClaw, cloud models, skills, MCP servers) are not connectors and are not shown there.
+A connector links PockPock to an app outside it, so the agent can read from that app and act in it. The **Connectors** page lists only external apps. Things that run on the computer or have their own page (Ollama, OpenClaw, cloud models, skills, MCP servers) are not connectors and are not shown there.
 
 Every connector is real: the credential is checked with the app before it is saved, and a connected app gives the agent a fixed set of tools.
 
@@ -100,7 +100,7 @@ Tool names are `<connector>_<action>` (22 in total). Each has a JSON Schema with
 
 ## Limits
 
-- The tools reach **OpenClaw** only. PockPock Agent and NemoClaw do not have them yet.
+- The tools reach **OpenClaw** only. PockPock Agent does not have them yet.
 - Email reads the inbox only, sends plain text only, and does not handle attachments. Outlook.com and Microsoft 365 are not supported.
 - Telegram, Slack and Discord act as a bot you create, not as your personal account.
 - One account per connector.

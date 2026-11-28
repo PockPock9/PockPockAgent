@@ -2,7 +2,7 @@
 // choices that named it are cleared: the chat model (PockPock Agent and Chat), OpenClaw's model and
 // the Plan in steps planner. Each then falls back to its default (smart route, OpenClaw's default
 // model, one model plans and works). The main process handles the rest: the gateway's copy,
-// OpenClaw's pockpock-cloud provider and NemoClaw's sandbox model (electron/cloud.cjs disconnect).
+// OpenClaw's pockpock-cloud provider (electron/cloud.cjs disconnect).
 import { useEffect, useState } from 'react'
 import { bridge } from './types'
 import type { CloudProvider, Settings } from './types'

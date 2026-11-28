@@ -131,7 +131,6 @@ export function StatusBar({ status, version, onOpenServices, updates, onOpenSett
         <span title={status.state?.error || ''}><Dot tone={status.state?.connected ? 'ok' : 'off'} /> Ollama{status.state?.connected ? ` · ${running.length ? `${running.length} ${running.length === 1 ? 'model' : 'models'} loaded` : 'no model loaded'}` : ' · not running'}</span>
         <span><Dot tone={status.state?.router_enabled ? 'ok' : 'warn'} /> Smart router {status.state?.router_enabled === false ? 'paused' : 'on'}</span>
         <span title={status.claw?.detail}><Dot tone={status.claw?.ready ? 'ok' : 'off'} /> OpenClaw</span>
-        <span title={status.nemo?.detail}><Dot tone={status.nemoChecking ? 'busy' : status.nemo?.ready ? 'ok' : status.nemo?.checked === false ? 'warn' : 'off'} /> NemoClaw{status.nemo?.checked === false ? ' · not checked' : ''}</span>
       </button>
       <span className="statusbar__spacer" />
       {running.length > 0 && <span className="statusbar__models" title="Models loaded in memory">{running.join(', ')}</span>}
