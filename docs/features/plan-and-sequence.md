@@ -206,6 +206,12 @@ project (`npm install`, `flutter create`, `pytest`), installing tools, or acting
   applies.
 - **When OpenClaw cannot run** (not installed, busy with another chat, Default permission), the step fails
   with that reason and the run asks for a replan.
+- **Live run fixes (2026-11-28).** OpenClaw knows local models by their bare name (`qwen3.5:9b`). A new
+  attempt waits up to 20 s for the previous turn to release OpenClaw. A turn that could not start reports its
+  reason instead of "no command result recorded". On Windows the step is told to save output as UTF-8, and
+  checks read UTF-16 files too (PowerShell's `>` writes UTF-16). Check fields a condition does not have are
+  dropped instead of rejecting the plan, and a step that runs tests to see them fail is checked by
+  `no_error`, not `command_exit_0`.
 
 ### OpenClaw subtask mode (implemented in the Node helper, not used)
 

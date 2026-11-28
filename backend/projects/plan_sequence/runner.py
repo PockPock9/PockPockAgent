@@ -36,6 +36,7 @@ import inspect
 import json
 import logging
 import re
+import sys
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -279,6 +280,9 @@ def build_openclaw_prompt(*, task: str, step: dict, capsule_text: str, retry: st
     if done_when:
         lines.append(f"PockPock checks afterwards that {done_when}. Make sure that is true, with exactly that file name.")
     lines.append("Work in the current folder. Do not do the other steps of the plan.")
+    if sys.platform == "win32":
+        # Windows PowerShell's ">" writes UTF-16; PockPock reads it, but other programs often cannot.
+        lines.append("On Windows, save command output as UTF-8, for example: python script.py | Out-File -Encoding utf8 output.txt")
     if retry:
         lines += ["", retry.strip()]
     return "\n".join(lines)
@@ -693,6 +697,9 @@ class SequenceRunner:
                             max(step_seconds, OPENCLAW_STEP_SECONDS),
                         )
                         call_arguments = []
+                        if step_result.get("errors") and not any(call.get("tool") != OPENCLAW_STEP_TOOL for call in step_result.get("tool_calls", [])):
+                            # OpenClaw did not run at all: say why instead of "no command result recorded".
+                            raise RuntimeError("; ".join(str(error) for error in step_result["errors"])[:300])
                     else:
                         step_result, call_arguments = await self._within_budget(
                             self._execute_attempt(

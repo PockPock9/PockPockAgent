@@ -22,13 +22,19 @@ from typing import Any, Callable
 from .bridge import OpenClawBridge, OpenClawError
 
 PERMISSION = {"full-access": "full", "auto-review": "auto"}
+BUSY_RETRIES = 10
+BUSY_WAIT_SECONDS = 2.0
 
 
 def openclaw_model(executor_model: str | None) -> str | None:
-    """The run's local executor model in OpenClaw's naming, so one model serves both; cloud models use OpenClaw's default."""
-    if not executor_model or "/" in executor_model:
+    """The run's local executor model, so one model serves both. OpenClaw's helper knows local models by their
+    bare Ollama name ("qwen3.5:9b"; "ollama/qwen3.5:9b" was refused, live run 2026-11-28); a cloud executor
+    ("<provider>/<model>") uses OpenClaw's default model."""
+    from projects.model_router.cloud import is_cloud_model
+
+    if not executor_model or is_cloud_model(executor_model):
         return None
-    return f"ollama/{executor_model}"
+    return executor_model
 
 
 def make_openclaw_delegate(
@@ -48,10 +54,17 @@ def make_openclaw_delegate(
 
     async def delegate(*, step: dict, prompt: str, run_id: str, attempt: int, waiting) -> dict[str, Any]:
         step_id = str(step.get("id", ""))
-        try:
-            turn = await asyncio.to_thread(bridge.start_turn, session, prompt, mode, openclaw_model(executor_model), None, str(folder))
-        except OpenClawError as err:
-            return {"tool_calls": [], "values": {}, "errors": [f"OpenClaw could not start: {err}"]}
+        turn = None
+        for wait in range(BUSY_RETRIES + 1):
+            try:
+                turn = await asyncio.to_thread(bridge.start_turn, session, prompt, mode, openclaw_model(executor_model), None, str(folder))
+                break
+            except OpenClawError as err:
+                # The previous turn (this step's last attempt) may still be closing its process, or the user's
+                # own OpenClaw chat is running: wait a little before giving up.
+                if err.code != "busy" or wait == BUSY_RETRIES:
+                    return {"tool_calls": [], "values": {}, "errors": [f"OpenClaw could not start: {err}"]}
+                await asyncio.sleep(BUSY_WAIT_SECONDS)
         calls: dict[str, dict] = {}
         order: list[str] = []
         errors: list[str] = []
@@ -106,6 +119,8 @@ def make_openclaw_delegate(
             raise
         finally:
             waits.close()
+            # Release OpenClaw before the runner's next attempt or step starts a turn.
+            await asyncio.to_thread(turn.close)
         # Only the last command's exit code counts for a "command exits 0" check.
         with_codes = [call_id for call_id in order if "exit_code" in calls[call_id]]
         for call_id in with_codes[:-1]:

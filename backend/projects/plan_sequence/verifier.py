@@ -78,6 +78,15 @@ def _values(step_result: dict | None) -> dict | None:
     return values
 
 
+def read_text_any(path: Path) -> str:
+    """A text file as UTF-8, or UTF-16 when it starts with a byte-order mark: Windows PowerShell's ">" writes
+    UTF-16, so an OpenClaw step's correct "FizzBuzz" output.txt did not "contain" FizzBuzz (2026-11-28)."""
+    data = path.read_bytes()
+    if data[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        return data.decode("utf-16", errors="replace")
+    return data.decode("utf-8-sig", errors="replace")
+
+
 def verify_done_condition(
     condition: Any,
     *,
@@ -145,7 +154,7 @@ def _verify(condition: Any, *, workspace: Path | None, step_result: dict | None)
         if not target.is_file():
             return _fail(f"file does not exist: {path}")
         try:
-            text = target.read_text(encoding="utf-8", errors="replace")
+            text = read_text_any(target)
         except OSError as exc:
             return _fail(f"could not read file: {path}: {exc}")
         # Case is ignored: the planner writes the pattern before the text exists, and a step that wrote

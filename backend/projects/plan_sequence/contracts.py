@@ -49,6 +49,8 @@ TASK_INPUT_KEY = "task"
 #: instead of the step model; its done-condition is still verified in code. Not an agent tool: the runner
 #: hands the step to its ``delegate``. The planner offers it only when OpenClaw is available.
 OPENCLAW_STEP_TOOL = "openclaw_agent"
+_CONDITION_FIELDS = {"type", "path", "pattern", "field", "expected"}
+_EXPECTS_FAILURE = re.compile(r"\b(?:fail(?:s|ing|ure|ures)?|reproduce|see the (?:error|bug)|confirm the (?:bug|error))\b(?!.*\b(?:now pass|pass(?:es)? now|all (?:tests )?pass|verify (?:that )?(?:all )?(?:tests )?pass))", re.I)
 
 
 def _present(value: str | None) -> bool:
@@ -481,6 +483,14 @@ def validate_sequence_plan(raw: object, *, allowed_tools: set[str] | None = None
             # OpenClaw does the whole step with its own tools, so it is the step's only tool.
             if isinstance(step, dict) and isinstance(step.get("tools_allowed"), list) and OPENCLAW_STEP_TOOL in step["tools_allowed"]:
                 step["tools_allowed"] = [OPENCLAW_STEP_TOOL]
+            # Fields a check does not have are dropped instead of rejecting the plan: a planner gave a
+            # "command exits 0" check a "command" field and the whole plan failed (2026-11-28).
+            if isinstance(step, dict) and isinstance(step.get("done_condition"), dict):
+                step["done_condition"] = {key: value for key, value in step["done_condition"].items() if key in _CONDITION_FIELDS}
+                # "Run the tests to capture the current failure" checked by "exits 0" could pass only by fixing
+                # the bug early (live run 2026-11-28): a step that expects a failure is checked by "no error".
+                if step["done_condition"].get("type") == "command_exit_0" and _EXPECTS_FAILURE.search(str(step.get("goal", ""))):
+                    step["done_condition"] = {"type": "no_error"}
     try:
         plan = SequencePlan.model_validate(raw)
     except ValidationError as exc:

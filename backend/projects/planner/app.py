@@ -310,8 +310,11 @@ def build_sequence_plan_prompt(task: str, tool_names: list[str], workspace_path:
             "and only for a step the other tools cannot do: running or building a project (npm install, flutter create, pytest), "
             "installing tools, or acting in a browser or app. Writing, reading and editing files never need it. Give it a concrete "
             "done_condition (a file it must create, or a command that must exit 0), because its result is checked like any step. "
+            "A step that runs tests only to see them fail is checked with no_error, never command_exit_0. "
             if openclaw else ""
         )
+        + "A file_contains pattern is text the finished file really contains (a function name, a heading, a value), "
+        "never a marker such as FIXED or DONE that only exists to pass the check. "
         + "Each step's model sees only a short summary of earlier steps, not their full output, so a step that writes "
         "something based on what an earlier step read must also list that reading tool (for example read_project_file) "
         "to read the source again. "

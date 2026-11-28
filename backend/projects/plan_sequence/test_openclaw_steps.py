@@ -62,6 +62,31 @@ class OpenClawStepRunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("This step: Do step run", prompt)
 
 
+class OutputFileTests(unittest.TestCase):
+    def test_a_utf16_file_from_powershell_is_read(self):
+        from projects.plan_sequence.verifier import verify_done_condition
+
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "output.txt").write_bytes("1\r\n2\r\nFizz\r\nFizzBuzz\r\n".encode("utf-16"))
+            result = verify_done_condition({"type": "file_contains", "path": "output.txt", "pattern": "FizzBuzz"}, workspace=Path(tmp), step_result={"tool_calls": [], "values": {}, "errors": []})
+        self.assertTrue(result["passed"], result)
+
+    def test_fields_a_check_does_not_have_are_dropped(self):
+        plan = validate_sequence_plan(_plan([
+            _step("a", ["list_project_files"], {"type": "no_error"}),
+            _step("b", [OPENCLAW_STEP_TOOL], {"type": "command_exit_0", "command": "python -m unittest"}, inputs=["a"]),
+        ]))
+        self.assertEqual(plan["steps"][1]["done_condition"]["type"], "command_exit_0")
+
+    def test_a_step_that_expects_a_failure_is_not_checked_by_exit_0(self):
+        see = _step("see", [OPENCLAW_STEP_TOOL], {"type": "command_exit_0"}, inputs=["a"])
+        see["goal"] = "Run the unit tests to capture the current failure state and error messages."
+        done = _step("done", [OPENCLAW_STEP_TOOL], {"type": "command_exit_0"}, inputs=["see"])
+        done["goal"] = "Run the unit tests again to verify that all tests now pass."
+        plan = validate_sequence_plan(_plan([_step("a", ["list_project_files"], {"type": "no_error"}), see, done]))
+        self.assertEqual([s["done_condition"]["type"] for s in plan["steps"][1:]], ["no_error", "command_exit_0"])
+
+
 class FakeTurn:
     def __init__(self, events):
         self.events = queue.Queue()
@@ -75,6 +100,9 @@ class FakeTurn:
 
     def abort(self):
         self.aborted = True
+
+    def close(self):
+        self.closed = True
 
 
 class FakeBridge:
@@ -110,7 +138,7 @@ class DelegateTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp:
             delegate = make_openclaw_delegate(bridge, run_id="a" * 32, folder=Path(tmp), permission_mode="full-access", executor_model="qwen3.5:9b", emit=emitted.append)
             result = await delegate(step={"id": "test"}, prompt="run tests", run_id="a" * 32, attempt=1, waiting=Waiting)
-        self.assertEqual(bridge.started[0][:3], ("pockpock-steps-" + "a" * 16, "full", "ollama/qwen3.5:9b"))
+        self.assertEqual(bridge.started[0][:3], ("pockpock-steps-" + "a" * 16, "full", "qwen3.5:9b"))
         codes = [call.get("exit_code") for call in result["tool_calls"] if "exit_code" in call]
         self.assertEqual(codes, [0])
         self.assertEqual(result["errors"], [])
@@ -121,7 +149,8 @@ class DelegateTests(unittest.IsolatedAsyncioTestCase):
     def test_no_delegate_without_openclaw_or_in_default_permission(self):
         self.assertIsNone(make_openclaw_delegate(FakeBridge([], ok=False), run_id="a" * 32, folder=Path("."), permission_mode="full-access", executor_model="m", emit=print))
         self.assertIsNone(make_openclaw_delegate(FakeBridge([]), run_id="a" * 32, folder=Path("."), permission_mode="default", executor_model="m", emit=print))
-        self.assertIsNone(openclaw_model("nim/llama"))
+        self.assertIsNone(openclaw_model("nim/meta/llama-3.3-70b-instruct"))
+        self.assertEqual(openclaw_model("huihui_ai/qwen3.5-abliterated:9b"), "huihui_ai/qwen3.5-abliterated:9b")
 
 
 if __name__ == "__main__":
