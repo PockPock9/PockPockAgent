@@ -35,6 +35,7 @@ class TerminalUI:
         self.quiet = quiet
         self.show_thinking = show_thinking
         self.streamed = ""
+        self.streamed_any = False
         self.thinking_open = False
 
     # ---------- plain helpers ----------
@@ -45,9 +46,9 @@ class TerminalUI:
         else:
             print(message, flush=True)
 
-    def banner(self, model: str, root: str, mode: str) -> None:
+    def banner(self, model: str, root: str, mode: str, engine: str = "code") -> None:
         self._print("PockPock Code", "bold magenta")
-        self._print(f"model {model} · {mode} · {root}", "dim")
+        self._print(f"{engine} engine · model {model} · {mode} · {root}", "dim")
         self._print("Type a request. /help for commands, /exit to quit.", "dim")
 
     # ---------- streamed text ----------
@@ -65,6 +66,7 @@ class TerminalUI:
             sys.stdout.write("\x1b[0m\n")
             self.thinking_open = False
         self.streamed += chunk
+        self.streamed_any = True
         sys.stdout.write(chunk)
         sys.stdout.flush()
 

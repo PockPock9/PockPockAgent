@@ -18,12 +18,15 @@ from pathlib import Path
 
 from . import llm
 from .agent import Agent
+from . import engines
 from .tools import Workspace
 from .ui import TerminalUI
 
 MODES = ("suggest", "auto-edit", "full-auto")
 HELP = """Commands:
+  /engine [e]     code (built-in coding agent) · pockpock (PockPock Agent, checked steps) · openclaw (shell, browser, apps) · auto
   /model [name]   show installed models or switch model
+  /planner [name] Plan in steps planner for the pockpock engine (off: one model plans and works)
   /mode [m]       suggest (ask before edits and commands) · auto-edit (ask before commands) · full-auto
   /think          turn the model's thinking on or off (slower, better on hard tasks)
   /undo           restore the files changed by the last request
@@ -97,7 +100,7 @@ INIT_REQUEST = ("Look around this project (manifests, folders, main entry points
                 "Keep it under 80 lines. If AGENTS.md exists, read it and improve it instead.")
 
 
-def slash(command: str, agent: Agent, ui: TerminalUI) -> str | None:
+def slash(command: str, agent: Agent, ui: TerminalUI, router: "Router") -> str | None:
     """Handle a /command. Returns a request to send to the agent, or None."""
     name, _, arg = command[1:].partition(" ")
     arg = arg.strip()
@@ -112,6 +115,17 @@ def slash(command: str, agent: Agent, ui: TerminalUI) -> str | None:
             agent.model = llm.pick_model(available, arg)
             save_settings(model=agent.model)
             ui.notice(f"Model: {agent.model}")
+    elif name == "engine":
+        if arg not in engines.ENGINES:
+            ui._print(f"Engine: {router.engine}. Choose one of: {', '.join(engines.ENGINES)}")
+        else:
+            router.engine = arg
+            save_settings(engine=arg)
+            ui.notice(f"Engine: {arg}")
+    elif name == "planner":
+        router.planner = None if arg in ("", "off", "none") else llm.pick_model(llm.list_models(agent.base), arg)
+        save_settings(planner=router.planner)
+        ui.notice(f"Planner: {router.planner or 'off (one model plans and works)'}")
     elif name == "mode":
         if arg not in MODES:
             ui._print(f"Mode: {agent.mode}. Choose one of: {', '.join(MODES)}")
@@ -161,11 +175,57 @@ def read_request() -> str:
         return "\n".join(lines).strip()
 
 
-def run_request(agent: Agent, ui: TerminalUI, request: str) -> int:
+CODE_EXTENSIONS = {".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".kt", ".dart", ".cs", ".cpp", ".c", ".rb", ".php", ".swift", ".vue", ".svelte"}
+
+
+class Router:
+    """Sends each request to the chosen engine; with "auto", to the one that fits it best."""
+
+    def __init__(self, engine: str, planner: str | None, gateway: str, auto_approve_plan: bool = False) -> None:
+        self.engine, self.planner, self.gateway, self.auto_approve_plan = engine, planner, gateway, auto_approve_plan
+        self._gateway_up: bool | None = None
+
+    def gateway_up(self) -> bool:
+        if self._gateway_up is None:
+            self._gateway_up = engines.gateway_running(self.gateway)
+        return self._gateway_up
+
+    def pick(self, agent: Agent, request: str) -> tuple[str, str]:
+        if self.engine != "auto":
+            return self.engine, ""
+        from .tools import project_files
+
+        has_code = any(Path(name).suffix.lower() in CODE_EXTENSIONS for name in project_files(agent.ws, limit=3000))
+        return engines.choose_engine(request, project_has_code=has_code, gateway_up=self.gateway_up())
+
+    def run(self, agent: Agent, ui: TerminalUI, request: str) -> str:
+        engine, reason = self.pick(agent, request)
+        if reason:
+            ui._print(f"→ {engine}: {reason}", "dim")
+        if engine == "code":
+            return agent.run(request, ui)
+        if engine == "pockpock":
+            runner = engines.PockPockEngine(root=str(agent.ws.root), model=agent.model, mode=agent.mode, planner=self.planner, base=self.gateway, auto_approve_plan=self.auto_approve_plan)
+        else:
+            runner = engines.OpenClawEngine(root=str(agent.ws.root), model=agent.model, mode=agent.mode, base=self.gateway)
+        ui.streamed_any = False
+        answer = runner.run(request, ui)
+        if answer and not ui.streamed_any:
+            ui.markdown(answer)
+        # The coding agent keeps a note of what the other engine did, so a follow-up request has the context.
+        agent.messages.append({"role": "user", "content": f"[Handled by the {engine} engine: {request}]"})
+        agent.messages.append({"role": "assistant", "content": (answer or "(no reply)")[:4000]})
+        return answer
+
+
+def run_request(agent: Agent, ui: TerminalUI, request: str, router: Router | None = None) -> int:
     started = time.time()
     try:
-        agent.run(request, ui)
-    except llm.ModelError as err:
+        if router:
+            router.run(agent, ui, request)
+        else:
+            agent.run(request, ui)
+    except (llm.ModelError, engines.GatewayError) as err:
         ui.error(str(err))
         return 1
     except KeyboardInterrupt:
@@ -192,6 +252,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("-p", "--print", action="store_true", help="run the request once, print the result and exit")
     parser.add_argument("-m", "--model", default=os.environ.get("POCKPOCK_CODE_MODEL") or settings.get("model"))
     parser.add_argument("--mode", choices=MODES, default=settings.get("mode", "auto-edit"))
+    parser.add_argument("-e", "--engine", choices=engines.ENGINES, default=os.environ.get("POCKPOCK_CODE_ENGINE") or settings.get("engine", "code"),
+                        help="code: built-in coding agent (default) · pockpock: PockPock Agent · openclaw: OpenClaw · auto: choose per request")
+    parser.add_argument("--planner", default=settings.get("planner"), help="planner model for the pockpock engine (Plan in steps)")
+    parser.add_argument("--gateway", default=engines.DEFAULT_GATEWAY, help="PockPock gateway URL for the pockpock and openclaw engines")
     parser.add_argument("-C", "--cwd", default=".", help="project folder (default: current folder)")
     parser.add_argument("--resume", action="store_true", help="continue the last session in this folder")
     parser.add_argument("--think", action="store_true", help="let the model think before answering")
@@ -214,15 +278,16 @@ def main(argv: list[str] | None = None) -> int:
         # Nobody is there to approve: commands are declined unless --mode full-auto.
         mode = "auto-edit"
     agent = Agent(ws=Workspace(root=root), model=model, mode=mode, base=args.ollama.rstrip("/"), num_ctx=args.ctx, think=args.think)
+    router = Router(args.engine, args.planner, args.gateway.rstrip("/"), auto_approve_plan=args.print)
     if args.print:
         ui.approve = lambda kind, summary, detail: "no"  # type: ignore[method-assign]
         request = " ".join(args.request).strip() or sys.stdin.read().strip()
         if not request:
             ui.error("Give a request, for example: pockpock-code -p \"explain main.py\"")
             return 2
-        return run_request(agent, ui, request)
+        return run_request(agent, ui, request, router)
 
-    ui.banner(model, str(root), mode)
+    ui.banner(model, str(root), mode, args.engine)
     if args.resume:
         ui.notice("Continuing the last session." if load_session(agent) else "No earlier session in this folder.")
     pending = " ".join(args.request).strip()
@@ -233,10 +298,10 @@ def main(argv: list[str] | None = None) -> int:
             if not request:
                 continue
             if request.startswith("/"):
-                request = slash(request, agent, ui)
+                request = slash(request, agent, ui, router)
                 if not request:
                     continue
-            run_request(agent, ui, request)
+            run_request(agent, ui, request, router)
         except (EOFError, KeyboardInterrupt):
             save_session(agent)
             print()
